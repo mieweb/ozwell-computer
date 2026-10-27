@@ -11,11 +11,17 @@ services:
       - "${OZWELL_DESKTOP_HOST_PORT:-8080}:8080"
     environment:
       # Set in your shell or a .env file; if empty, a token is generated
-      # (docker compose exec ozwell-desktop cat /run/ozwell-desktop/token)
+      # and persisted; `docker compose up` prints a link with it embedded.
       OZWELL_DESKTOP_TOKEN: ${OZWELL_DESKTOP_TOKEN:-}
       OZWELL_DESKTOP_SCREEN: ${OZWELL_DESKTOP_SCREEN:-1920x1080x24}
+      # The container can't see its host port; this makes the startup link clickable.
+      OZWELL_DESKTOP_PUBLIC_URL: http://localhost:${OZWELL_DESKTOP_HOST_PORT:-8080}
+    # A TTY gives systemd a console, so the startup link appears in `docker compose up`.
+    tty: true
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      # The generated token persists here across `up`/`down` (removed by `down -v`).
+      - state:/var/lib/ozwell-desktop
       - type: bind
         source: ./dist
         target: /opt/ozwell-desktop/dist
@@ -36,3 +42,6 @@ services:
     cgroup: host
     stop_signal: SIGRTMIN+3
     shm_size: 1gb
+
+volumes:
+  state:

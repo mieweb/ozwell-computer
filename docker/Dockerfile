@@ -29,8 +29,11 @@ COPY docker/xfce/xfconf/ /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/
 COPY docker/xfce/applications/ /usr/share/applications/
 COPY docker/xfce/session.sh /usr/local/bin/ozwell-desktop-session
 COPY docker/xfce/mimeapps.list /etc/xdg/mimeapps.list
+COPY docker/systemd/quiet.conf /etc/systemd/system.conf.d/ozwell-desktop.conf
 RUN useradd -m -s /bin/bash desktop \
+ && install -d -o desktop -g desktop -m 700 /var/lib/ozwell-desktop \
  && ln -s /opt/ozwell-desktop/dist/cli.js /usr/local/bin/ozwell-desktop \
+ && systemctl mask console-getty.service \
  && systemctl enable environment.service desktop-dbus.service xvfb.service desktop-session.service ozwell-desktop.service
 ENV DISPLAY=:0
 EXPOSE 8080

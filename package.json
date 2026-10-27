@@ -17,7 +17,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
     "dev": "tsx src/cli.ts",
-    "start": "node dist/cli.js",
+    "start": "node scripts/start.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:integration": "vitest run --project integration",
@@ -25,7 +25,8 @@
     "pretest": "npm run build && playwright-core install chromium firefox",
     "test:unit": "vitest run --project unit",
     "pretest:integration": "npm run build && playwright-core install chromium firefox",
-    "watch": "node scripts/watch.mjs"
+    "watch": "node scripts/watch.mjs",
+    "prestart": "npm run build"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

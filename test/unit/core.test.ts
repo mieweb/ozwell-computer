@@ -178,3 +178,13 @@ describe('exec', () => {
     await expect(runCommand({ cmd: 'definitely-not-a-cmd-xyz', args: [] }, ':0')).rejects.toMatchObject({ reason: 'path_not_found' });
   });
 });
+
+describe('startup link config', () => {
+  it('parses --public-url and --open', () => {
+    const { config } = loadConfig({ OZWELL_DESKTOP_PUBLIC_URL: 'http://localhost:18080' }, ['--open']);
+    expect(config.publicUrl).toBe('http://localhost:18080');
+    expect(config.open).toBe(true);
+    expect(loadConfig({}, []).config.open).toBe(false);
+    expect(() => loadConfig({ OZWELL_DESKTOP_PUBLIC_URL: 'not a url' })).toThrow();
+  });
+});

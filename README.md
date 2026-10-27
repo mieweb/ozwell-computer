@@ -23,8 +23,10 @@ docker run -d -p 8080:8080 \
 Open `http://localhost:8080/?token=<token>`. The server sets an HttpOnly cookie and
 redirects, which removes the token from the address bar.
 
-If you don't set a token, the server generates one. Read it with
-`docker exec <c> cat /run/ozwell-desktop/token`.
+If you don't set a token, the server generates one, stores it in
+`/var/lib/ozwell-desktop/token` (mount a volume there to keep it), and prints a link
+with the token embedded at startup. Run with `-t` to see it in `docker logs`; that's
+how `docker compose up` shows it. A token you configure yourself is never printed.
 
 The image is based on `ghcr.io/mieweb/opensource-server/nodejs`, with systemd as PID 1.
 It runs these units:
@@ -57,7 +59,9 @@ When no token is configured, one is generated and stored in
 | `OZWELL_DESKTOP_PORT` / `--port` | `8080` | |
 | `OZWELL_DESKTOP_HOST` / `--host` | `0.0.0.0` in a container, otherwise `127.0.0.1` | |
 | `OZWELL_DESKTOP_TOKEN` / `--token` | generated | Pre-shared key |
-| `OZWELL_DESKTOP_TOKEN_FILE` | `/run/ozwell-desktop/token` or `~/.config/ozwell-desktop/token` | |
+| `OZWELL_DESKTOP_TOKEN_FILE` | `/var/lib/ozwell-desktop/token` (container) or `~/.config/ozwell-desktop/token` | Where a generated token is kept |
+| `OZWELL_DESKTOP_PUBLIC_URL` / `--public-url` | derived | Base URL used in the startup link (for example the host port behind Docker) |
+| `OZWELL_DESKTOP_OPEN` / `--open` | `false` | Open the viewer in the default browser at startup |
 | `OZWELL_DESKTOP_AUTH_DISABLED` / `--no-auth` | `false` | Logs loud warnings |
 | `DISPLAY` / `--display` | `:0` | |
 | `OZWELL_DESKTOP_SPAWN_XVFB` / `--spawn-xvfb` | `false` | Development only |
@@ -129,7 +133,8 @@ with your local `./dist` mounted over `/opt/ozwell-desktop/dist`.
 nvm use                 # Node 26 (.nvmrc); the container runs the base image's Node 24
 npm ci
 npm run build           # ./dist must exist before the first `docker compose up`
-docker compose up -d    # http://localhost:8080/?token=$(docker compose exec ozwell-desktop printenv OZWELL_DESKTOP_TOKEN)
+docker compose up       # prints "open http://localhost:8080/?token=…" (use -d, then
+                        # `docker compose logs`, to run it in the background)
 npm run watch           # rebuild on save; restarts the server in the container (about 1 s);
                         # viewer JS/CSS changes need only a page reload
 npm test                # full regression: unit + integration (API, VNC, MCP, a11y,
@@ -139,6 +144,14 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
 - `npm test` builds `./dist` and installs Playwright's Chromium and Firefox if
   missing. It then starts the compose service if it isn't running, or restarts the
   server inside it if it is, and leaves the service running.
+- **Startup link:** when no `OZWELL_DESKTOP_TOKEN` is set, the server generates a
+  token and keeps it (compose stores it in the `state` volume, which survives
+  `down` but not `down -v`). Every start then prints a link with the token
+  embedded. A token you configure (environment or `.env`) is never printed.
+- **`npm start`** runs the server on this host against `$DISPLAY` and opens the link
+  in your default browser.
+  - It reuses the compose service's generated token when that service is running.
+  - It moves to port 8081 if compose is already on 8080.
 - `npm run test:unit` runs only the fast unit tests.
 - `OZ_URL=… OZ_TOKEN=… npm test` runs the suite against any other server.
 - Run `docker compose up -d --build` after changing the image itself: `docker/`

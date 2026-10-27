@@ -27,6 +27,10 @@ export const ConfigSchema = z.object({
   logLevel: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']),
   /** Optional root for the filesystem API; defaults to "/" (whole FS as the service user). */
   fsRoot: z.string(),
+  /** Externally visible base URL for the startup link (e.g. the host port behind Docker). */
+  publicUrl: z.string().url().optional(),
+  /** Open the viewer in the default browser once listening. */
+  open: bool,
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -37,7 +41,7 @@ export function defaults(): Config {
     port: 8080,
     host: container ? '0.0.0.0' : '127.0.0.1',
     token: undefined,
-    tokenFile: container ? '/run/ozwell-desktop/token' : join(homedir(), '.config', 'ozwell-desktop', 'token'),
+    tokenFile: container ? '/var/lib/ozwell-desktop/token' : join(homedir(), '.config', 'ozwell-desktop', 'token'),
     authDisabled: false,
     display: process.env.DISPLAY || ':0',
     spawnXvfb: false,
@@ -48,6 +52,8 @@ export function defaults(): Config {
     vncBackend: 'builtin',
     logLevel: 'info',
     fsRoot: '/',
+    publicUrl: undefined,
+    open: false,
   };
 }
 
@@ -66,6 +72,8 @@ const ENV_MAP: Record<string, keyof Config> = {
   OZWELL_DESKTOP_VNC_BACKEND: 'vncBackend',
   OZWELL_DESKTOP_LOG_LEVEL: 'logLevel',
   OZWELL_DESKTOP_FS_ROOT: 'fsRoot',
+  OZWELL_DESKTOP_PUBLIC_URL: 'publicUrl',
+  OZWELL_DESKTOP_OPEN: 'open',
 };
 
 const FLAG_MAP: Record<string, keyof Config> = {
@@ -85,9 +93,11 @@ const FLAG_MAP: Record<string, keyof Config> = {
   'vnc-backend': 'vncBackend',
   'log-level': 'logLevel',
   'fs-root': 'fsRoot',
+  'public-url': 'publicUrl',
+  open: 'open',
 };
 
-const BOOLEAN_FLAGS = new Set(['auth-disabled', 'no-auth', 'spawn-xvfb', 'view-only', 'exec', 'no-exec']);
+const BOOLEAN_FLAGS = new Set(['auth-disabled', 'no-auth', 'spawn-xvfb', 'view-only', 'exec', 'no-exec', 'open']);
 
 export interface ParsedArgs {
   overrides: Partial<Record<keyof Config, unknown>>;
@@ -154,5 +164,7 @@ Usage: ozwell-desktop [flags]
   --vnc-backend <b>       OZWELL_DESKTOP_VNC_BACKEND (builtin | external:[host:]port)
   --log-level <lvl>       OZWELL_DESKTOP_LOG_LEVEL (info)
   --fs-root <dir>         OZWELL_DESKTOP_FS_ROOT (/)
+  --public-url <url>      OZWELL_DESKTOP_PUBLIC_URL: base URL shown in the startup link
+  --open                  OZWELL_DESKTOP_OPEN=true: open the viewer in the default browser
   --print-openapi         Print the OpenAPI document and exit
 `;

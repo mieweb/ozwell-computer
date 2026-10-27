@@ -37,11 +37,20 @@ export function url() {
 }
 
 export function token() {
-  for (const cmd of [['printenv', 'OZWELL_DESKTOP_TOKEN'], ['cat', '/run/ozwell-desktop/token']]) {
+  for (const cmd of [['printenv', 'OZWELL_DESKTOP_TOKEN'], ['cat', '/var/lib/ozwell-desktop/token']]) {
     const r = compose(['exec', '-T', SERVICE, ...cmd], { check: false });
     if (r.status === 0 && r.out) return r.out;
   }
   return null;
+}
+
+/** The token the service generated (not one configured via its environment), or null. */
+export function generatedToken() {
+  // A configured token wins over the file, and must never be copied or printed.
+  const env = compose(['exec', '-T', SERVICE, 'printenv', 'OZWELL_DESKTOP_TOKEN'], { check: false });
+  if (env.status === 0 && env.out) return null;
+  const r = compose(['exec', '-T', SERVICE, 'cat', '/var/lib/ozwell-desktop/token'], { check: false });
+  return r.status === 0 && r.out ? r.out : null;
 }
 
 /** Wait until /health is 204 and the desktop session has at least one window. */
