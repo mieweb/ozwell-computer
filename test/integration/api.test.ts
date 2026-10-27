@@ -66,13 +66,11 @@ describe('pointer actions', () => {
     const b = (await win(id)).bounds;
     const region = [b.x, b.y, b.width, b.height] as const;
     const bottom = await regionShot(...region);
+    // Poll rather than sleep: repaint timing varies with whatever else the desktop is doing.
     await api('POST', '/api/v1/input/pointer', { action: 'scroll', x: b.x + 100, y: b.y + 100, dy: -10 });
-    await sleep(300);
-    const scrolled = await regionShot(...region);
-    expect(scrolled.equals(bottom)).toBe(false);
+    await waitFor(async () => !(await regionShot(...region)).equals(bottom), 3000);
     await api('POST', '/api/v1/input/pointer', { action: 'scroll', x: b.x + 100, y: b.y + 100, dy: 10 });
-    await sleep(300);
-    expect((await regionShot(...region)).equals(bottom)).toBe(true);
+    await waitFor(async () => (await regionShot(...region)).equals(bottom), 3000);
     await api('POST', `/api/v1/windows/${id}/close`);
   });
 });
