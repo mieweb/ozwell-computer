@@ -11,7 +11,8 @@ export function principalOf(req: FastifyRequest) {
 export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) {
   const { desktop, config } = ctx;
 
-  app.get('/health', { schema: { hide: true } }, async (_req, reply) => {
+  // Polled by healthchecks every few seconds: never logged.
+  app.get('/health', { schema: { hide: true }, logLevel: 'silent' }, async (_req, reply) => {
     if (desktop.x.session) return reply.code(204).send();
     return reply.code(503).send(new ApiError('target_unavailable', 'X display not connected').toBody());
   });

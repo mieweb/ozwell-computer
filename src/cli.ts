@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import pino from 'pino';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { appendFileSync, existsSync } from 'node:fs';
+import { existsSync, openSync, writeSync } from 'node:fs';
 import { HELP, loadConfig, type Config } from './config.js';
 import { resolveToken } from './auth/token.js';
 import { redactUrl } from './auth/plugin.js';
@@ -10,14 +10,34 @@ import { buildServer, VERSION } from './server.js';
 import { A11y } from './a11y/atspi.js';
 import { ptyAvailable } from './process/pty.js';
 
+/**
+ * Mirror of our output onto a terminal named by OZWELL_DESKTOP_CONSOLE. The container's
+ * systemd unit sets it to /dev/console so that `docker logs` (with a TTY) shows this
+ * service's output, and only that. Without a TTY the path doesn't exist and this is a no-op.
+ */
+const consoleFd: number | null = (() => {
+  const path = process.env.OZWELL_DESKTOP_CONSOLE;
+  if (!path) return null;
+  try { return openSync(path, 'a'); } catch { return null; }
+})();
+function toConsole(text: string) {
+  if (consoleFd === null) return;
+  try { writeSync(consoleFd, text); } catch { /* console went away */ }
+}
+
 export function createLogger(level: string) {
-  return pino({
+  const opts = {
     level,
     redact: { paths: ['req.headers.authorization', 'req.headers["x-auth-token"]', 'req.headers.cookie'], censor: 'REDACTED' },
     serializers: {
       req: (req: any) => ({ method: req.method, url: redactUrl(req.url ?? ''), remoteAddress: req.ip }),
     },
-  });
+  };
+  if (consoleFd === null) return pino(opts);
+  return pino(opts, pino.multistream([
+    { level: level as pino.Level, stream: pino.destination({ fd: 1, sync: false }) },
+    { level: level as pino.Level, stream: { write: toConsole } },
+  ]));
 }
 
 function displaySocket(display: string): string | null {
@@ -79,10 +99,7 @@ async function maybeSpawnXvfb(config: Config, log: pino.Logger): Promise<ChildPr
 function banner(text: string) {
   const msg = `\n${text}\n\n`;
   process.stderr.write(msg);
-  const consolePath = process.env.OZWELL_DESKTOP_CONSOLE;
-  if (consolePath) {
-    try { appendFileSync(consolePath, msg.replace(/\n/g, '\r\n')); } catch { /* no TTY attached */ }
-  }
+  toConsole(msg);
 }
 
 /** Open a URL in the user's default browser; failures are logged, never fatal. */
@@ -175,7 +192,14 @@ async function main() {
   process.on('SIGTERM', () => void stop('SIGTERM'));
 }
 
+process.on('uncaughtException', (e) => {
+  toConsole(`ozwell-desktop: uncaught exception: ${e?.stack ?? e}\n`);
+  process.stderr.write(`ozwell-desktop: uncaught exception: ${e?.stack ?? e}\n`);
+  process.exit(1);
+});
+
 main().catch((e) => {
+  toConsole(`ozwell-desktop: ${(e as Error)?.message ?? e}\n`);
   process.stderr.write(`ozwell-desktop: ${(e as Error)?.message ?? e}\n`);
   if (process.env.OZWELL_DESKTOP_LOG_LEVEL === 'debug') process.stderr.write(`${(e as Error)?.stack}\n`);
   process.exit(1);

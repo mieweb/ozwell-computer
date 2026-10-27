@@ -36,6 +36,10 @@ RUN useradd -m -s /bin/bash desktop \
  && systemctl mask console-getty.service \
  && systemctl enable environment.service desktop-dbus.service xvfb.service desktop-session.service ozwell-desktop.service
 ENV DISPLAY=:0
+# With a TTY the container console (docker logs) carries only ozwell-desktop's output:
+# systemd logs to the journal, and only errors (it falls back to the console until
+# journald is up). TERM=dumb stops systemd's console reset escape codes.
+ENV SYSTEMD_LOG_TARGET=journal SYSTEMD_LOG_LEVEL=err TERM=dumb
 EXPOSE 8080
 LABEL org.mieweb.opensource-server.services.http.default-port="8080" \
       org.opencontainers.image.title="ozwell-desktop" \
