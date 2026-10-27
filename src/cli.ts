@@ -30,12 +30,12 @@ export function createLogger(level: string) {
     level,
     redact: { paths: ['req.headers.authorization', 'req.headers["x-auth-token"]', 'req.headers.cookie'], censor: 'REDACTED' },
     serializers: {
-      req: (req: any) => ({ method: req.method, url: redactUrl(req.url ?? ''), remoteAddress: req.ip }),
+      req: (req: any) => ({ method: req.method, url: redactUrl(req.url ?? ''), route: req.routeOptions?.url, remoteAddress: req.ip }),
     },
   };
   if (consoleFd === null) return pino(opts);
   return pino(opts, pino.multistream([
-    { level: level as pino.Level, stream: pino.destination({ fd: 1, sync: false }) },
+    { level: level as pino.Level, stream: pino.destination({ fd: 1, sync: true }) },
     { level: level as pino.Level, stream: { write: toConsole } },
   ]));
 }

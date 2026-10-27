@@ -48,6 +48,15 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
       'Prefer find_element/ui_action for apps that expose accessibility. Errors carry a "reason"; on stale_geometry take a new screenshot.',
   });
 
+  // Log every tool call by name (operational visibility; also used by the test-coverage check).
+  const register = mcp.registerTool.bind(mcp) as (...a: any[]) => unknown;
+  (mcp as any).registerTool = (name: string, config: unknown, cb: (...a: any[]) => Promise<ToolResult>) =>
+    register(name, config, async (...a: any[]) => {
+      const p = principal();
+      ctx.log.info({ tool: name, agent: p.name, session: p.id }, 'mcp tool call');
+      return cb(...a);
+    });
+
   mcp.registerTool('screenshot', {
     description: 'Capture the screen (or one window). Returns an image plus screenshot_id; pass that id with coordinates taken from this image.',
     inputSchema: {

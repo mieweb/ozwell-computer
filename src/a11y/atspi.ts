@@ -206,21 +206,23 @@ export class A11y {
   }
 
   /** Top-level roots to walk: all apps, or the frames that belong to one X window. */
-  private async roots(bus: any, window?: string): Promise<Ref[]> {
+  /** Roots to walk, each with the application name its nodes belong to ('' = use the root's own name). */
+  private async roots(bus: any, window?: string): Promise<Array<{ ref: Ref; app: string }>> {
     const apps = await this.children(bus, ['org.a11y.atspi.Registry', '/org/a11y/atspi/accessible/root']);
-    if (!window) return apps;
+    if (!window) return apps.map((ref) => ({ ref, app: '' }));
     if (!this.desktop) throw unsupported('a11y', 'window filter requires an X connection');
     const wm = this.desktop.ctl().windows;
     const info = await wm.info(await wm.resolve(parseWindowId(window)));
-    const out: Ref[] = [];
+    const out: Array<{ ref: Ref; app: string }> = [];
     for (const app of apps) {
       if (info.pid !== null && (await this.appPid(bus, app[0])) !== info.pid) continue;
+      const appName = String((await this.props(bus, app, 'org.a11y.atspi.Accessible').catch(() => ({} as any))).Name ?? '');
       const frames = await this.children(bus, app).catch(() => []);
       for (const f of frames) {
         const p = await this.props(bus, f, 'org.a11y.atspi.Accessible').catch(() => ({} as any));
-        if (!info.title || String(p.Name ?? '') === info.title) out.push(f);
+        if (!info.title || String(p.Name ?? '') === info.title) out.push({ ref: f, app: appName });
       }
-      if (out.length === 0 && info.pid !== null) out.push(...frames);
+      if (out.length === 0 && info.pid !== null) out.push(...frames.map((ref) => ({ ref, app: appName })));
     }
     if (out.length === 0) throw new ApiError('target_unavailable', `no accessible objects found for window ${window}`);
     return out;
@@ -241,7 +243,7 @@ export class A11y {
       if (!opts.hidden && parent !== null && depth > 1 && !(d.states.includes('showing') || d.states.includes('visible'))) return;
       const id = `${snap.id}.${++seq}`;
       snap.refs.set(id, ref);
-      const appName = depth === 0 ? d.name : app;
+      const appName = app || d.name;
       nodes.push({
         element_id: id, parent_id: parent, depth, role: mapRole(d.native_role), native_role: d.native_role, name: d.name,
         value: d.value, description: d.description, bounds: d.bounds, states: d.states, actions: d.actions, app: appName,
@@ -255,7 +257,7 @@ export class A11y {
       }
     };
     const roots = await this.roots(bus, opts.window);
-    for (const r of roots) await walk(r, null, 0, '');
+    for (const r of roots) await walk(r.ref, null, 0, r.app);
     this.snapshots.push(snap);
     while (this.snapshots.length > 8) this.snapshots.shift();
     return { snapshot_id: snap.id, truncated, nodes };

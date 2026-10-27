@@ -152,6 +152,10 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
   in your default browser.
   - It reuses the compose service's generated token when that service is running.
   - It moves to port 8081 if compose is already on 8080.
+- **Coverage guard:** a full integration run fails if any documented API route never
+  returned a 2xx, or any MCP tool was never called. It checks the server's own request
+  log, so new routes and tools need a test. Runs filtered to some files or tests skip
+  the check.
 - `npm run test:unit` runs only the fast unit tests.
 - `OZ_URL=… OZ_TOKEN=… npm test` runs the suite against any other server.
 - Run `docker compose up -d --build` after changing the image itself: `docker/`

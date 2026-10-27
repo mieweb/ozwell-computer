@@ -161,8 +161,9 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
   app.delete('/api/v1/fs', { preHandler: gate, schema: { tags: ['fs'], querystring: pathQuery } }, async (req) => {
     const q = req.query as any;
     const path = safePath(root, q.path);
-    await lstat(path);
-    await rm(path, { recursive: q.recursive === '1' || q.recursive === 'true' });
+    const recursive = q.recursive === '1' || q.recursive === 'true';
+    if ((await lstat(path)).isDirectory() && !recursive) throw new ApiError('invalid_request', 'path is a directory; pass recursive=1 to delete it');
+    await rm(path, { recursive });
     return { ok: true };
   });
 
