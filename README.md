@@ -140,8 +140,8 @@ npm run openapi    # regenerate docs/openapi.json
   from `/a11y/*` may not be screen coordinates. Actions are unaffected.
 - **Clipboard sharing:** in the viewer, Ctrl/Cmd+C and Ctrl/Cmd+V use your local
   clipboard with full Unicode. This needs HTTPS or localhost; on plain HTTP the toolbar
-  shows a manual Clipboard panel instead. Chrome asks once for clipboard permission,
-  while Firefox and Safari confirm each paste. Copies made without a shortcut (menus,
+  shows a manual Clipboard panel instead. Paste uses the browser's native paste event,
+  so no permission prompt appears. Copies made without a shortcut (menus,
   select-to-copy) reach your clipboard on your next click in the viewer.
 - **CPU:** the VNC encoder runs on the main thread. A constantly scrolling terminal
   uses about 25 to 35% of one core. Tight/JPEG encoding, MIT-SHM capture and a worker

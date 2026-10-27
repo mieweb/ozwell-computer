@@ -84,10 +84,17 @@ describe.skipIf(!CHROME)('noVNC viewer', () => {
     const canvas = page.locator('#screen canvas');
     await canvas.focus();
 
-    // local → desktop
-    await page.evaluate(() => navigator.clipboard.writeText('from local ✓ ünï'));
+    // local → desktop, via the native paste event (no readText(), so no Firefox/Safari prompt)
+    await page.evaluate(() => {
+      const w = window as any;
+      w.readTextCalls = 0;
+      const orig = navigator.clipboard.readText.bind(navigator.clipboard);
+      navigator.clipboard.readText = () => { w.readTextCalls++; return orig(); };
+      return navigator.clipboard.writeText('from local ✓ ünï');
+    });
     await page.keyboard.press('Control+v');
     await sleep(1000);
+    expect(await page.evaluate(() => (window as any).readTextCalls)).toBe(0);
 
     // desktop → local: select the entry's text and copy it
     await page.evaluate(() => navigator.clipboard.writeText('stale'));

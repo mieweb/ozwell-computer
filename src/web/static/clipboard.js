@@ -94,15 +94,40 @@ export function initClipboard({ getRfb, events, toast }) {
     writeLocal(nextRemoteText(since), 'Copied to your clipboard');
   }
 
-  async function onPaste(e) {
+  // Paste: let the browser perform its native paste so we get the text from the
+  // 'paste' event, which needs no permission prompt (Firefox/Safari otherwise show a
+  // "Paste" confirmation for every navigator.clipboard.readText()). If no paste event
+  // arrives (e.g. focus is somewhere odd), fall back to readText().
+  let pendingPaste = null;
+  function onPaste(e) {
     swallowKeyup(e.code);
     if (e.metaKey) releaseSuper();
     const keys = combo('v', e);
-    let text = null;
-    try { text = await navigator.clipboard.readText(); } catch { /* denied or unsupported: paste remote clipboard as-is */ }
+    if (pendingPaste) clearTimeout(pendingPaste.timer);
+    pendingPaste = {
+      keys,
+      timer: setTimeout(async () => {
+        if (!pendingPaste || pendingPaste.keys !== keys) return;
+        pendingPaste = null;
+        let text = null;
+        try { text = await navigator.clipboard.readText(); } catch { /* denied/unsupported */ }
+        await finishPaste(text, keys);
+      }, 150),
+    };
+  }
+  document.addEventListener('paste', (e) => {
+    if (!pendingPaste) return;
+    e.preventDefault();
+    const { keys, timer } = pendingPaste;
+    clearTimeout(timer);
+    pendingPaste = null;
+    void finishPaste(e.clipboardData?.getData('text/plain') || null, keys);
+  }, true);
+  async function finishPaste(text, keys) {
     if (text) {
       try { await api('/api/v1/clipboard', { method: 'PUT', body: JSON.stringify({ text }) }); } catch { /* ignore */ }
     }
+    // With no local text, this still pastes whatever is already on the desktop clipboard.
     send(keys);
   }
 
@@ -116,8 +141,9 @@ export function initClipboard({ getRfb, events, toast }) {
     const mod = e.ctrlKey || e.metaKey;
     if (!mod || e.altKey) return;
     if (e.code === 'KeyV') {
-      e.preventDefault(); e.stopImmediatePropagation();
-      void onPaste(e);
+      // Hide the key from noVNC but don't preventDefault: the browser's paste must run.
+      e.stopImmediatePropagation();
+      onPaste(e);
     } else if (e.code === 'KeyC') {
       if (e.metaKey) { e.preventDefault(); e.stopImmediatePropagation(); }
       onCopy(e);
