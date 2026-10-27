@@ -1,4 +1,5 @@
 import RFB from '/novnc/core/rfb.js';
+import { initClipboard } from '/static/clipboard.js';
 
 const $ = (id) => document.getElementById(id);
 const status = $('status');
@@ -38,8 +39,20 @@ async function connect() {
     setStatus(e.detail.clean ? 'disconnected' : 'connection lost', 'err');
     setTimeout(connect, Math.min(10000, 500 * 2 ** retry++));
   });
-  rfb.addEventListener('clipboard', (e) => { $('clip-text').value = e.detail.text; });
+  rfb.addEventListener('clipboard', (e) => { if (!clip.supported) $('clip-text').value = e.detail.text; });
 }
+const es = new EventSource('/api/v1/events');
+
+let toastTimer;
+function toast(text) {
+  const el = $('toast');
+  el.textContent = text;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 1500);
+}
+const clip = initClipboard({ getRfb: () => rfb, events: es, toast });
+
 connect();
 
 if (serverViewOnly) { $('chk-viewonly').checked = true; $('chk-viewonly').disabled = true; }
@@ -52,7 +65,14 @@ $('btn-alttab').onclick = () => {
   rfb.sendKey(0xffe9, 'AltLeft', true); rfb.sendKey(0xff09, 'Tab'); rfb.sendKey(0xffe9, 'AltLeft', false);
 };
 $('btn-full').onclick = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
-$('btn-clip').onclick = () => { $('clip-panel').hidden = !$('clip-panel').hidden; if (!$('clip-panel').hidden) refreshClip(); };
+// With the Clipboard API, copy/paste shortcuts just work; the manual panel is only a
+// fallback for insecure origins (plain http on a non-localhost address).
+if (clip.supported) {
+  $('btn-clip').hidden = true;
+} else {
+  $('btn-clip').title = 'Clipboard sharing needs HTTPS (or localhost); edit the desktop clipboard here instead';
+  $('btn-clip').onclick = () => { $('clip-panel').hidden = !$('clip-panel').hidden; if (!$('clip-panel').hidden) refreshClip(); };
+}
 async function refreshClip() {
   try { const c = await api('/api/v1/clipboard'); if (c.text !== undefined) $('clip-text').value = c.text; } catch { /* ignore */ }
 }
@@ -105,7 +125,6 @@ function place(el) {
 }
 new ResizeObserver(() => cursors.forEach(place)).observe(overlay);
 
-const es = new EventSource('/api/v1/events');
 es.addEventListener('hello', (e) => {
   roster.clear();
   for (const p of JSON.parse(e.data).roster) { roster.set(p.participant_id, p); if (p.cursor) drawCursor({ ...p, ...p.cursor }); }

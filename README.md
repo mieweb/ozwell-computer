@@ -2,7 +2,7 @@
 
 One HTTP port that serves an X11 desktop to people and to agents:
 
-- `/`: a noVNC viewer for humans, with presence cursors, clipboard sync and special keys
+- `/`: a noVNC viewer for humans, with presence cursors, local clipboard sharing and special keys
 - `/api/v1/*`: JSON API for screenshots, input, windows, clipboard, accessibility, processes and files ([OpenAPI](docs/openapi.json), Swagger UI at `/api/docs`)
 - `/mcp`: an MCP server (Streamable HTTP) with the same capabilities as tools
 
@@ -138,8 +138,11 @@ npm run openapi    # regenerate docs/openapi.json
 
 - **GTK4 bounds:** GTK4 reports AT-SPI extents relative to the window, so `bounds`
   from `/a11y/*` may not be screen coordinates. Actions are unaffected.
-- **Clipboard over VNC:** RFB `ClientCutText`/`ServerCutText` carry Latin-1 only.
-  Use the toolbar's Clipboard panel or `/api/v1/clipboard` for full Unicode.
+- **Clipboard sharing:** in the viewer, Ctrl/Cmd+C and Ctrl/Cmd+V use your local
+  clipboard with full Unicode. This needs HTTPS or localhost; on plain HTTP the toolbar
+  shows a manual Clipboard panel instead. Chrome asks once for clipboard permission,
+  while Firefox and Safari confirm each paste. Copies made without a shortcut (menus,
+  select-to-copy) reach your clipboard on your next click in the viewer.
 - **CPU:** the VNC encoder runs on the main thread. A constantly scrolling terminal
   uses about 25 to 35% of one core. Tight/JPEG encoding, MIT-SHM capture and a worker
   pool are planned (Phase 6).

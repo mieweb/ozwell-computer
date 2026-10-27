@@ -22,3 +22,6 @@ body.login { align-items: center; justify-content: center; }
 .login-box h1 { margin: 0; font-size: 18px; }
 .login-box input, .login-box button { padding: 6px; font-size: 14px; }
 .error { color: #e66; }
+#toast { position: absolute; left: 50%; bottom: 24px; transform: translateX(-50%); padding: 6px 14px; border-radius: 6px;
+  background: rgba(30, 30, 30, 0.9); color: #fff; font-size: 13px; pointer-events: none; }
+#toast[hidden] { display: none; }

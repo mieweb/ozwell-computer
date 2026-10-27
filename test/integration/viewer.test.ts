@@ -18,7 +18,7 @@ describe.skipIf(!CHROME)('noVNC viewer', () => {
   afterAll(async () => { await browser?.close(); });
 
   async function openViewer(): Promise<Page> {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, permissions: ['clipboard-read', 'clipboard-write'] });
     const page = await ctx.newPage();
     page.on('pageerror', (e) => { throw e; });
     await page.goto(`${URL_}/?token=${TOKEN}`);
@@ -67,5 +67,40 @@ describe.skipIf(!CHROME)('noVNC viewer', () => {
     expect(roster.some((r) => r.includes('test-bot'))).toBe(true);
     await a.context().close();
     await b.context().close();
+  });
+
+  it('shares the local clipboard: Ctrl+V pastes local text, Ctrl+C copies desktop text locally', async () => {
+    const page = await openViewer();
+    expect(await page.locator('#btn-clip').isHidden()).toBe(true); // localhost is a secure context
+    const exec = async (cmd: string) => (await (await fetch(`${URL_}/api/v1/exec`, {
+      method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ cmd, timeout_ms: 5000 }),
+    })).json()).stdout as string;
+    await exec('rm -f /tmp/oz-clip-entry.txt');
+    await fetch(`${URL_}/api/v1/apps/launch`, {
+      method: 'POST', headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ command: 'sh', args: ['-c', 'zenity --entry --text=clip > /tmp/oz-clip-entry.txt'] }),
+    });
+    await sleep(2500); // zenity's entry has focus
+    const canvas = page.locator('#screen canvas');
+    await canvas.focus();
+
+    // local → desktop
+    await page.evaluate(() => navigator.clipboard.writeText('from local ✓ ünï'));
+    await page.keyboard.press('Control+v');
+    await sleep(1000);
+
+    // desktop → local: select the entry's text and copy it
+    await page.evaluate(() => navigator.clipboard.writeText('stale'));
+    await page.keyboard.press('Control+a');
+    await page.keyboard.press('Control+c');
+    let local = 'stale';
+    for (let i = 0; i < 25 && local === 'stale'; i++) { await sleep(200); local = await page.evaluate(() => navigator.clipboard.readText()); }
+    expect(local).toBe('from local ✓ ünï');
+    expect(await page.locator('#toast').textContent()).toContain('Copied');
+
+    await page.keyboard.press('Enter');
+    await sleep(800);
+    expect(await exec('cat /tmp/oz-clip-entry.txt')).toBe('from local ✓ ünï\n');
+    await page.context().close();
   });
 });

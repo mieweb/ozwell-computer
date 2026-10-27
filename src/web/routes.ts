@@ -47,7 +47,7 @@ export function viewerHtml(title: string, viewOnly: boolean) {
   <textarea id="clip-text" rows="4" placeholder="Remote clipboard (edit and press Send)"></textarea>
   <button id="clip-send">Send</button><button id="clip-refresh">Refresh</button>
 </div>
-<div id="screen-wrap"><div id="screen"></div><div id="overlay"></div></div>
+<div id="screen-wrap"><div id="screen"></div><div id="overlay"></div><div id="toast" hidden></div></div>
 <script type="module" src="/static/viewer.js"></script>
 </body></html>`;
 }
