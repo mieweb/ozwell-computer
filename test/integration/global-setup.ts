@@ -6,8 +6,6 @@
  * other server instead.
  */
 import type { TestProject } from 'vitest/node';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 // @ts-expect-error plain ESM helper without type declarations
 import { compose, isRunning, restartServer, SERVICE, up, waitReady } from '../../scripts/compose.mjs';
 
@@ -85,12 +83,7 @@ async function checkCoverage(url: string, token: string, since: string) {
     }
   }
 
-  const client = new Client({ name: 'coverage-check', version: '1' });
-  const transport = new StreamableHTTPClientTransport(new URL(`${url}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } });
-  await client.connect(transport);
-  const allTools = (await client.listTools()).tools.map((t) => t.name);
-  await transport.terminateSession().catch(() => undefined);
-  await client.close();
+  const allTools = await listMcpTools(url, token);
   const missingTools = allTools.filter((t) => !tools.has(t));
 
   if (missingRoutes.length || missingTools.length) {
@@ -101,4 +94,30 @@ async function checkCoverage(url: string, token: string, since: string) {
     );
   }
   log(`coverage: all ${Object.keys(spec.paths).length} documented paths and ${allTools.length} MCP tools exercised`);
+}
+
+/**
+ * tools/list over plain HTTP. (The SDK client opens a background SSE stream whose abort
+ * on close surfaces as an unhandled error in this teardown, so it's avoided here.)
+ */
+async function listMcpTools(url: string, token: string): Promise<string[]> {
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream',
+  };
+  const rpc = async (body: object) => {
+    const r = await fetch(`${url}/mcp`, { method: 'POST', headers, body: JSON.stringify(body) });
+    const text = await r.text();
+    // The reply is either JSON or a single SSE event carrying JSON.
+    const json = text.trimStart().startsWith('{') ? text : text.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5)).join('');
+    return { res: r, msg: json ? JSON.parse(json) : null };
+  };
+  const init = await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'coverage-check', version: '1' } } });
+  const sid = init.res.headers.get('mcp-session-id');
+  if (!sid) throw new Error('coverage check: MCP initialize returned no session id');
+  headers['mcp-session-id'] = sid;
+  headers['mcp-protocol-version'] = init.msg?.result?.protocolVersion ?? '2025-06-18';
+  await rpc({ jsonrpc: '2.0', method: 'notifications/initialized' });
+  const list = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+  await fetch(`${url}/mcp`, { method: 'DELETE', headers }).catch(() => undefined);
+  return (list.msg?.result?.tools ?? []).map((t: { name: string }) => t.name);
 }
