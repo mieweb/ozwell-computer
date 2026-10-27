@@ -99,8 +99,24 @@ export function initClipboard({ getRfb, events, toast }) {
   // "Paste" confirmation for every navigator.clipboard.readText()). If no paste event
   // arrives (e.g. focus is somewhere odd), fall back to readText().
   let pendingPaste = null;
+  // Firefox only runs Ctrl+Shift+V ("paste without formatting") in editable elements,
+  // so the canvas never gets a paste event for it. Briefly focusing this hidden
+  // textarea during keydown sends the browser's paste (either form) here instead.
+  const sink = document.createElement('textarea');
+  sink.setAttribute('aria-hidden', 'true');
+  sink.tabIndex = -1;
+  sink.style.cssText = 'position:fixed;left:-9999px;top:0;width:1px;height:1px;opacity:0;';
+  document.body.appendChild(sink);
+  let returnFocus = null;
+  function restoreFocus() {
+    sink.value = '';
+    if (returnFocus && document.activeElement === sink) returnFocus.focus({ preventScroll: true });
+    returnFocus = null;
+  }
   function onPaste(e) {
     swallowKeyup(e.code);
+    returnFocus = document.activeElement;
+    sink.focus({ preventScroll: true });
     if (e.metaKey) releaseSuper();
     const keys = combo('v', e);
     if (pendingPaste) clearTimeout(pendingPaste.timer);
@@ -109,6 +125,7 @@ export function initClipboard({ getRfb, events, toast }) {
       timer: setTimeout(async () => {
         if (!pendingPaste || pendingPaste.keys !== keys) return;
         pendingPaste = null;
+        restoreFocus();
         let text = null;
         try { text = await navigator.clipboard.readText(); } catch { /* denied/unsupported */ }
         await finishPaste(text, keys);
@@ -121,6 +138,7 @@ export function initClipboard({ getRfb, events, toast }) {
     const { keys, timer } = pendingPaste;
     clearTimeout(timer);
     pendingPaste = null;
+    restoreFocus();
     void finishPaste(e.clipboardData?.getData('text/plain') || null, keys);
   }, true);
   async function finishPaste(text, keys) {
@@ -151,6 +169,7 @@ export function initClipboard({ getRfb, events, toast }) {
       maybeSyncPending();
     }
   }, true);
+  sink.addEventListener('keyup', (e) => { swallowed.delete(e.code); restoreFocus(); });
   target.addEventListener('keyup', (e) => {
     if (swallowed.delete(e.code)) { e.preventDefault(); e.stopImmediatePropagation(); }
   }, true);

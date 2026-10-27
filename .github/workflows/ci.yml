@@ -55,6 +55,8 @@ jobs:
             -e OZWELL_DESKTOP_TOKEN=testtoken ozwell-desktop:ci
           for i in $(seq 60); do curl -fs -o /dev/null localhost:18080/health && exit 0; sleep 1; done
           docker logs ozd; docker exec ozd journalctl --no-pager -n 200; exit 1
+      - name: Install Playwright Firefox
+        run: npx playwright-core install --with-deps firefox
       - name: Integration tests (API, VNC, MCP, a11y, browser viewer)
         env:
           OZ_URL: http://localhost:18080
