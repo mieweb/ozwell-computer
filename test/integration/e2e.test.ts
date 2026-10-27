@@ -1,15 +1,16 @@
 /**
- * End-to-end tests against a running ozwell-desktop (normally the container).
- *   OZ_URL=http://localhost:18080 OZ_TOKEN=testtoken npm run test:integration
+ * End-to-end tests against a throwaway ozwell-desktop container (see global-setup.ts).
+ *   npm test                       unit + integration
+ *   OZ_URL=... OZ_TOKEN=... npm run test:integration   against an existing server
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest';
 import { inflateSync } from 'node:zlib';
 import WebSocket from 'ws';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
-const URL_ = process.env.OZ_URL ?? 'http://localhost:18080';
-const TOKEN = process.env.OZ_TOKEN ?? 'testtoken';
+const URL_ = inject('ozUrl');
+const TOKEN = inject('ozToken');
 const auth = { authorization: `Bearer ${TOKEN}` };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

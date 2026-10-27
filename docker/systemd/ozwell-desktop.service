@@ -2,6 +2,8 @@
 Description=ozwell-desktop (noVNC + HTTP API + MCP)
 After=desktop-session.service desktop-dbus.service environment.service network.target
 Wants=desktop-session.service
+# keep retrying (e.g. while waiting for a dev build of dist/)
+StartLimitIntervalSec=0
 
 [Service]
 User=desktop
@@ -14,6 +16,8 @@ EnvironmentFile=-/etc/environment
 RuntimeDirectory=ozwell-desktop
 RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=yes
+# In development compose mounts the host's ./dist here; until it's built, wait (and say why)
+ExecStartPre=/bin/sh -c 'test -f /opt/ozwell-desktop/dist/cli.js || { echo "/opt/ozwell-desktop/dist/cli.js is missing; run npm run build on the host" >&2; sleep 4; exit 1; }'
 ExecStart=/usr/bin/node /opt/ozwell-desktop/dist/cli.js
 Restart=always
 RestartSec=1

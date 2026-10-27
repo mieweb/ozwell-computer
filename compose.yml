@@ -1,3 +1,6 @@
+# Dev container and local deployment. Same image and systemd layout as production;
+# the only difference is that your local ./dist (run `npm run build` first) is
+# mounted over /opt/ozwell-desktop/dist, so `npm run watch` changes are live.
 services:
   ozwell-desktop:
     build:
@@ -11,12 +14,25 @@ services:
       # (docker compose exec ozwell-desktop cat /run/ozwell-desktop/token)
       OZWELL_DESKTOP_TOKEN: ${OZWELL_DESKTOP_TOKEN:-}
       OZWELL_DESKTOP_SCREEN: ${OZWELL_DESKTOP_SCREEN:-1920x1080x24}
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      - type: bind
+        source: ./dist
+        target: /opt/ozwell-desktop/dist
+        read_only: true
+        bind:
+          # Fail clearly instead of creating an empty root-owned ./dist
+          create_host_path: false
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health').then(r => process.exit(r.status === 204 ? 0 : 1), () => process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      start_period: 60s
+      retries: 3
     # systemd as PID 1
     tmpfs:
       - /run
       - /run/lock
-    volumes:
-      - /sys/fs/cgroup:/sys/fs/cgroup:rw
     cgroup: host
     stop_signal: SIGRTMIN+3
     shm_size: 1gb

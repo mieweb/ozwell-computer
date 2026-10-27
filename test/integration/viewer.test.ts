@@ -1,18 +1,17 @@
 /**
- * Browser test of the "/" viewer with stock noVNC. Needs a Chromium:
- *   CHROME_PATH=/usr/bin/google-chrome OZ_URL=... npm run test:integration
+ * Browser tests of the "/" viewer with stock noVNC, in Playwright's Chromium
+ * (installed by `npm test`). Set CHROME_PATH to use another Chrome build.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { existsSync } from 'node:fs';
+import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest';
 import { chromium, type Browser, type Page } from 'playwright-core';
 
-const URL_ = process.env.OZ_URL ?? 'http://localhost:18080';
-const TOKEN = process.env.OZ_TOKEN ?? 'testtoken';
-const CHROME = process.env.CHROME_PATH ?? ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser'].find(existsSync);
+const URL_ = inject('ozUrl');
+const TOKEN = inject('ozToken');
+const CHROME = process.env.CHROME_PATH || undefined;
 const auth = { authorization: `Bearer ${TOKEN}` };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-describe.skipIf(!CHROME)('noVNC viewer', () => {
+describe('noVNC viewer', () => {
   let browser: Browser;
   beforeAll(async () => { browser = await chromium.launch({ executablePath: CHROME, args: ['--no-sandbox'] }); });
   afterAll(async () => { await browser?.close(); });

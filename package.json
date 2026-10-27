@@ -18,10 +18,14 @@
     "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
     "dev": "tsx src/cli.ts",
     "start": "node dist/cli.js",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
     "test": "vitest run",
-    "test:integration": "vitest run --config vitest.integration.config.ts",
-    "openapi": "node dist/cli.js --print-openapi > docs/openapi.json"
+    "test:integration": "vitest run --project integration",
+    "openapi": "node dist/cli.js --print-openapi > docs/openapi.json",
+    "pretest": "npm run build && playwright-core install chromium firefox",
+    "test:unit": "vitest run --project unit",
+    "pretest:integration": "npm run build && playwright-core install chromium firefox",
+    "watch": "node scripts/watch.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

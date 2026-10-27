@@ -1,24 +1,22 @@
 /**
- * Firefox-specific viewer checks (install with: npx playwright-core install firefox).
+ * Firefox-specific viewer checks (Playwright's Firefox is installed by `npm test`).
  * Firefox prompts for every navigator.clipboard.readText(), so paste must arrive via
  * the native paste event, including Ctrl+Shift+V into terminals.
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { existsSync } from 'node:fs';
+import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest';
 import { firefox, type Browser } from 'playwright-core';
 
-const URL_ = process.env.OZ_URL ?? 'http://localhost:18080';
-const TOKEN = process.env.OZ_TOKEN ?? 'testtoken';
+const URL_ = inject('ozUrl');
+const TOKEN = inject('ozToken');
 const auth = { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-const hasFirefox = (() => { try { return existsSync(firefox.executablePath()); } catch { return false; } })();
 
 async function exec(cmd: string): Promise<string> {
   const r = await fetch(`${URL_}/api/v1/exec`, { method: 'POST', headers: auth, body: JSON.stringify({ cmd, timeout_ms: 5000 }) });
   return (await r.json()).stdout;
 }
 
-describe.skipIf(!hasFirefox)('noVNC viewer in Firefox', () => {
+describe('noVNC viewer in Firefox', () => {
   let browser: Browser;
   beforeAll(async () => { browser = await firefox.launch(); });
   afterAll(async () => { await browser?.close(); });

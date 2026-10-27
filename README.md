@@ -122,17 +122,35 @@ exec is enabled, `run_command`, `read_file` and `write_file` are also available.
 
 ## Development
 
+`compose.yml` is the dev container. It uses the production image and systemd layout,
+with your local `./dist` mounted over `/opt/ozwell-desktop/dist`.
+
 ```bash
-nvm use            # Node 26 (.nvmrc); the image runs the base image's Node 24
+nvm use                 # Node 26 (.nvmrc); the container runs the base image's Node 24
 npm ci
-npm test           # unit tests: auth, keymap, coords, ZRLE round-trips, fs signing, exec
-npm run build
-docker build -f docker/Dockerfile -t ozwell-desktop:dev .
-docker run -d --name ozd -p 18080:8080 --tmpfs /run --tmpfs /run/lock \
-  -v /sys/fs/cgroup:/sys/fs/cgroup:rw --cgroupns=host -e OZWELL_DESKTOP_TOKEN=testtoken ozwell-desktop:dev
-OZ_URL=http://localhost:18080 OZ_TOKEN=testtoken npm run test:integration   # API, VNC, MCP, a11y, Chrome viewer
-npm run openapi    # regenerate docs/openapi.json
+npm run build           # ./dist must exist before the first `docker compose up`
+docker compose up -d    # http://localhost:8080/?token=$(docker compose exec ozwell-desktop printenv OZWELL_DESKTOP_TOKEN)
+npm run watch           # rebuild on save; restarts the server in the container (about 1 s);
+                        # viewer JS/CSS changes need only a page reload
+npm test                # full regression: unit + integration (API, VNC, MCP, a11y,
+                        # Chromium and Firefox viewer tests) against the compose service
 ```
+
+- `npm test` builds `./dist` and installs Playwright's Chromium and Firefox if
+  missing. It then starts the compose service if it isn't running, or restarts the
+  server inside it if it is, and leaves the service running.
+- `npm run test:unit` runs only the fast unit tests.
+- `OZ_URL=… OZ_TOKEN=… npm test` runs the suite against any other server.
+- Run `docker compose up -d --build` after changing the image itself: `docker/`
+  (Dockerfile, systemd units, XFCE config) or dependencies.
+- Don't delete the `dist` directory itself (`rm -rf dist`) while the container is
+  running. The bind mount stays attached to the old directory; run
+  `docker compose up -d --force-recreate` if you do. Rebuilding into `dist`, or
+  emptying it, is fine: until `dist/cli.js` exists the service logs a hint and keeps
+  retrying.
+- If port 8080 is taken, set `OZWELL_DESKTOP_HOST_PORT` in a `.env` file. The tests
+  discover the port and token from compose.
+- `npm run openapi` regenerates `docs/openapi.json`.
 
 ## Known limitations
 
