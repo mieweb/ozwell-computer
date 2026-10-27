@@ -11,6 +11,7 @@ import type { Principal } from '../presence/index.js';
 import { runCommand } from '../process/exec.js';
 import { safePath } from '../fs/index.js';
 import { launchDetached } from '../routes/windows.js';
+import { m } from '../metrics.js';
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 interface ToolResult { content: Content[]; isError?: boolean; [k: string]: unknown }
@@ -54,7 +55,9 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
     register(name, config, async (...a: any[]) => {
       const p = principal();
       ctx.log.info({ tool: name, agent: p.name, session: p.id }, 'mcp tool call');
-      return cb(...a);
+      const r = await cb(...a);
+      m.mcpToolCalls.inc({ tool: name, outcome: r.isError ? 'error' : 'ok' });
+      return r;
     });
 
   mcp.registerTool('screenshot', {
@@ -189,6 +192,7 @@ export default async function mcpRoutes(app: FastifyInstance, ctx: AppContext) {
     const e = sessions.get(id);
     if (!e) return;
     sessions.delete(id);
+    m.mcpSessions.dec();
     ctx.desktop.presence.leaveByKey(`mcp:${id}`);
     void e.transport.close().catch(() => undefined);
   };
@@ -215,6 +219,7 @@ export default async function mcpRoutes(app: FastifyInstance, ctx: AppContext) {
         onsessioninitialized: (id: string) => {
           principal.id = `mcp:${id}`;
           sessions.set(id, { transport, principal, lastUsed: Date.now() });
+          m.mcpSessions.inc();
         },
       } as any);
       const mcp = buildMcp(ctx, () => principal);

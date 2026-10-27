@@ -3,6 +3,7 @@ import type { Desktop } from '../desktop.js';
 import type { XSession } from '../x11/connection.js';
 import { captureRect, getCursorImage, type Rect } from '../x11/capture.js';
 import { addRect, DamageTracker } from '../x11/damage.js';
+import { m } from '../metrics.js';
 import { ENC, NATIVE_PF, PixelConverter, ZlibStream, decodePixelFormat, encodePixelFormat, pixelsOf, rectHeader, validPixelFormat, zrleTiles } from './encodings.js';
 
 export interface RfbTransport {
@@ -68,6 +69,7 @@ export class RfbSession {
 
   private startNormal() {
     this.state = 'normal';
+    m.vncSessions.inc();
     const onDamage = (rects: Rect[]) => {
       for (const r of rects) this.dirty = addRect(this.dirty, r);
       this.pump();
@@ -120,6 +122,7 @@ export class RfbSession {
 
   close(reason = 'closed') {
     if (this.state === 'closed') return;
+    if (this.state === 'normal') m.vncSessions.dec();
     this.state = 'closed';
     for (const u of this.unsub) { try { u(); } catch { /* ignore */ } }
     this.unsub = [];
@@ -335,6 +338,11 @@ export class RfbSession {
   }
 
   private async sendUpdate(): Promise<boolean> {
+    const end = m.vncEncodeSeconds.startTimer();
+    try { return await this.buildAndSend(); } finally { end(); }
+  }
+
+  private async buildAndSend(): Promise<boolean> {
     const parts: Buffer[] = [];
     let n = 0;
     if (this.sizeDirty) {
@@ -378,7 +386,12 @@ export class RfbSession {
     const head = Buffer.alloc(4);
     head[0] = 0;
     head.writeUInt16BE(n, 2);
-    if (this.state === 'normal') this.t.send(Buffer.concat([head, ...parts]));
+    if (this.state === 'normal') {
+      const msg = Buffer.concat([head, ...parts]);
+      this.t.send(msg);
+      m.vncBytes.inc(msg.length);
+      m.vncUpdates.inc();
+    }
     return true;
   }
 

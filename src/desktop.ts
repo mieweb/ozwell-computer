@@ -10,6 +10,7 @@ import { ScreenshotRegistry, resolvePoint, fitSize, type Space, type ScreenshotE
 import { encodeFrame, CONTENT_TYPES, type ImageFormat } from './image.js';
 import { ApiError, unsupported } from './errors.js';
 import { EventBus, Presence, type Principal } from './presence/index.js';
+import { m } from './metrics.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -69,8 +70,9 @@ export class Desktop {
   constructor(displayName: string, readonly log: Logger) {
     this.x = new XManager(displayName, log);
     this.presence = new Presence(this.bus);
-    this.x.on('session', (s: XSession) => this.attach(s));
+    this.x.on('session', (s: XSession) => { m.xConnected.set(1); this.attach(s); });
     this.x.on('down', () => {
+      m.xConnected.set(0);
       this.ctlCache?.windows.dispose();
       this.ctlCache?.clipboard.dispose();
       this.ctlCache = null;
@@ -119,6 +121,11 @@ export class Desktop {
   }
 
   async screenshot(o: ScreenshotOptions = {}): Promise<ScreenshotResult> {
+    const end = m.screenshotSeconds.startTimer({ format: o.format ?? 'png' });
+    try { return await this.takeScreenshot(o); } finally { end(); }
+  }
+
+  private async takeScreenshot(o: ScreenshotOptions): Promise<ScreenshotResult> {
     const { s, windows } = this.ctl();
     const format = o.format ?? 'png';
     let region: Rect = o.region ?? { x: 0, y: 0, w: s.width, h: s.height };
