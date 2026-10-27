@@ -1,0 +1,23 @@
+[Unit]
+Description=ozwell-desktop (noVNC + HTTP API + MCP)
+After=desktop-session.service desktop-dbus.service environment.service network.target
+Wants=desktop-session.service
+
+[Service]
+User=desktop
+WorkingDirectory=/home/desktop
+Environment=DISPLAY=:0 HOME=/home/desktop OZWELL_DESKTOP_HOST=0.0.0.0 OZWELL_DESKTOP_TOKEN_FILE=/run/ozwell-desktop/token
+# Apps launched through the API join the desktop's session bus and expose AT-SPI
+Environment=GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/desktop-bus/bus GTK_MODULES=gail:atk-bridge NO_AT_BRIDGE=0 QT_ACCESSIBILITY=1 QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+# environment.service (from the base image) copies `docker run -e` values into /etc/environment
+EnvironmentFile=-/etc/environment
+RuntimeDirectory=ozwell-desktop
+RuntimeDirectoryMode=0750
+RuntimeDirectoryPreserve=yes
+ExecStart=/usr/bin/node /opt/ozwell-desktop/dist/cli.js
+Restart=always
+RestartSec=1
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

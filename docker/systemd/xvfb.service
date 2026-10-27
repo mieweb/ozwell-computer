@@ -1,0 +1,15 @@
+[Unit]
+Description=Xvfb virtual X server on :0
+After=environment.service
+
+[Service]
+User=desktop
+Environment=OZWELL_DESKTOP_SCREEN=1920x1080x24
+# EnvironmentFile wins over Environment=, so `docker run -e OZWELL_DESKTOP_SCREEN=...` overrides the default
+EnvironmentFile=-/etc/environment
+ExecStart=/bin/sh -c 'exec /usr/bin/Xvfb :0 -screen 0 "$OZWELL_DESKTOP_SCREEN" -nolisten tcp +extension RANDR +extension DAMAGE -dpi 96'
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

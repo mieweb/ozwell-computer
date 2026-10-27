@@ -1,0 +1,14 @@
+[Unit]
+Description=Session D-Bus for the desktop user (fixed address shared by the session and ozwell-desktop)
+After=environment.service
+
+[Service]
+User=desktop
+RuntimeDirectory=desktop-bus
+RuntimeDirectoryMode=0700
+ExecStart=/usr/bin/dbus-daemon --session --nofork --nopidfile --address=unix:path=/run/desktop-bus/bus
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

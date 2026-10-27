@@ -1,0 +1,64 @@
+{
+  "name": "@mieweb/ozwell-desktop",
+  "version": "0.1.0",
+  "description": "Serve an X11 desktop to humans (noVNC) and agents (HTTP API + MCP) on one port",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "ozwell-desktop": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "openapi": "node dist/cli.js --print-openapi > docs/openapi.json"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "@types/pngjs": "^6.0.5",
+    "@types/ws": "^8.18.2",
+    "playwright-core": "^1.64.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  },
+  "dependencies": {
+    "@fastify/static": "^10.1.7",
+    "@fastify/swagger": "^9.9.2",
+    "@fastify/swagger-ui": "^6.1.2",
+    "@fastify/websocket": "^11.3.4",
+    "@modelcontextprotocol/sdk": "^1.32.2",
+    "@novnc/novnc": "^1.7.0",
+    "dbus-next": "^0.10.2",
+    "fastify": "^5.12.7",
+    "pino": "^10.4.0",
+    "pngjs": "^7.0.0",
+    "sharp": "^0.35.5",
+    "ulid": "^3.0.2",
+    "ws": "^8.22.0",
+    "x11": "^4.3.3",
+    "zod": "^4.6.7"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0"
+  },
+  "allowScripts": {
+    "esbuild": true,
+    "node-pty": true,
+    "usocket": true
+  },
+  "overrides": {
+    "node-gyp": "^12.0.0",
+    "xml2js": "^0.6.2"
+  }
+}
