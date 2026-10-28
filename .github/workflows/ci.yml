@@ -68,7 +68,7 @@ jobs:
       contents: write  # release assets
       packages: write
     steps:
-      # The image is large and gets built, run, exported (scan) and rebuilt for publishing;
+      # The image is large and gets built, run, exported (scan) and pushed;
       # drop SDKs this job doesn't use from the runner to make room.
       - name: Free disk space
         if: runner.environment == 'github-hosted'
@@ -154,18 +154,12 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # amd64 only: the base image (ghcr.io/mieweb/opensource-server/nodejs) has no
-      # arm64 variant. The package build is arch-native, so adding arm64 later is just
-      # this platform list (plus docker/setup-qemu-action).
-      - name: Publish image
+      # Push the exact image the suite tested (no rebuild). amd64 only: the base image
+      # (ghcr.io/mieweb/opensource-server/nodejs) has no arm64 variant.
+      - name: Publish the tested image
         if: github.event_name != 'pull_request'
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: Dockerfile
-          platforms: linux/amd64
-          push: true
-          tags: |
-            ghcr.io/mieweb/ozwell-computer:latest
-            ${{ github.event_name == 'release' && format('ghcr.io/mieweb/ozwell-computer:{0}', github.event.release.tag_name) || '' }}
-          cache-from: type=gha
+        run: |
+          for tag in latest ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}; do
+            docker tag ozwell-computer:dev "ghcr.io/mieweb/ozwell-computer:$tag"
+            docker push "ghcr.io/mieweb/ozwell-computer:$tag"
+          done
