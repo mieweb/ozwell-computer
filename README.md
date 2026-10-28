@@ -72,7 +72,16 @@ are in `contrib/`.
   3 commits later `1.2.3+3.g<hash>`, `v1.3.0-rc1` gives `1.3.0~rc1`, and no tag gives
   `0.0.0`.
 - **Releases:** publishing a GitHub release builds the `.deb`, attaches it to the
-  release, and pushes the image with that version.
+  release with flat APT repository metadata (`Packages`, `Packages.gz`), and pushes the
+  image with that version. The latest release is therefore an apt source; the image
+  ships it as `/etc/apt/sources.list.d/ozwell-desktop.sources`:
+
+  ```
+  deb [trusted=yes] https://github.com/mieweb/ozwell-desktop/releases/latest/download/ ./
+  ```
+
+  Until the first release is published, `apt-get update` reports a 404 for this
+  source.
 
 ## Run without Docker
 

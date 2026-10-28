@@ -1,0 +1,6 @@
+# ozwell-desktop releases as a flat APT repository (Packages + .deb attached to each
+# GitHub release), so `apt upgrade` picks up new releases.
+Types: deb
+URIs: https://github.com/mieweb/ozwell-desktop/releases/latest/download/
+Suites: ./
+Trusted: yes

@@ -80,13 +80,26 @@ jobs:
           target: deb
           outputs: type=local,dest=pkg
           cache-from: type=gha
+      # The release doubles as a flat APT repository (same scheme as
+      # mieweb/opensource-server); the image ships docker/ozwell-desktop.sources:
+      #   deb [trusted=yes] https://github.com/mieweb/ozwell-desktop/releases/latest/download/ ./
+      - name: Generate flat APT repository metadata
+        run: |
+          command -v dpkg-scanpackages >/dev/null || { sudo apt-get update && sudo apt-get install -y dpkg-dev; }
+          cd pkg
+          dpkg-scanpackages --multiversion . > Packages
+          gzip -k9f Packages
+          ls -l
       - uses: actions/upload-artifact@v4
         with:
-          name: deb
-          path: pkg/*.deb
-      - name: Attach the .deb to the release
+          name: apt-repo
+          path: |
+            pkg/*.deb
+            pkg/Packages
+            pkg/Packages.gz
+      - name: Attach the package and repository metadata to the release
         if: github.event_name == 'release'
-        run: gh release upload "${{ github.event.release.tag_name }}" pkg/*.deb --clobber
+        run: gh release upload "${{ github.event.release.tag_name }}" pkg/*.deb pkg/Packages pkg/Packages.gz --clobber
         env:
           GH_TOKEN: ${{ github.token }}
       - name: Log in to GHCR

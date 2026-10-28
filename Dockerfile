@@ -26,6 +26,9 @@ RUN --mount=type=bind,from=build,source=/usr/src/ozwell-desktop,target=/mnt/pkg 
        # sample apps for agents to drive (zenity doubles as the AT-SPI test app):
        xterm zenity firefox-esr \
     && rm -rf /var/lib/apt/lists/* /tmp/ozwell-desktop_*.deb
+# Track future releases from the GitHub release flat repo (added after the install
+# above, so building the image doesn't depend on a published release).
+COPY docker/ozwell-desktop.sources /etc/apt/sources.list.d/ozwell-desktop.sources
 
 # ---- container-only adjustments (not part of the package)
 # systemd logs to the journal only, so with a TTY the container console carries just
