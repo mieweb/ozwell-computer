@@ -57,7 +57,11 @@ jobs:
       - run: npm test
 
   image:
-    runs-on: ubuntu-latest
+    env:
+      OZWELL_COMPUTER_HOST_PORT: '18080'
+    # Self-hosted (more reliable for the desktop/VNC/browser suite). Only trusted events
+    # reach this job; see the README before allowing PRs from forks to run workflows.
+    runs-on: [self-hosted, Linux, X64]
     needs: test
     if: contains(fromJSON('["release", "schedule", "workflow_dispatch"]'), github.event_name)
     permissions:
@@ -67,6 +71,7 @@ jobs:
       # The image is large and gets built, run, exported (scan) and rebuilt for publishing;
       # drop SDKs this job doesn't use from the runner to make room.
       - name: Free disk space
+        if: runner.environment == 'github-hosted'
         run: |
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
           df -h /
@@ -90,11 +95,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Start the compose dev container
-        run: docker compose up -d --wait --wait-timeout 120
+        run: |
+          docker compose down -v --remove-orphans || true   # leftovers from an earlier run
+          docker compose up -d --wait --wait-timeout 180
         env:
           OZWELL_COMPUTER_TOKEN: testtoken
       - name: Install Playwright browsers
-        run: npx playwright-core install --with-deps chromium firefox
+        run: npx playwright-core install ${{ runner.environment == 'github-hosted' && '--with-deps' || '' }} chromium firefox
       - name: Full regression suite (unit + integration, Chromium + Firefox)
         run: npm test
       - name: Logs on failure
@@ -159,5 +166,6 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/mieweb/ozwell-computer:${{ github.event_name == 'release' && github.event.release.tag_name || 'latest' }}
+            ghcr.io/mieweb/ozwell-computer:latest
+            ${{ github.event_name == 'release' && format('ghcr.io/mieweb/ozwell-computer:{0}', github.event.release.tag_name) || '' }}
           cache-from: type=gha
