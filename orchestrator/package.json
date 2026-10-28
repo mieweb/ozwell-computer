@@ -9,7 +9,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "start": "node src/cli.ts",
+    "start": "node --env-file-if-exists=.env src/cli.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
   },

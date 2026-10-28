@@ -28,8 +28,12 @@ provider, and proxies every ozwell-computer tool with an extra `instance_id` arg
 
 ```bash
 npm ci
-PROVIDER_URI=docker:///var/run/docker.sock ORCHESTRATOR_TOKEN=<psk> npm start
+cp .env.example .env   # then edit
+npm start
 ```
+
+`npm start` reads `orchestrator/.env` if it exists (git-ignored). Variables already set in
+the environment take precedence.
 
 | Variable | Default | |
 |---|---|---|
