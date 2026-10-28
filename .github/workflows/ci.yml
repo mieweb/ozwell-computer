@@ -35,6 +35,12 @@ jobs:
       contents: write  # release assets
       packages: write
     steps:
+      # The image is large and gets built, run, exported (scan) and rebuilt multi-arch;
+      # drop SDKs this job doesn't use from the runner to make room.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
+          df -h /
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # tags, for ./package-version
@@ -65,6 +71,9 @@ jobs:
       - name: Logs on failure
         if: failure()
         run: docker compose exec -T ozwell-computer journalctl --no-pager -n 300
+      - name: Stop the test container
+        if: always()
+        run: docker compose down -v
       - name: Scan image
         uses: aquasecurity/trivy-action@v0.36.0
         with:
