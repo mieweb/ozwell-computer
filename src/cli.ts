@@ -118,6 +118,23 @@ function openInBrowser(url: string, log: pino.Logger) {
   }
 }
 
+/** tools/list over plain JSON-RPC against an MCP endpoint (auth disabled). */
+async function listOwnMcpTools(url: string) {
+  const headers: Record<string, string> = { 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+  const rpc = async (body: object) => {
+    const r = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body) });
+    const text = await r.text();
+    const json = text.trimStart().startsWith('{') ? text : text.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5)).join('');
+    return { res: r, msg: json ? JSON.parse(json) : null };
+  };
+  const init = await rpc({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'catalog', version: '1' } } });
+  headers['mcp-session-id'] = init.res.headers.get('mcp-session-id') ?? '';
+  await rpc({ jsonrpc: '2.0', method: 'notifications/initialized' });
+  const list = await rpc({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
+  await fetch(url, { method: 'DELETE', headers }).catch(() => undefined);
+  return (list.msg?.result?.tools ?? []).map((t: any) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema }));
+}
+
 async function main() {
   let loaded;
   try {
@@ -130,25 +147,34 @@ async function main() {
   if (args.help) { process.stdout.write(HELP); return; }
   if (args.version) { process.stdout.write(VERSION + '\n'); return; }
 
-  const log = createLogger(args.printOpenapi ? 'silent' : config.logLevel);
+  const offline = args.printOpenapi || args.printMcpTools;
+  const log = createLogger(offline ? 'silent' : config.logLevel);
   let token: string | null = null;
   let tokenSource: 'config' | 'file' | 'generated' | null = null;
-  if (!config.authDisabled && !args.printOpenapi) {
+  if (!config.authDisabled && !offline) {
     const t = await resolveToken(config.token, config.tokenFile);
     token = t.token;
     tokenSource = t.source;
   }
 
-  const xvfb = args.printOpenapi ? null : await maybeSpawnXvfb(config, log);
+  const xvfb = offline ? null : await maybeSpawnXvfb(config, log);
   const desktop = new Desktop(config.display, log);
   const a11y = config.a11y === 'off' ? null : new A11y(config.a11y, log, desktop);
-  const updater = args.printOpenapi ? null
+  const updater = offline ? null
     : new Updater(config.updateUrl === 'off' ? null : config.updateUrl, log, (s) => desktop.bus.publish('update.status', s));
   const app = await buildServer({ config, desktop, token, version: VERSION, a11y, ptyAvailable: await ptyAvailable(), updater, log });
 
   if (args.printOpenapi) {
     await app.ready();
     process.stdout.write(JSON.stringify(app.swagger(), null, 2) + '\n');
+    await app.close();
+    return;
+  }
+  if (args.printMcpTools) {
+    // The catalog the orchestrator proxies (orchestrator/ reads docs/mcp-tools.json).
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const port = (app.server.address() as { port: number }).port;
+    process.stdout.write(JSON.stringify({ tools: await listOwnMcpTools(`http://127.0.0.1:${port}/mcp`) }, null, 2) + '\n');
     await app.close();
     return;
   }

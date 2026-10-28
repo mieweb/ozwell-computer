@@ -37,8 +37,24 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:unit
       - run: npm run build
-      - name: OpenAPI document is up to date
-        run: npm run openapi && git diff --exit-code docs/openapi.json
+      - name: OpenAPI document and MCP tool catalog are up to date
+        run: npm run openapi && npm run mcp-tools && git diff --exit-code docs/openapi.json docs/mcp-tools.json
+
+  orchestrator:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: orchestrator
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: orchestrator/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
 
   image:
     runs-on: ubuntu-latest

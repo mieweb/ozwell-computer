@@ -26,7 +26,8 @@
     "test:unit": "vitest run --project unit",
     "pretest:integration": "npm run build && playwright-core install chromium firefox",
     "watch": "node scripts/watch.mjs",
-    "prestart": "npm run build"
+    "prestart": "npm run build",
+    "mcp-tools": "node dist/cli.js --print-mcp-tools > docs/mcp-tools.json"
   },
   "devDependencies": {
     "@types/node": "^26.6.5",

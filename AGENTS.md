@@ -6,6 +6,9 @@ Don't run the full suite (`npm test`) after every change. It takes minutes and
 restarts the server in the compose container.
 
 - **Every change:** `npm run typecheck` and `npm run test:unit`.
+- **Orchestrator changes** (`orchestrator/`): `npm run typecheck` and `npm test` in that
+  directory. If you change the computer's MCP tools, regenerate the catalog the
+  orchestrator proxies: `make build && npm run mcp-tools` (CI checks it's current).
 - **Changes the integration tests cover:** also run the integration file(s) for that
   area, against the running compose container:
   ```bash
