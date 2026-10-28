@@ -84,16 +84,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - uses: docker/setup-buildx-action@v4
+      # Plain `docker build` on the runner's own engine: its layer cache persists between
+      # runs, and the image lands straight in the engine (no gha cache upload/download,
+      # no tarball export/load).
       - name: Build image for tests
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: Dockerfile
-          load: true
-          tags: ozwell-computer:dev
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+        run: docker build -t ozwell-computer:dev .
       - name: Start the compose dev container
         run: |
           docker compose down -v --remove-orphans || true   # leftovers from an earlier run
@@ -117,14 +112,9 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: '0'
+          cache: false  # trivy's own ~/.cache/trivy persists on the self-hosted runner
       - name: Build the .deb
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          file: Dockerfile
-          target: deb
-          outputs: type=local,dest=pkg
-          cache-from: type=gha
+        run: rm -rf pkg && docker build --target deb --output type=local,dest=pkg .
       # The release doubles as a flat APT repository (same scheme as
       # mieweb/opensource-server); the image ships docker/ozwell-computer.sources:
       #   deb [trusted=yes] https://github.com/mieweb/ozwell-computer/releases/latest/download/ ./
