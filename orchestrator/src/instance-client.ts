@@ -5,6 +5,8 @@
 // optimisation only; a lost session (instance restarted) is simply re-initialised.
 const PROTOCOL = '2025-06-18';
 const IDLE_MS = 5 * 60_000;
+// Longer than any tool's own limit (run_command allows timeout_ms up to 10 min).
+const CALL_TIMEOUT_MS = 11 * 60_000;
 
 interface Session { id: string; protocol: string; lastUsed: number; url: string; token: string }
 
@@ -39,7 +41,7 @@ export class InstanceClient {
     };
     let res: Response;
     try {
-      res = await fetch(`${url}/mcp`, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(120_000) });
+      res = await fetch(`${url}/mcp`, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(CALL_TIMEOUT_MS) });
     } catch (e) {
       throw new InstanceError('target_unavailable', `cannot reach the computer: ${(e as Error).message}`);
     }

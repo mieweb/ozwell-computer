@@ -50,8 +50,10 @@ export async function buildServer(opts: ServerOptions): Promise<FastifyInstance>
   const handle = async (req: FastifyRequest, reply: any) => {
     const user = requesterOf(req)!;
     const server = buildMcpServer(opts, user);
-    // Stateless mode: no MCP session; each request stands alone.
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    // Stateless mode: no MCP session; each request stands alone. Responses are SSE, not
+    // buffered JSON, so headers go out immediately: clients such as Ozwell abort if
+    // headers take longer than 15 s, and tool calls (run_command, apps) often do.
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: false });
     reply.hijack();
     reply.raw.on('close', () => { void transport.close(); void server.close(); });
     await server.connect(transport);

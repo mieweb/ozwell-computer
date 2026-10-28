@@ -9,6 +9,7 @@ import { generateId, type Computer, type Provider } from '../src/providers/types
 const PSK = 'orchestrator-psk';
 const catalog: ToolDef[] = [
   { name: 'screenshot', description: 'Capture', inputSchema: { type: 'object', properties: { max_dimension: { type: 'number' } } } },
+  { name: 'slow', description: 'Slow', inputSchema: { type: 'object', properties: {} } },
   { name: 'click', description: 'Click', inputSchema: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] } },
 ];
 
@@ -26,6 +27,7 @@ async function fakeInstance(token: string) {
     }
     if (m.method === 'notifications/initialized') return reply.code(202).send();
     if (m.method === 'tools/call') {
+      if (m.params.name === 'slow') await new Promise((r) => setTimeout(r, 1500));
       calls.push({ name: m.params.name, args: m.params.arguments, client });
       return reply.send({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text: `did ${m.params.name}` }] } });
     }
@@ -67,7 +69,12 @@ async function rpc(user: string | null, method: string, params: object = {}, aut
     },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   });
-  return { status: r.status, body: r.headers.get('content-type')?.includes('json') ? await r.json() : await r.text() };
+  const ct = r.headers.get('content-type') ?? '';
+  const raw = await r.text();
+  const sse = ct.includes('text/event-stream') ? raw.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5)).join('') : raw;
+  let body: any = sse;
+  try { body = JSON.parse(sse); } catch { /* text */ }
+  return { status: r.status, body };
 }
 const tool = async (user: string, name: string, args: object = {}) => {
   const r = await rpc(user, 'tools/call', { name, arguments: args });
@@ -95,7 +102,7 @@ describe('auth and headers', () => {
 describe('tools', () => {
   it('lists management tools and every computer tool with a required instance_id', async () => {
     const tools = (await rpc('alice', 'tools/list')).body.result.tools;
-    expect(tools.map((t: any) => t.name)).toEqual(['list_computers', 'create_computer', 'get_computer', 'destroy_computer', 'screenshot', 'click']);
+    expect(tools.map((t: any) => t.name)).toEqual(['list_computers', 'create_computer', 'get_computer', 'destroy_computer', 'screenshot', 'slow', 'click']);
     const click = tools.find((t: any) => t.name === 'click');
     expect(click.inputSchema.required).toEqual(['instance_id', 'x', 'y']);
     expect(click.inputSchema.properties).toHaveProperty('instance_id');
@@ -124,6 +131,21 @@ describe('tools', () => {
     expect((await tool('alice', 'click', { x: 1, y: 2 })).data.error.reason).toBe('invalid_request');
   });
 
+  it('sends response headers before a slow tool finishes (clients enforce a header deadline)', async () => {
+    const a = (await tool('alice', 'list_computers')).data.computers[0];
+    const t0 = Date.now();
+    const r = await fetch(`${base}/mcp`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${PSK}`, 'x-ozwell-user-id': 'alice', 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'slow', arguments: { instance_id: a.instance_id } } }),
+    });
+    const headersAfter = Date.now() - t0;
+    expect(r.headers.get('content-type')).toContain('text/event-stream');
+    expect(headersAfter).toBeLessThan(1000);
+    expect(await r.text()).toContain('did slow');
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(1400);
+  });
+
   it('destroys', async () => {
     const a = (await tool('alice', 'list_computers')).data.computers[0];
     expect((await tool('alice', 'destroy_computer', { instance_id: a.instance_id })).data.ok).toBe(true);
@@ -143,6 +165,6 @@ describe('providers', () => {
   });
   it('proxiedTools leaves the catalog untouched', () => {
     proxiedTools(catalog);
-    expect(catalog[1].inputSchema.required).toEqual(['x', 'y']);
+    expect(catalog.find((t) => t.name === 'click')!.inputSchema.required).toEqual(['x', 'y']);
   });
 });
