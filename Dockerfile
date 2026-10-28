@@ -9,9 +9,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 ARG FPM_VERSION=1.16.0
 RUN gem install --no-document fpm -v "${FPM_VERSION}"
 WORKDIR /usr/src/ozwell-computer
+# npm deps first, so they're cached until the lockfile changes.
+COPY package.json package-lock.json ./
+RUN npm ci
 # The whole checkout, including .git: the package version comes from git tags.
 COPY . .
-RUN make deps && make deb
+RUN make deb
 
 # ---- the .deb on its own: docker buildx build --target deb --output type=local,dest=out .
 FROM scratch AS deb
@@ -19,13 +22,20 @@ COPY --from=build /usr/src/ozwell-computer/*.deb /
 
 # ---- runtime
 FROM ${BASE}
-RUN --mount=type=bind,from=build,source=/usr/src/ozwell-computer,target=/mnt/pkg \
-    cp /mnt/pkg/ozwell-computer_*.deb /tmp/ \
+# The package's dependencies (the desktop, ~all of the image) and the sample apps, in a
+# layer of their own: cached until .fpm changes, so a commit only rebuilds and pushes
+# the small layer with the package itself.
+RUN --mount=type=bind,source=.fpm,target=/tmp/.fpm \
+    deps=$(sed -n 's/^--depends "\{0,1\}\([^ "]*\).*/\1/p' /tmp/.fpm | grep -vx nodejs) \
     && apt-get update \
-    && apt-get install -y --no-install-recommends /tmp/ozwell-computer_*.deb \
+    && apt-get install -y --no-install-recommends $deps \
        # sample apps for agents to drive (zenity doubles as the AT-SPI test app):
        xterm zenity firefox-esr \
-    && rm -rf /var/lib/apt/lists/* /tmp/ozwell-computer_*.deb
+    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=bind,from=build,source=/usr/src/ozwell-computer,target=/mnt/pkg \
+    cp /mnt/pkg/ozwell-computer_*.deb /tmp/ \
+    && apt-get install -y --no-install-recommends /tmp/ozwell-computer_*.deb \
+    && rm -f /tmp/ozwell-computer_*.deb
 # Track future releases from the GitHub release flat repo (added after the install
 # above, so building the image doesn't depend on a published release).
 COPY docker/ozwell-computer.sources /etc/apt/sources.list.d/ozwell-computer.sources
