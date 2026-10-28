@@ -1,5 +1,6 @@
 import RFB from '/novnc/core/rfb.js';
 import { initClipboard } from '/static/clipboard.js';
+import { initPerf, initUpdate } from '/static/status.js';
 
 const $ = (id) => document.getElementById(id);
 const status = $('status');
@@ -52,6 +53,8 @@ function toast(text) {
   toastTimer = setTimeout(() => { el.hidden = true; }, 1500);
 }
 const clip = initClipboard({ getRfb: () => rfb, events: es, toast });
+initPerf($('perf'));
+initUpdate($('btn-update'), es);
 
 connect();
 

@@ -9,7 +9,8 @@ STAGE := $(if $(filter command line,$(origin DESTDIR)),$(DESTDIR),$(CURDIR)/.pkg
 DESTAPP  := $(DESTDIR)$(PREFIX)
 UNIT_DIR := $(DESTDIR)/usr/lib/systemd/system
 XFCONF   := $(DESTDIR)/etc/xdg/xfce4/xfconf/xfce-perchannel-xml
-UNITS    := ozwell-desktop.service ozwell-desktop-dbus.service ozwell-desktop-xvfb.service ozwell-desktop-session.service
+UNITS    := ozwell-desktop.service ozwell-desktop-dbus.service ozwell-desktop-xvfb.service ozwell-desktop-session.service \
+            ozwell-desktop-upgrade.service ozwell-desktop-upgrade.path
 
 INSTALL      := install
 INSTALL_DATA := $(INSTALL) -m 0644
@@ -46,6 +47,7 @@ install: build
 	cd $(DESTAPP) && npm prune --omit=dev --no-audit --no-fund >/dev/null \
 		&& npm pkg set version="$$($(CURDIR)/package-version node)"
 	$(INSTALL) -m 0755 contrib/xfce/session.sh $(DESTAPP)/bin/ozwell-desktop-session
+	$(INSTALL) -m 0755 contrib/upgrade.sh $(DESTAPP)/bin/ozwell-desktop-upgrade
 	$(INSTALL) -d $(DESTDIR)/usr/bin
 	ln -sf $(PREFIX)/dist/cli.js $(DESTDIR)/usr/bin/ozwell-desktop
 	$(INSTALL) -d $(UNIT_DIR)

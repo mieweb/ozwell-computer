@@ -37,6 +37,9 @@ describe('noVNC viewer', () => {
       for (let i = 0; i < d.length; i += 4 * 97) if (d[i] + d[i + 1] + d[i + 2] > 30) nonBlack++;
       return nonBlack > 100;
     }, null, { timeout: 15000 });
+    // Toolbar resource readout from /api/v1/metrics (CPU appears after the second sample).
+    await page.waitForFunction(() => /CPU \d+%.*Mem \d+ MiB/.test(document.getElementById('perf')?.textContent ?? ''), null, { timeout: 15000 });
+    expect(await page.locator('#btn-update').isHidden()).toBe(true); // nothing newer published
     const box = (await page.locator('#screen canvas').boundingBox())!;
     // Move the mouse over the canvas; the server pointer follows (scaled).
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

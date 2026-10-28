@@ -29,6 +29,8 @@ export const ConfigSchema = z.object({
   fsRoot: z.string(),
   /** Externally visible base URL for the startup link (e.g. the host port behind Docker). */
   publicUrl: z.string().url().optional(),
+  /** APT `Packages` index to check for new releases; "off" disables update checks. */
+  updateUrl: z.string().refine((v) => v === 'off' || /^(https?|file):\/\//.test(v), 'must be a URL or "off"'),
   /** Open the viewer in the default browser once listening. */
   open: bool,
 });
@@ -53,6 +55,7 @@ export function defaults(): Config {
     logLevel: 'info',
     fsRoot: '/',
     publicUrl: undefined,
+    updateUrl: 'https://github.com/mieweb/ozwell-desktop/releases/latest/download/Packages',
     open: false,
   };
 }
@@ -73,6 +76,7 @@ const ENV_MAP: Record<string, keyof Config> = {
   OZWELL_DESKTOP_LOG_LEVEL: 'logLevel',
   OZWELL_DESKTOP_FS_ROOT: 'fsRoot',
   OZWELL_DESKTOP_PUBLIC_URL: 'publicUrl',
+  OZWELL_DESKTOP_UPDATE_URL: 'updateUrl',
   OZWELL_DESKTOP_OPEN: 'open',
 };
 
@@ -94,6 +98,7 @@ const FLAG_MAP: Record<string, keyof Config> = {
   'log-level': 'logLevel',
   'fs-root': 'fsRoot',
   'public-url': 'publicUrl',
+  'update-url': 'updateUrl',
   open: 'open',
 };
 
@@ -165,6 +170,7 @@ Usage: ozwell-desktop [flags]
   --log-level <lvl>       OZWELL_DESKTOP_LOG_LEVEL (info)
   --fs-root <dir>         OZWELL_DESKTOP_FS_ROOT (/)
   --public-url <url>      OZWELL_DESKTOP_PUBLIC_URL: base URL shown in the startup link
+  --update-url <url|off>  OZWELL_DESKTOP_UPDATE_URL: APT Packages index checked for new releases
   --open                  OZWELL_DESKTOP_OPEN=true: open the viewer in the default browser
   --print-openapi         Print the OpenAPI document and exit
 `;

@@ -7,7 +7,7 @@
  */
 import type { TestProject } from 'vitest/node';
 // @ts-expect-error plain ESM helper without type declarations
-import { compose, isRunning, restartServer, SERVICE, up, waitReady } from '../../scripts/compose.mjs';
+import { isRunning, restartServer, up, waitReady } from '../../scripts/compose.mjs';
 
 declare module 'vitest' {
   export interface ProvidedContext { ozUrl: string; ozToken: string }
@@ -33,11 +33,9 @@ export default async function setup(project: TestProject) {
   log(`ready at ${url}`);
   project.provide('ozUrl', url);
   project.provide('ozToken', token);
-  // Container clock (it can differ from the host's, e.g. under a podman VM).
-  const since = compose(['exec', '-T', SERVICE, 'date', '+%s']).out;
   return async () => {
     if (isFilteredRun()) { log('filtered run: skipping the API/MCP coverage check'); return; }
-    await checkCoverage(url, token, since);
+    await checkCoverage(url, token);
   };
 }
 
@@ -54,24 +52,27 @@ function isFilteredRun(): boolean {
 }
 
 /**
- * Fail the run unless every documented route returned a 2xx at least once and every
- * MCP tool was called, according to the server's own request log for this run.
+ * Fail the run unless every documented route returned a 2xx at least once and every MCP
+ * tool was called. Uses the server's own Prometheus counters, which start at zero when
+ * setup restarts the server (with OZ_URL they may include earlier traffic).
  */
-async function checkCoverage(url: string, token: string, since: string) {
-  const journal = compose(['exec', '-T', SERVICE, 'journalctl', '-u', 'ozwell-desktop', '-o', 'cat', '--no-pager', '--since', `@${since}`]).out;
-  const reqs = new Map<string, { method: string; route: string; status?: number }>();
+async function checkCoverage(url: string, token: string) {
+  const text = await (await fetch(`${url}/api/v1/metrics`, { headers: { authorization: `Bearer ${token}` } })).text();
+  const hits = new Set<string>();
   const tools = new Set<string>();
-  for (const line of journal.split('\n')) {
-    if (!line.startsWith('{')) continue;
-    let e: any;
-    try { e = JSON.parse(line); } catch { continue; }
-    const key = `${e.pid}:${e.reqId}`;
-    if (e.msg === 'incoming request' && e.req?.route) reqs.set(key, { method: e.req.method, route: e.req.route });
-    else if (e.msg === 'request completed' && reqs.has(key)) reqs.get(key)!.status = e.res?.statusCode;
-    else if (e.msg === 'mcp tool call' && e.tool) tools.add(e.tool);
+  for (const line of text.split('\n')) {
+    let mm = /^ozwell_http_request_duration_seconds_count\{(.*)\} (\d+)/.exec(line);
+    if (mm && Number(mm[2]) > 0) {
+      const l = Object.fromEntries([...mm[1].matchAll(/(\w+)="([^"]*)"/g)].map((x) => [x[1], x[2]]));
+      if (/^2\d\d$/.test(l.status)) hits.add(`${l.method} ${l.route}`);
+      continue;
+    }
+    mm = /^ozwell_mcp_tool_calls_total\{(.*)\} (\d+)/.exec(line);
+    if (mm && Number(mm[2]) > 0) {
+      const tool = /tool="([^"]*)"/.exec(mm[1])?.[1];
+      if (tool) tools.add(tool);
+    }
   }
-  const ok = (r: { status?: number }) => r.status === undefined || (r.status >= 200 && r.status < 300); // undefined: streamed/hijacked
-  const hits = new Set([...reqs.values()].filter(ok).map((r) => `${r.method} ${r.route}`));
 
   const spec = await (await fetch(`${url}/api/v1/openapi.json`, { headers: { authorization: `Bearer ${token}` } })).json();
   const missingRoutes: string[] = [];
@@ -82,7 +83,6 @@ async function checkCoverage(url: string, token: string, since: string) {
       if (!hits.has(key)) missingRoutes.push(key);
     }
   }
-
   const allTools = await listMcpTools(url, token);
   const missingTools = allTools.filter((t) => !tools.has(t));
 

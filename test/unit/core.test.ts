@@ -188,3 +188,44 @@ describe('startup link config', () => {
     expect(() => loadConfig({ OZWELL_DESKTOP_PUBLIC_URL: 'not a url' })).toThrow();
   });
 });
+
+import { parsePackages, newest } from '../../src/update.js';
+describe('update check', () => {
+  const index = `Package: ozwell-desktop
+Version: 1.2.0
+Architecture: amd64
+Filename: ./ozwell-desktop_1.2.0_amd64.deb
+
+Package: other
+Version: 9.9.9
+Architecture: amd64
+
+Package: ozwell-desktop
+Version: 1.10.0~rc1
+Architecture: amd64
+
+Package: ozwell-desktop
+Version: 1.3.0
+Architecture: arm64
+`;
+  // Enough of dpkg's ordering for these cases: numeric fields, and "~" sorts first.
+  const key = (v: string) => v.split(/[.~]/).map((x, i, a) => (v.includes('~') && i === a.length - 1 ? -1 : Number(x)));
+  const lt = async (a: string, b: string) => {
+    const [x, y] = [key(a), key(b)];
+    for (let i = 0; i < Math.max(x.length, y.length); i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) < (y[i] ?? 0);
+    return false;
+  };
+  it('parses only this package', () => {
+    expect(parsePackages(index).map((e) => e.version)).toEqual(['1.2.0', '1.10.0~rc1', '1.3.0']);
+  });
+  it('picks the newest for this architecture', async () => {
+    expect(await newest(parsePackages(index), 'amd64', lt)).toBe('1.10.0~rc1');
+    expect(await newest(parsePackages(index), 'arm64', lt)).toBe('1.3.0');
+    expect(await newest([], 'amd64', lt)).toBeNull();
+  });
+  it('accepts an update URL or off', () => {
+    expect(loadConfig({ OZWELL_DESKTOP_UPDATE_URL: 'off' }).config.updateUrl).toBe('off');
+    expect(loadConfig({}, ['--update-url', 'file:///srv/repo/Packages']).config.updateUrl).toBe('file:///srv/repo/Packages');
+    expect(() => loadConfig({ OZWELL_DESKTOP_UPDATE_URL: 'nope' })).toThrow();
+  });
+});

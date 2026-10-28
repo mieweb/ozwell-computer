@@ -2,7 +2,7 @@
 # ozwell-desktop postinst
 set -e
 
-UNITS="ozwell-desktop-dbus.service ozwell-desktop-xvfb.service ozwell-desktop-session.service ozwell-desktop.service"
+UNITS="ozwell-desktop-dbus.service ozwell-desktop-xvfb.service ozwell-desktop-session.service ozwell-desktop.service ozwell-desktop-upgrade.path"
 
 case "$1" in
     configure)

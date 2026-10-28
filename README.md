@@ -82,6 +82,20 @@ are in `contrib/`.
 
   Until the first release is published, `apt-get update` reports a 404 for this
   source.
+- **In-app updates:** every 6 hours the server compares the installed package version
+  with the newest one in `OZWELL_DESKTOP_UPDATE_URL`. When a newer one exists, the
+  viewer toolbar shows an "Update to X" button.
+  - `GET /api/v1/update` reports versions and upgrade progress,
+    `POST /api/v1/update/check` checks now, and `POST /api/v1/update/apply` upgrades.
+  - The server can't run apt itself, so applying writes
+    `/var/lib/ozwell-desktop/upgrade-request`. The packaged root unit
+    `ozwell-desktop-upgrade.path` sees it and runs `apt-get install --only-upgrade
+    ozwell-desktop`, logging to `upgrade.log` beside it.
+  - Upgrades restart only the server; the viewer reconnects and apps on the desktop
+    stay open. apt installs whatever version its configured sources offer.
+- **Toolbar metrics:** the viewer polls `/api/v1/metrics` (Prometheus text format)
+  every 5 s and shows container CPU, memory (against the limit, if any) and VNC
+  throughput.
 
 ## Run without Docker
 
@@ -102,6 +116,7 @@ When no token is configured, one is generated and stored in
 | `OZWELL_DESKTOP_TOKEN` / `--token` | generated | Pre-shared key |
 | `OZWELL_DESKTOP_TOKEN_FILE` | `/var/lib/ozwell-desktop/token` (container) or `~/.config/ozwell-desktop/token` | Where a generated token is kept |
 | `OZWELL_DESKTOP_PUBLIC_URL` / `--public-url` | derived | Base URL used in the startup link (for example the host port behind Docker) |
+| `OZWELL_DESKTOP_UPDATE_URL` / `--update-url` | the latest GitHub release's `Packages` | APT `Packages` index checked for new releases (`https://` or `file://`); `off` disables update checks |
 | `OZWELL_DESKTOP_OPEN` / `--open` | `false` | Open the viewer in the default browser at startup |
 | `OZWELL_DESKTOP_AUTH_DISABLED` / `--no-auth` | `false` | Logs loud warnings |
 | `DISPLAY` / `--display` | `:0` | |
@@ -194,8 +209,8 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
   - It reuses the compose service's generated token when that service is running.
   - It moves to port 8081 if compose is already on 8080.
 - **Coverage guard:** a full integration run fails if any documented API route never
-  returned a 2xx, or any MCP tool was never called. It checks the server's own request
-  log, so new routes and tools need a test. Runs filtered to some files or tests skip
+  returned a 2xx, or any MCP tool was never called. It reads the server's own counters
+  from `/api/v1/metrics`, so new routes and tools need a test. Runs filtered to some files or tests skip
   the check.
 - `npm run test:unit` runs only the fast unit tests.
 - `OZ_URL=… OZ_TOKEN=… npm test` runs the suite against any other server.
@@ -212,6 +227,8 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
 - If port 8080 is taken, set `OZWELL_DESKTOP_HOST_PORT` in a `.env` file. The tests
   discover the port and token from compose.
 - `npm run openapi` regenerates `docs/openapi.json`.
+- The compose container mounts `./dist` read-only, so an in-app upgrade there fails
+  to replace it. Test upgrades in a container started with `docker run`.
 
 ## Known limitations
 

@@ -31,6 +31,8 @@ export function viewerHtml(title: string, viewOnly: boolean) {
 <body data-view-only="${viewOnly ? '1' : '0'}">
 <div id="toolbar">
   <span id="status">connecting…</span>
+  <span id="perf" title="Container resource use (from /api/v1/metrics)"></span>
+  <button id="btn-update" hidden></button>
   <span class="spacer"></span>
   <button id="btn-cad" title="Send Ctrl+Alt+Del">Ctrl+Alt+Del</button>
   <button id="btn-super" title="Send Super">Super</button>

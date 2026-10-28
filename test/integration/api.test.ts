@@ -18,6 +18,44 @@ describe('system', () => {
   });
 });
 
+describe('metrics', () => {
+  it('/metrics serves Prometheus text with memory and session series', async () => {
+    const res = await fetch(`${URL_}/api/v1/metrics`, { headers: auth });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/plain');
+    const text = await res.text();
+    for (const name of ['process_resident_memory_bytes', 'nodejs_heap_size_used_bytes', 'ozwell_cgroup_memory_bytes', 'ozwell_process_resident_bytes', 'ozwell_process_pss_bytes', 'ozwell_cgroup_memory_stat_bytes{type="anon"}', 'ozwell_vnc_sessions', 'ozwell_mcp_sessions', 'ozwell_http_request_duration_seconds_bucket', 'ozwell_x_connected 1', 'ozwell_cgroup_cpu_seconds_total']) {
+      expect(text).toContain(name);
+    }
+    expect(text).toMatch(/ozwell_process_resident_bytes\{command="node"\} \d+/);
+    expect(text).toMatch(/ozwell_cgroup_memory_bytes\{scope="container",unit=""\} \d+/);
+    expect((await fetch(`${URL_}/api/v1/metrics`)).status).toBe(401);
+  });
+});
+
+describe('updates', () => {
+  it('reports versions, checks on demand, and runs an upgrade request to completion', async () => {
+    const s = (await api('GET', '/api/v1/update')).body;
+    expect(s).toMatchObject({ supported: true, url: expect.any(String) });
+    expect(s.current).toMatch(/^\d+\.\d+\.\d+/); // the installed .deb
+    const c = await api('POST', '/api/v1/update/check');
+    expect(c.status).toBe(200);
+    expect(c.body.checked_at).toBeTruthy();
+    expect(c.body.latest !== null || c.body.error !== null).toBe(true);
+
+    const r = await api('POST', '/api/v1/update/apply');
+    expect(r.status).toBe(202);
+    expect(['requested', 'running']).toContain(r.body.upgrade.state);
+    // The root upgrade unit picks the request up and finishes (no newer version here,
+    // so "unchanged"; "failed" if apt can't reach a source).
+    const done = await waitFor(async () => {
+      const u = (await api('GET', '/api/v1/update')).body.upgrade;
+      return ['unchanged', 'succeeded', 'failed'].includes(u.state) ? u : null;
+    }, 120000);
+    expect(done.log).toContain('installed: ');
+  }, 150000);
+});
+
 describe('pointer actions', () => {
   it('drag moves a window by its title bar', async () => {
     const id = await freshXterm('oz-drag');

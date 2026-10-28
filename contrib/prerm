@@ -2,7 +2,7 @@
 # ozwell-desktop prerm
 set -e
 
-UNITS="ozwell-desktop.service ozwell-desktop-session.service ozwell-desktop-xvfb.service ozwell-desktop-dbus.service"
+UNITS="ozwell-desktop-upgrade.path ozwell-desktop.service ozwell-desktop-session.service ozwell-desktop-xvfb.service ozwell-desktop-dbus.service"
 
 case "$1" in
     remove|deconfigure)

@@ -17,6 +17,9 @@ ExecStart=/usr/bin/node @PREFIX@/dist/cli.js
 Restart=always
 RestartSec=1
 NoNewPrivileges=yes
+# Apps launched through the API run in this service's cgroup; restarting the
+# server (e.g. after an upgrade) must not close them.
+KillMode=process
 
 [Install]
 WantedBy=multi-user.target

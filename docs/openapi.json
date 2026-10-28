@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ozwell-desktop",
-    "version": "0.1.0",
+    "version": "0.0.0",
     "description": "Control an X11 desktop over HTTP"
   },
   "components": {
@@ -30,9 +30,61 @@
     "schemas": {}
   },
   "paths": {
+    "/api/v1/metrics": {
+      "get": {
+        "summary": "Prometheus metrics (text exposition format)",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/api/v1/capabilities": {
       "get": {
         "summary": "Server capabilities",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/update": {
+      "get": {
+        "summary": "Installed vs latest released version, and upgrade progress",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/update/check": {
+      "post": {
+        "summary": "Check for a new release now",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
+    "/api/v1/update/apply": {
+      "post": {
+        "summary": "Upgrade the ozwell-desktop package (the server restarts)",
         "tags": [
           "system"
         ],

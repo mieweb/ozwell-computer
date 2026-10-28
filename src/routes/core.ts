@@ -39,10 +39,23 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
         pty: feat(config.exec && ctx.ptyAvailable, config.exec ? 'node-pty not installed' : 'disabled by OZWELL_DESKTOP_EXEC=false'),
         vnc: { available: true, backend: config.vncBackend, view_only: config.viewOnly },
         mcp: { available: true },
+        update: ctx.updater ? await ctx.updater.status().then((u) => (u.supported ? { available: true } : { available: false, limitation: u.limitation })) : feat(false, 'update checks are not running'),
         background_delivery: feat(false, 'XTEST injects into the global input stream; only accessibility actions are background-safe'),
       },
     };
   });
+
+  // ---- updates
+  const updater = () => {
+    if (!ctx.updater) throw new ApiError('feature_unsupported', 'update checks are not running', { feature: 'update' });
+    return ctx.updater;
+  };
+  app.get('/api/v1/update', { schema: { tags: ['system'], summary: 'Installed vs latest released version, and upgrade progress' } },
+    async () => updater().status());
+  app.post('/api/v1/update/check', { schema: { tags: ['system'], summary: 'Check for a new release now' } },
+    async () => updater().check());
+  app.post('/api/v1/update/apply', { schema: { tags: ['system'], summary: 'Upgrade the ozwell-desktop package (the server restarts)' } },
+    async (_req, reply) => reply.code(202).send(await updater().apply()));
 
   app.get('/api/v1/displays', { schema: { tags: ['system'] } }, async () => ({ displays: await desktop.displays() }));
 

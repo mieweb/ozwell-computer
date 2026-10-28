@@ -1,0 +1,9 @@
+[Unit]
+Description=Upgrade the ozwell-desktop package
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=@PREFIX@/bin/ozwell-desktop-upgrade
+TimeoutStartSec=30min
