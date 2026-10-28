@@ -56,7 +56,8 @@ RemoveIPC=yes
 UMask=0077
 CapabilityBoundingSet=
 AmbientCapabilities=
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# AF_NETLINK: os.networkInterfaces(), which Fastify calls when it starts listening.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 SystemCallArchitectures=native
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources
