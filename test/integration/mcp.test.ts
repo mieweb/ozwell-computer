@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { URL_, auth, api, exec, fileContent, freshXterm, regionShot, sleep, waitFor, zenity } from './helpers.js';
+import { URL_, auth, api, exec, fileContent, freshXterm, regionShot, settledShot, sleep, waitFor, zenity } from './helpers.js';
 
 let client: Client;
 let transport: StreamableHTTPClientTransport;
@@ -71,9 +71,8 @@ describe('MCP tools', () => {
   it('scroll moves terminal scrollback', async () => {
     const id = await freshXterm('oz-mcp-scroll');
     await tool('type_text', { text: 'seq 1 300\n' });
-    await sleep(500);
     const b = await bounds(id);
-    const before = await regionShot(b.x, b.y, b.width, b.height);
+    const before = await settledShot(b.x, b.y, b.width, b.height);
     await tool('scroll', { x: b.x + 100, y: b.y + 100, dy: -10 });
     await waitFor(async () => !(await regionShot(b.x, b.y, b.width, b.height)).equals(before), 3000);
     await api('POST', `/api/v1/windows/${id}/close`);

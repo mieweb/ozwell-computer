@@ -4,7 +4,7 @@
  */
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { URL_, auth, api, exec, fileContent, freshXterm, regionShot, RfbClient, sleep, waitFor, windows, zenity } from './helpers.js';
+import { URL_, auth, api, exec, fileContent, freshXterm, regionShot, RfbClient, settledShot, sleep, waitFor, windows, zenity } from './helpers.js';
 
 const win = async (id: string) => (await api('GET', `/api/v1/windows/${id}`)).body;
 
@@ -92,10 +92,9 @@ describe('pointer actions', () => {
   it('scroll moves terminal scrollback', async () => {
     const id = await freshXterm('oz-scroll');
     await api('POST', '/api/v1/input/keyboard', { action: 'type', text: 'seq 1 300\n' });
-    await sleep(500);
     const b = (await win(id)).bounds;
     const region = [b.x, b.y, b.width, b.height] as const;
-    const bottom = await regionShot(...region);
+    const bottom = await settledShot(...region); // after seq has finished drawing
     // Poll rather than sleep: repaint timing varies with whatever else the desktop is doing.
     await api('POST', '/api/v1/input/pointer', { action: 'scroll', x: b.x + 100, y: b.y + 100, dy: -10 });
     await waitFor(async () => !(await regionShot(...region)).equals(bottom), 3000);

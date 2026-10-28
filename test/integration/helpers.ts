@@ -134,3 +134,14 @@ export class RfbClient {
   close() { this.ws.close(); }
 }
 
+/** A region screenshot once the region has stopped changing (two identical captures in a row). */
+export async function settledShot(x: number, y: number, w: number, h: number, ms = 5000): Promise<Buffer> {
+  let prev = await regionShot(x, y, w, h);
+  return waitFor(async () => {
+    await sleep(250);
+    const next = await regionShot(x, y, w, h);
+    const same = next.equals(prev);
+    prev = next;
+    return same ? next : null;
+  }, ms);
+}
