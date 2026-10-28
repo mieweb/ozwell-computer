@@ -98,7 +98,11 @@ export function registerAuth(app: FastifyInstance, opts: AuthOptions): void {
         const cookie = [
           `${COOKIE_NAME}=${encodeURIComponent(token)}`,
           'HttpOnly',
-          'SameSite=Strict',
+          // Lax, not Strict: a ?token= link opened from another site (chat, email, the
+          // Ozwell workspace) is a cross-site navigation, and browsers withhold Strict
+          // cookies for its whole redirect chain, so the redirect below lands on the login
+          // page. Lax still blocks the cookie on cross-site subrequests and POSTs.
+          'SameSite=Lax',
           'Path=/',
           ...(isSecure(req) ? ['Secure'] : []),
         ].join('; ');

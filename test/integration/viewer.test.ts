@@ -50,6 +50,19 @@ describe('noVNC viewer', () => {
     await page.context().close();
   });
 
+  it('a ?token= link followed from another site opens the viewer, not the login page', async () => {
+    const ctx = await browser.newContext();
+    const page = await ctx.newPage();
+    // localhost and 127.0.0.1 are different sites, so this click is a cross-site navigation.
+    await page.goto(URL_.replace('127.0.0.1', 'localhost') + '/static/none');
+    await page.setContent(`<a id="l" href="${URL_}/?token=${TOKEN}">open</a>`);
+    await page.click('#l');
+    await page.waitForURL(`${URL_}/`);
+    await page.waitForFunction(() => document.getElementById('status')?.textContent === 'connected', null, { timeout: 15000 });
+    expect(await page.locator('input[type=password]').count()).toBe(0);
+    await ctx.close();
+  });
+
   it('two tabs and an API agent see each other\'s cursors', async () => {
     const a = await openViewer();
     const b = await openViewer();

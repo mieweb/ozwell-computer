@@ -50,7 +50,7 @@ describe('auth matrix', () => {
     const cookie = String(r.headers['set-cookie']);
     expect(cookie).toContain('ozwell_computer_token=' + TOKEN);
     expect(cookie).toContain('HttpOnly');
-    expect(cookie).toContain('SameSite=Strict');
+    expect(cookie).toContain('SameSite=Lax');
     expect(cookie).not.toContain('Secure');
   });
   it('adds Secure behind TLS proxy', async () => {
