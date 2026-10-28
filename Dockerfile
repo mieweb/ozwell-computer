@@ -36,7 +36,10 @@ COPY docker/ozwell-desktop.sources /etc/apt/sources.list.d/ozwell-desktop.source
 COPY docker/systemd/system.conf.d/ /etc/systemd/system.conf.d/
 COPY docker/systemd/ozwell-desktop.service.d/ /etc/systemd/system/ozwell-desktop.service.d/
 COPY docker/systemd/ozwell-desktop-xvfb.service.d/ /etc/systemd/system/ozwell-desktop-xvfb.service.d/
-RUN systemctl mask console-getty.service && systemctl enable environment.service
+# Passwordless sudo for the desktop user (see docker/sudoers.d/ozwell-desktop and the README).
+COPY --chmod=0440 docker/sudoers.d/ozwell-desktop /etc/sudoers.d/ozwell-desktop
+RUN visudo -cf /etc/sudoers.d/ozwell-desktop \
+ && systemctl mask console-getty.service && systemctl enable environment.service
 ENV DISPLAY=:0
 # systemd falls back to the console until journald is up; only show errors.
 # TERM=dumb stops its console reset escape codes.

@@ -1,0 +1,5 @@
+# Container image only (not in the .deb): the desktop user, and therefore anyone
+# holding the access token and any agent driving the desktop, is root in the
+# container. Run the container in a user namespace so container root is not host
+# root; see "Security: sudo and user namespaces" in README.md.
+desktop ALL=(ALL:ALL) NOPASSWD: ALL

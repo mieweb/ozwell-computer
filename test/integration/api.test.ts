@@ -33,6 +33,13 @@ describe('metrics', () => {
   });
 });
 
+describe('container image', () => {
+  it('grants the desktop user passwordless sudo, including from processes the server starts', async () => {
+    const r = await exec('id -un; sudo -n id -un');
+    expect(r.stdout).toBe('desktop\nroot\n');
+  });
+});
+
 describe('updates', () => {
   it('reports versions, checks on demand, and runs an upgrade request to completion', async () => {
     const s = (await api('GET', '/api/v1/update')).body;

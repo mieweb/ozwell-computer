@@ -20,6 +20,10 @@ docker run -d -p 8080:8080 \
   ghcr.io/mieweb/ozwell-desktop:latest
 ```
 
+Inside the container, the `desktop` user has passwordless sudo. Prefer Podman with
+`--userns=auto` so container root isn't host root; see
+[Security: sudo and user namespaces](#security-sudo-and-user-namespaces).
+
 Open `http://localhost:8080/?token=<token>`. The server sets an HttpOnly cookie and
 redirects, which removes the token from the address bar.
 
@@ -43,9 +47,77 @@ Apps launched through the API share the session bus and have the GTK/Qt
 accessibility bridges enabled, so their UI shows up in `/api/v1/a11y/*`.
 
 Container-only adjustments live in `docker/` and are applied by the `Dockerfile`, not
-the package: `docker run -e` values reach the services through the base image's
+the package. They include passwordless sudo for `desktop` (see the security section
+below); `docker run -e` values reach the services through the base image's
 `environment.service`, and systemd's own output is kept off the console so
 `docker logs` shows only the server.
+
+## Security: sudo and user namespaces
+
+**The container image gives the `desktop` user passwordless sudo.** Everything the
+server runs as `desktop`, so this extends to `/api/v1/exec`, the terminal (PTY), MCP's
+`run_command`, and apps launched through the API. Agents and users can therefore
+install software or change system settings on demand. This is deliberate: an instance
+is a disposable workstation for one person and one agent.
+
+The consequence is that **anyone holding the access token, and any agent driving the
+desktop, is root inside the container.** That includes an agent manipulated by a web
+page it reads. Treat the token as root credentials for the instance, and use
+`OZWELL_DESKTOP_EXEC=false` where agents should have less access. The rules live in
+`docker/` (`sudoers.d/ozwell-desktop` and a drop-in that lifts the server unit's
+`NoNewPrivileges`). The Debian package grants no sudo.
+
+### Run in a user namespace (recommended)
+
+A user namespace maps root inside the container to an unprivileged host uid, as in
+Proxmox's unprivileged LXCs. Container root keeps full control *of the container*. But
+it can't create devices, mount filesystems, or write the host's cgroups, and files it
+creates are owned by an unprivileged uid on the host. A container or kernel escape then
+lands as that unprivileged uid, not host root.
+
+**Podman (recommended).** It runs systemd containers in a user namespace natively.
+Either pass `--userns=auto`:
+
+```bash
+podman run -d --userns=auto --systemd=always -p 8080:8080 ghcr.io/mieweb/ozwell-desktop:latest
+```
+
+or make it the default for every container (including `docker compose` against
+Podman's socket) in `/etc/containers/containers.conf`:
+
+```ini
+[containers]
+userns = "auto"
+```
+
+`--userns=auto` needs a subordinate ID range for the `containers` user. Add this to
+`/etc/subuid` and `/etc/subgid` once:
+
+```
+containers:2147483647:2147483648
+```
+
+With that setup systemd reports `running`, every service starts, and the integration
+suite passes. Container root appears on the host as uid 2147483647.
+
+**Docker can't do this for this image.**
+- Docker has no per-container user namespace (`--userns` accepts only `host`).
+- Its daemon-wide `"userns-remap"` in `daemon.json` prevents systemd from starting
+  ("Failed to allocate manager object: Permission denied"). Docker doesn't hand the
+  container's cgroup to the remapped root, and no `docker run` flags work around it.
+- So on Docker the container runs with root equal to host root, plus the read-write host
+  cgroup mount systemd needs, which is the `compose.yml` default.
+- Use Podman where container root must not be host root. The Sysbox runtime
+  (`--runtime=sysbox-runc`) is designed for systemd containers in user namespaces under
+  Docker, but hasn't been tested with this image.
+
+`compose.yml` uses the same settings for both runtimes and never fails because a user
+namespace is missing. On Podman with `userns = "auto"` it runs namespaced; on Docker it
+runs unnamespaced. The host cgroup mount in `compose.yml` is harmless under Podman's
+user namespace, because the remapped root can't write the host's cgroups.
+
+**Kubernetes:** `hostUsers: false` in the pod spec requests a user namespace on clusters
+and runtimes that support it. This hasn't been tested with this image.
 
 ## Debian package
 
