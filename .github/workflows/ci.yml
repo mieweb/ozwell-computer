@@ -88,7 +88,9 @@ jobs:
       # runs, and the image lands straight in the engine (no gha cache upload/download,
       # no tarball export/load).
       - name: Build image for tests
-        run: docker build -t ozwell-computer:dev .
+        run: |
+          docker build --target build -t ozwell-computer:build .   # the .deb, for the release
+          docker build -t ozwell-computer:dev .                    # reuses that stage from cache
       - name: Start the compose dev container
         run: |
           docker compose down -v --remove-orphans || true   # leftovers from an earlier run
@@ -106,6 +108,7 @@ jobs:
         if: always()
         run: docker compose down -v
       - name: Scan image
+        if: github.event_name != 'workflow_dispatch'  # report-only; releases and nightly
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ozwell-computer:dev
@@ -113,8 +116,12 @@ jobs:
           ignore-unfixed: true
           exit-code: '0'
           cache: false  # trivy's own ~/.cache/trivy persists on the self-hosted runner
-      - name: Build the .deb
-        run: rm -rf pkg && docker build --target deb --output type=local,dest=pkg .
+      - name: Copy out the .deb
+        run: |
+          rm -rf pkg && mkdir pkg
+          docker run --rm -v "$PWD/pkg:/out" ozwell-computer:build \
+            sh -c "cp /usr/src/ozwell-computer/*.deb /out/ && chown $(id -u):$(id -g) /out/*.deb"
+          ls -l pkg
       # The release doubles as a flat APT repository (same scheme as
       # mieweb/opensource-server); the image ships docker/ozwell-computer.sources:
       #   deb [trusted=yes] https://github.com/mieweb/ozwell-computer/releases/latest/download/ ./
