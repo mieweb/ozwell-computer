@@ -31,6 +31,8 @@ RUN --mount=type=bind,from=build,source=/usr/src/ozwell-computer,target=/mnt/pkg
 COPY docker/ozwell-computer.sources /etc/apt/sources.list.d/ozwell-computer.sources
 
 # ---- container-only adjustments (not part of the package)
+# Firefox without first-run pages, password-save prompts or telemetry (agent-friendly).
+COPY docker/firefox/policies.json /etc/firefox/policies/policies.json
 # systemd logs to the journal only, so with a TTY the container console carries just
 # ozwell-computer's output; the units also read `docker run -e` values from /etc/environment.
 COPY docker/systemd/system.conf.d/ /etc/systemd/system.conf.d/

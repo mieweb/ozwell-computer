@@ -136,13 +136,27 @@ export class A11y {
     }
   }
 
+  // Bounded concurrency: tree walks issue many small D-Bus calls; pipelining them is far
+  // faster than one at a time, but an unbounded burst can starve the target app.
+  private inflight = 0;
+  private waiting: Array<() => void> = [];
+  private static readonly MAX_INFLIGHT = 24;
+
   private async call(bus: any, dest: string, path: string, iface: string, member: string, signature?: string, body?: unknown[]): Promise<any[]> {
-    const msg = new Message({ destination: dest, path, interface: iface, member, ...(signature ? { signature, body } : {}) });
-    const reply = await Promise.race([
-      bus.call(msg),
-      new Promise((_, rej) => setTimeout(() => rej(new Error(`timeout calling ${iface}.${member}`)), 2000)),
-    ]);
-    return (reply as any)?.body ?? [];
+    if (this.inflight >= A11y.MAX_INFLIGHT) await new Promise<void>((r) => this.waiting.push(r));
+    this.inflight++;
+    try {
+      const msg = new Message({ destination: dest, path, interface: iface, member, ...(signature ? { signature, body } : {}) });
+      let timer: NodeJS.Timeout | undefined;
+      const reply = await Promise.race([
+        bus.call(msg),
+        new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`timeout calling ${iface}.${member}`)), 5000); }),
+      ]).finally(() => clearTimeout(timer));
+      return (reply as any)?.body ?? [];
+    } finally {
+      this.inflight--;
+      this.waiting.shift()?.();
+    }
   }
 
   private async props(bus: any, ref: Ref, iface: string): Promise<Record<string, any>> {
@@ -152,46 +166,70 @@ export class A11y {
     return out;
   }
 
-  private async describe(bus: any, ref: Ref) {
+  /** Cheap per-node facts used for filtering: role, name, child count, states (2 calls). */
+  private async light(bus: any, ref: Ref) {
     const A = 'org.a11y.atspi.Accessible';
-    const [props, [roleName], [stateBits], [ifaces]] = await Promise.all([
+    const [props, [roleName], [stateBits]] = await Promise.all([
       this.props(bus, ref, A),
       this.call(bus, ref[0], ref[1], A, 'GetRoleName'),
       this.call(bus, ref[0], ref[1], A, 'GetState'),
-      this.call(bus, ref[0], ref[1], A, 'GetInterfaces').catch(() => [[]]),
     ]);
     const states: string[] = [];
     (stateBits as number[] ?? []).forEach((word: number, wi: number) => {
       for (let b = 0; b < 32; b++) if (word & (1 << b)) { const n = STATES[wi * 32 + b]; if (n) states.push(n); }
     });
-    const ifs = new Set<string>(ifaces ?? []);
-    let bounds = null;
-    if (ifs.has('org.a11y.atspi.Component')) {
-      try {
-        const [ext] = await this.call(bus, ref[0], ref[1], 'org.a11y.atspi.Component', 'GetExtents', 'u', [0]);
-        if (ext) bounds = { x: ext[0], y: ext[1], width: ext[2], height: ext[3] };
-      } catch { /* ignore */ }
-    }
-    const actions: string[] = [];
-    if (ifs.has('org.a11y.atspi.Action')) {
-      try {
-        const [list] = await this.call(bus, ref[0], ref[1], 'org.a11y.atspi.Action', 'GetActions');
-        for (const a of list ?? []) actions.push(a[0]);
-      } catch { /* ignore */ }
-    }
-    let value: string | null = null;
-    if (ifs.has('org.a11y.atspi.Value')) {
-      try { value = String((await this.props(bus, ref, 'org.a11y.atspi.Value')).CurrentValue); } catch { /* ignore */ }
-    } else if (ifs.has('org.a11y.atspi.Text') && (states.includes('editable') || roleName === 'entry')) {
-      try { const [t] = await this.call(bus, ref[0], ref[1], 'org.a11y.atspi.Text', 'GetText', 'ii', [0, -1]); value = t ?? null; } catch { /* ignore */ }
-    }
-    if (ifs.has('org.a11y.atspi.EditableText') && !actions.includes('set_value')) actions.push('set_value');
-    if (ifs.has('org.a11y.atspi.Component')) actions.push('focus');
     return {
       native_role: String(roleName ?? ''), name: String(props.Name ?? ''), description: String(props.Description ?? ''),
-      childCount: Number(props.ChildCount ?? 0), states, bounds, actions, value, ifs,
+      childCount: Number(props.ChildCount ?? 0), states,
     };
   }
+
+  /** Bounds, actions and value, fetched only for nodes that are returned. */
+  private async details(bus: any, ref: Ref, l: Awaited<ReturnType<A11y['light']>>) {
+    const [ifaces] = await this.call(bus, ref[0], ref[1], 'org.a11y.atspi.Accessible', 'GetInterfaces').catch(() => [[]]);
+    const ifs = new Set<string>(ifaces ?? []);
+    const [bounds, actions, value] = await Promise.all([
+      (async () => {
+        if (!ifs.has('org.a11y.atspi.Component')) return null;
+        try {
+          const [ext] = await this.call(bus, ref[0], ref[1], 'org.a11y.atspi.Component', 'GetExtents', 'u', [0]);
+          return ext ? { x: ext[0], y: ext[1], width: ext[2], height: ext[3] } : null;
+        } catch { return null; }
+      })(),
+      (async () => {
+        const out: string[] = [];
+        if (ifs.has('org.a11y.atspi.Action')) {
+          try {
+            // GetName(i) is the untranslated action name. GetActions' tuple layout differs
+            // between toolkits (Firefox puts the key binding where GTK puts the name).
+            const n = Number((await this.props(bus, ref, 'org.a11y.atspi.Action')).NActions ?? 0);
+            const names = await Promise.all(Array.from({ length: n }, (_, i) =>
+              this.call(bus, ref[0], ref[1], 'org.a11y.atspi.Action', 'GetName', 'i', [i]).then(([x]) => String(x ?? ''))));
+            out.push(...names);
+          } catch { /* ignore */ }
+        }
+        if (ifs.has('org.a11y.atspi.EditableText')) out.push('set_value');
+        if (ifs.has('org.a11y.atspi.Component')) out.push('focus');
+        return out;
+      })(),
+      (async (): Promise<string | null> => {
+        if (ifs.has('org.a11y.atspi.Value')) {
+          try { return String((await this.props(bus, ref, 'org.a11y.atspi.Value')).CurrentValue); } catch { return null; }
+        }
+        if (ifs.has('org.a11y.atspi.Text') && (l.states.includes('editable') || l.native_role === 'entry')) {
+          try { const [t] = await this.call(bus, ref[0], ref[1], 'org.a11y.atspi.Text', 'GetText', 'ii', [0, -1]); return t ?? null; } catch { return null; }
+        }
+        return null;
+      })(),
+    ]);
+    return { bounds, actions, value, ifs };
+  }
+
+  private async describe(bus: any, ref: Ref) {
+    const l = await this.light(bus, ref);
+    return { ...l, ...(await this.details(bus, ref, l)) };
+  }
+
 
   private async children(bus: any, ref: Ref): Promise<Ref[]> {
     const [kids] = await this.call(bus, ref[0], ref[1], 'org.a11y.atspi.Accessible', 'GetChildren');
@@ -228,53 +266,70 @@ export class A11y {
     return out;
   }
 
-  async tree(opts: TreeOptions = {}): Promise<{ snapshot_id: string; truncated: boolean; nodes: A11yNode[] }> {
+  /**
+   * Parallel pre-order walk. `want` decides which visited nodes get full details and are
+   * returned; every visited node gets an element id so parent ids stay meaningful.
+   */
+  private async walk(
+    opts: { window?: string; maxNodes: number; maxDepth: number; hidden?: boolean },
+    want: (l: Awaited<ReturnType<A11y['light']>>) => boolean,
+  ) {
     const bus = await this.connect();
-    const maxNodes = Math.min(opts.max_nodes ?? 5000, 20000);
-    const maxDepth = opts.max_depth ?? 64;
-    const snap: Snapshot = { id: `s${++this.snapSeq}`, refs: new Map(), created: Date.now() };
-    const nodes: A11yNode[] = [];
+    type Visited = { ref: Ref; l: Awaited<ReturnType<A11y['light']>>; depth: number; app: string; parent: Visited | null };
+    let visited = 0;
     let truncated = false;
-    let seq = 0;
-    const walk = async (ref: Ref, parent: string | null, depth: number, app: string) => {
-      if (nodes.length >= maxNodes) { truncated = true; return; }
-      let d;
-      try { d = await this.describe(bus, ref); } catch { return; }
-      if (!opts.hidden && parent !== null && depth > 1 && !(d.states.includes('showing') || d.states.includes('visible'))) return;
-      const id = `${snap.id}.${++seq}`;
-      snap.refs.set(id, ref);
-      const appName = app || d.name;
-      nodes.push({
-        element_id: id, parent_id: parent, depth, role: mapRole(d.native_role), native_role: d.native_role, name: d.name,
-        value: d.value, description: d.description, bounds: d.bounds, states: d.states, actions: d.actions, app: appName,
-      });
-      if (depth >= maxDepth) { if (d.childCount) truncated = true; return; }
-      if (d.childCount > 2000) { truncated = true; return; }
-      const kids = await this.children(bus, ref).catch(() => []);
-      for (const k of kids) {
-        if (nodes.length >= maxNodes) { truncated = true; return; }
-        await walk(k, id, depth + 1, appName);
-      }
+    const visit = async (ref: Ref, parent: Visited | null, depth: number, app: string): Promise<Visited[]> => {
+      if (visited >= opts.maxNodes) { truncated = true; return []; }
+      let l;
+      try { l = await this.light(bus, ref); } catch { return []; }
+      if (!opts.hidden && parent !== null && depth > 1 && !(l.states.includes('showing') || l.states.includes('visible'))) return [];
+      visited++;
+      const me: Visited = { ref, l, depth, app: app || l.name, parent };
+      if (depth >= opts.maxDepth) { if (l.childCount) truncated = true; return [me]; }
+      if (l.childCount > 2000) { truncated = true; return [me]; }
+      const kids = await this.children(bus, ref).catch(() => [] as Ref[]);
+      const sub = await Promise.all(kids.map((k) => visit(k, me, depth + 1, me.app)));
+      return [me, ...sub.flat()];
     };
     const roots = await this.roots(bus, opts.window);
-    for (const r of roots) await walk(r.ref, null, 0, r.app);
+    const all = (await Promise.all(roots.map((r) => visit(r.ref, null, 0, r.app)))).flat();
+
+    const snap: Snapshot = { id: `s${++this.snapSeq}`, refs: new Map(), created: Date.now() };
+    const ids = new Map<Visited, string>();
+    all.forEach((v, i) => { const id = `${snap.id}.${i + 1}`; ids.set(v, id); snap.refs.set(id, v.ref); });
+    const chosen = all.filter((v) => want(v.l));
+    const nodes: A11yNode[] = await Promise.all(chosen.map(async (v) => {
+      const d = await this.details(bus, v.ref, v.l).catch(() => ({ bounds: null, actions: [] as string[], value: null }));
+      return {
+        element_id: ids.get(v)!, parent_id: v.parent ? ids.get(v.parent)! : null, depth: v.depth,
+        role: mapRole(v.l.native_role), native_role: v.l.native_role, name: v.l.name, value: d.value,
+        description: v.l.description, bounds: d.bounds, states: v.l.states, actions: d.actions, app: v.app,
+      };
+    }));
     this.snapshots.push(snap);
     while (this.snapshots.length > 8) this.snapshots.shift();
     return { snapshot_id: snap.id, truncated, nodes };
   }
 
+  async tree(opts: TreeOptions = {}): Promise<{ snapshot_id: string; truncated: boolean; nodes: A11yNode[] }> {
+    return this.walk(
+      { window: opts.window, maxNodes: Math.min(opts.max_nodes ?? 5000, 20000), maxDepth: opts.max_depth ?? 64, hidden: opts.hidden },
+      () => true,
+    );
+  }
+
   async find(o: FindOptions) {
-    const { snapshot_id, nodes, truncated } = await this.tree({ window: o.window, max_nodes: 20000 });
     const max = o.max_results ?? 50;
     const nc = o.name_contains?.toLowerCase();
     const vc = o.value_contains?.toLowerCase();
-    const matches = nodes.filter((n) =>
-      (!o.role || n.role === o.role || n.native_role === o.role) &&
-      (o.name === undefined || n.name === o.name) &&
-      (!nc || n.name.toLowerCase().includes(nc)) &&
-      (!vc || (n.value ?? '').toLowerCase().includes(vc)) &&
-      (!o.states || o.states.every((s) => n.states.includes(s))),
+    // Filter on the cheap facts during the walk; only matches get bounds/actions/value.
+    const { snapshot_id, nodes, truncated } = await this.walk({ window: o.window, maxNodes: 20000, maxDepth: 64 }, (l) =>
+      (!o.role || mapRole(l.native_role) === o.role || l.native_role === o.role) &&
+      (o.name === undefined || l.name === o.name) &&
+      (!nc || l.name.toLowerCase().includes(nc)) &&
+      (!o.states || o.states.every((st) => l.states.includes(st))),
     );
+    const matches = vc ? nodes.filter((n) => (n.value ?? '').toLowerCase().includes(vc)) : nodes;
     return { snapshot_id, truncated, matches: matches.slice(0, max), total: matches.length };
   }
 
