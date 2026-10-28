@@ -8,8 +8,6 @@ StartLimitIntervalSec=0
 [Service]
 User=desktop
 WorkingDirectory=/home/desktop
-# Fewer glibc malloc arenas: libvips' worker threads otherwise each keep freed memory.
-Environment=MALLOC_ARENA_MAX=2
 Environment=DISPLAY=:0 HOME=/home/desktop OZWELL_DESKTOP_HOST=0.0.0.0 OZWELL_DESKTOP_TOKEN_FILE=/var/lib/ozwell-desktop/token
 # Apps launched through the API join the desktop's session bus and expose AT-SPI
 Environment=GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/desktop-bus/bus GTK_MODULES=gail:atk-bridge NO_AT_BRIDGE=0 QT_ACCESSIBILITY=1 QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
@@ -20,16 +18,12 @@ RuntimeDirectoryMode=0750
 RuntimeDirectoryPreserve=yes
 # In development compose mounts the host's ./dist here; until it's built, wait (and say why)
 ExecStartPre=/bin/sh -c 'test -f /opt/ozwell-desktop/dist/cli.js || { echo "/opt/ozwell-desktop/dist/cli.js is missing; run npm run build on the host" >&2; sleep 4; exit 1; }'
-# Screen capture allocates large short-lived buffers; without a cap V8 grows its young
-# generation to 128 MiB of resident memory. 16 MiB semi-spaces cost a few more scavenges.
-ExecStart=/usr/bin/node --max-semi-space-size=16 /opt/ozwell-desktop/dist/cli.js
+ExecStart=/usr/bin/node /opt/ozwell-desktop/dist/cli.js
 # The startup link is also written to the container console, so it shows up in
 # `docker compose up` / `docker logs` when the container has a TTY (compose: tty: true).
 Environment=OZWELL_DESKTOP_CONSOLE=/dev/console
 SupplementaryGroups=tty
 Restart=always
-# Restarting the server must not kill apps launched through it (they share its cgroup).
-KillMode=process
 RestartSec=1
 NoNewPrivileges=yes
 

@@ -1,6 +1,5 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
-import { m } from '../metrics.js';
 
 export interface BusEvent { type: string; data: unknown; id: number; ts: number }
 
@@ -60,13 +59,6 @@ export class Presence {
     this.timer.unref();
   }
 
-  private count() {
-    let h = 0, a = 0;
-    for (const p of this.parts.values()) (p.kind === 'agent' ? a++ : h++);
-    m.presence.set({ kind: 'human' }, h);
-    m.presence.set({ kind: 'agent' }, a);
-  }
-
   roster(): Participant[] {
     return [...this.parts.values()].map(({ key: _k, ...p }) => p as Participant);
   }
@@ -96,7 +88,6 @@ export class Presence {
       key: input.key,
     };
     this.parts.set(p.participant_id, p);
-    this.count();
     if (input.key) this.byKey.set(input.key, p.participant_id);
     this.bus.publish('presence.joined', this.public(p));
     return p;
@@ -106,7 +97,6 @@ export class Presence {
     const p = this.parts.get(id);
     if (!p) return false;
     this.parts.delete(id);
-    this.count();
     if (p.key) this.byKey.delete(p.key);
     this.bus.publish('presence.left', { participant_id: id });
     return true;

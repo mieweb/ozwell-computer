@@ -8,10 +8,6 @@ async function loadSharp(): Promise<any | null> {
   if (sharpMod !== undefined) return sharpMod;
   try {
     sharpMod = (await import('sharp')).default;
-    // Every screenshot is a new image, so libvips' operation cache never hits; it only
-    // holds native memory. One thread per image is plenty and keeps allocator arenas down.
-    sharpMod.cache(false);
-    sharpMod.concurrency(1);
   } catch {
     sharpMod = null;
   }

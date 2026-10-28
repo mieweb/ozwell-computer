@@ -18,21 +18,6 @@ describe('system', () => {
   });
 });
 
-describe('metrics', () => {
-  it('/metrics serves Prometheus text with memory and session series', async () => {
-    const res = await fetch(`${URL_}/api/v1/metrics`, { headers: auth });
-    expect(res.status).toBe(200);
-    expect(res.headers.get('content-type')).toContain('text/plain');
-    const text = await res.text();
-    for (const name of ['process_resident_memory_bytes', 'nodejs_heap_size_used_bytes', 'ozwell_cgroup_memory_bytes', 'ozwell_process_resident_bytes', 'ozwell_process_pss_bytes', 'ozwell_cgroup_memory_stat_bytes{type="anon"}', 'ozwell_vnc_sessions', 'ozwell_mcp_sessions', 'ozwell_http_request_duration_seconds_bucket', 'ozwell_x_connected 1']) {
-      expect(text).toContain(name);
-    }
-    expect(text).toMatch(/ozwell_process_resident_bytes\{command="node"\} \d+/);
-    expect(text).toMatch(/ozwell_cgroup_memory_bytes\{scope="container",unit=""\} \d+/);
-    expect((await fetch(`${URL_}/api/v1/metrics`)).status).toBe(401);
-  });
-});
-
 describe('pointer actions', () => {
   it('drag moves a window by its title bar', async () => {
     const id = await freshXterm('oz-drag');

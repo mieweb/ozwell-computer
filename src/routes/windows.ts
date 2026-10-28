@@ -2,7 +2,6 @@ import { spawn } from 'node:child_process';
 import type { FastifyInstance } from 'fastify';
 import { ApiError } from '../errors.js';
 import type { AppContext } from '../server.js';
-import { m } from '../metrics.js';
 
 const idParams = { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] };
 const epochQuery = { type: 'object', properties: { epoch: { type: 'integer', minimum: 0 } } };
@@ -106,10 +105,9 @@ export default async function windowRoutes(app: FastifyInstance, ctx: AppContext
     const write = (type: string, data: unknown, id?: number) =>
       res.write(`${id ? `id: ${id}\n` : ''}event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
     write('hello', { roster: desktop.presence.roster() });
-    m.sseClients.inc();
     const unsub = desktop.bus.subscribe((ev) => write(ev.type, ev.data, ev.id));
     const ka = setInterval(() => write('keepalive', { ts: Date.now() }), 15_000);
-    req.raw.on('close', () => { clearInterval(ka); unsub(); m.sseClients.dec(); });
+    req.raw.on('close', () => { clearInterval(ka); unsub(); });
   });
 
   app.post('/api/v1/presence/join', {

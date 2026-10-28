@@ -19,7 +19,6 @@ import webRoutes, { loginPage } from './web/routes.js';
 import vncRoutes from './vnc/routes.js';
 import mcpRoutes from './mcp/server.js';
 import type { A11y } from './a11y/atspi.js';
-import { m, render as renderMetrics } from './metrics.js';
 
 const require = createRequire(import.meta.url);
 export const VERSION: string = require('../package.json').version;
@@ -78,19 +77,6 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(fastifyStatic, { root: join(here, 'web', 'static'), prefix: '/static/', decorateReply: false, index: false });
 
   app.get('/api/v1/openapi.json', { schema: { hide: true } }, async () => app.swagger());
-
-  app.addHook('onResponse', async (req, reply) => {
-    const route = req.routeOptions?.url ?? 'unmatched';
-    if (route === '/health') return;
-    m.httpSeconds.observe({ method: req.method, route, status: String(reply.statusCode) }, reply.elapsedTime / 1000);
-  });
-  app.get('/api/v1/metrics', {
-    schema: { tags: ['system'], summary: 'Prometheus metrics (text exposition format)' },
-    logLevel: 'warn', // scraped every few seconds
-  }, async (_req, reply) => {
-    const { body, contentType } = await renderMetrics();
-    return reply.header('content-type', contentType).header('cache-control', 'no-store').send(body);
-  });
 
   await app.register(async (s) => coreRoutes(s, ctx));
   await app.register(async (s) => windowRoutes(s, ctx));
