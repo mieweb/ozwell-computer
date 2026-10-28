@@ -316,7 +316,12 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
   returned a 2xx, or any MCP tool was never called. It reads the server's own counters
   from `/api/v1/metrics`, so new routes and tools need a test. Runs filtered to some files or tests skip
   the check.
-- `npm run test:unit` runs only the fast unit tests.
+- `npm run test:unit` runs only the fast unit tests; `npx vitest run --project
+  integration test/integration/<file>` runs one integration file.
+- **CI:** pushes and pull requests run typecheck, unit tests and the build (docs-only
+  changes are skipped). The image build, full integration suite, `.deb` and publishing
+  run on published releases, nightly (refreshing `:latest`), and on demand:
+  `gh workflow run CI`.
 - `OZ_URL=… OZ_TOKEN=… npm test` runs the suite against any other server.
 - Run `docker compose up -d --build` after changing anything packaged other than
   `./dist`: `contrib/` (units, XFCE config, maintainer scripts), `.fpm`, `docker/`, the
