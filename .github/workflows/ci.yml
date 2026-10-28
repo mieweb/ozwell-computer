@@ -149,7 +149,8 @@ jobs:
       - name: Publish the tested image
         if: github.event_name != 'pull_request'
         run: |
-          for tag in latest ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}; do
+          # Releases: the version tag and :latest. Nightly / manual runs: :main.
+          for tag in ${{ github.event_name == 'release' && format('{0} latest', github.event.release.tag_name) || 'main' }}; do
             docker tag ozwell-computer:dev "ghcr.io/mieweb/ozwell-computer:$tag"
             docker push "ghcr.io/mieweb/ozwell-computer:$tag"
           done

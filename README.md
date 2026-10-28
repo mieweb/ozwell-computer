@@ -329,8 +329,8 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
   integration test/integration/<file>` runs one integration file.
 - **CI:** pushes and pull requests run typecheck, unit tests and the build (docs-only
   changes are skipped). The image build, full integration suite, `.deb` and publishing
-  run on published releases, nightly (refreshing `:latest`), and on demand:
-  `gh workflow run CI`.
+  run on published releases, nightly, and on demand (`gh workflow run CI`). Releases
+  push the version tag and `:latest`; nightly and on-demand runs push `:main`.
 - `OZ_URL=… OZ_TOKEN=… npm test` runs the suite against any other server.
 - Run `docker compose up -d --build` after changing anything packaged other than
   `./dist`: `contrib/` (units, XFCE config, maintainer scripts), `.fpm`, `docker/`, the
