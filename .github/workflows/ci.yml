@@ -143,9 +143,13 @@ jobs:
             pkg/Packages.gz
       - name: Attach the package and repository metadata to the release
         if: github.event_name == 'release'
-        run: gh release upload "${{ github.event.release.tag_name }}" pkg/*.deb pkg/Packages pkg/Packages.gz --clobber
-        env:
-          GH_TOKEN: ${{ github.token }}
+        # An action rather than `gh release upload`: the self-hosted runner has no gh CLI.
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            pkg/*.deb
+            pkg/Packages
+            pkg/Packages.gz
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v4
