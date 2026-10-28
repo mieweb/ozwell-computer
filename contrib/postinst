@@ -2,6 +2,9 @@
 # ozwell-desktop postinst
 set -e
 
+# Never stop or restart ozwell-desktop-upgrade.service here (or in prerm): in-app
+# upgrades run apt/dpkg *inside* that service, so doing so would kill this very
+# transaction halfway. test/unit/packaging.test.ts enforces this.
 UNITS="ozwell-desktop-dbus.service ozwell-desktop-xvfb.service ozwell-desktop-session.service ozwell-desktop.service ozwell-desktop-upgrade.path"
 
 case "$1" in
@@ -30,6 +33,9 @@ case "$1" in
                 # Upgrade: restart only the server. Restarting Xvfb or the session
                 # would close every application open on the desktop.
                 systemctl try-restart ozwell-desktop.service
+                # Pick up a changed watch definition. Stopping a path unit doesn't
+                # stop the service it triggered (possibly the one running us).
+                systemctl try-restart ozwell-desktop-upgrade.path
             fi
         fi
         ;;

@@ -128,12 +128,30 @@ export class Updater {
       readFile(join(this.stateDir, 'upgrade.log'), 'utf8').catch(() => ''),
       stat(join(this.stateDir, 'upgrade-request')).then(() => true, () => false),
     ]);
-    const [state, at] = statusText.trim().split(/\s+/);
+    let [state, at] = statusText.trim().split(/\s+/);
+    let log = logText;
+    // "running" with no upgrade service running means the run was interrupted
+    // (container stopped, service killed); the next run repairs dpkg first.
+    if (state === 'running' && !requested && !(await this.upgradeUnitActive())) {
+      state = 'failed';
+      log += '\n(interrupted: the upgrade stopped before finishing; retry to complete it)\n';
+    }
     return {
       state: requested ? 'requested' : (['running', 'succeeded', 'unchanged', 'failed'].includes(state) ? state as UpgradeState : 'idle'),
       at: at ? new Date(Number(at) * 1000).toISOString() : null,
-      log: logText.slice(-4000),
+      log: log.slice(-4000),
     };
+  }
+
+  private async upgradeUnitActive(): Promise<boolean> {
+    try {
+      const { stdout } = await run('systemctl', ['is-active', 'ozwell-desktop-upgrade.service']);
+      return ['active', 'activating', 'reloading'].includes(stdout.trim());
+    } catch (e) {
+      // is-active exits non-zero when inactive; anything else (no systemctl): assume running
+      const out = String((e as { stdout?: string }).stdout ?? '').trim();
+      return !['inactive', 'failed', 'unknown'].includes(out);
+    }
   }
 
   async status(): Promise<UpdateStatus> {

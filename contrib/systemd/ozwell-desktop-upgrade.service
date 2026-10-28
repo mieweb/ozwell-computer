@@ -6,4 +6,6 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=@PREFIX@/bin/ozwell-desktop-upgrade
-TimeoutStartSec=30min
+# No timeout: being killed mid-dpkg is worse than a slow download. apt itself waits
+# a bounded time for the dpkg lock (see the script).
+TimeoutStartSec=infinity

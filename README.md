@@ -93,6 +93,14 @@ are in `contrib/`.
     ozwell-desktop`, logging to `upgrade.log` beside it.
   - Upgrades restart only the server; the viewer reconnects and apps on the desktop
     stay open. apt installs whatever version its configured sources offer.
+  - apt and dpkg run inside `ozwell-desktop-upgrade.service`, so maintainer scripts
+    must never stop or restart that service; a unit test enforces this.
+  - An upgrade restarts the watcher (`.path`), so changes to it take effect at once.
+    A changed upgrade script or service is used from the next upgrade.
+  - The service has no start timeout, and apt waits up to 10 minutes for the dpkg lock.
+    Each run first completes any earlier run that was interrupted
+    (`dpkg --configure -a`). An interrupted run is reported as `failed`; retrying
+    it repairs it.
 - **Toolbar metrics:** the viewer polls `/api/v1/metrics` (Prometheus text format)
   every 5 s and shows container CPU, memory (against the limit, if any) and VNC
   throughput.

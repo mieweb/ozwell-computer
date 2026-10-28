@@ -25,10 +25,18 @@ before=$(dpkg-query -W -f='${Version}' ozwell-desktop 2>/dev/null || true)
 echo "installed: ${before:-none}"
 
 export DEBIAN_FRONTEND=noninteractive
-# One unreachable source shouldn't block the upgrade; apt reports which one failed.
-apt-get update || echo "apt-get update reported errors; continuing"
+# Wait for another apt/dpkg (e.g. unattended-upgrades) instead of failing.
+LOCK_WAIT="-o DPkg::Lock::Timeout=600"
 
-if apt-get install -y --only-upgrade \
+# Finish anything an earlier, interrupted run left half-configured.
+if dpkg --audit | grep -q .; then
+    echo "completing an interrupted dpkg run:"
+    dpkg --configure -a || { status failed; exit 1; }
+fi
+# One unreachable source shouldn't block the upgrade; apt reports which one failed.
+apt-get $LOCK_WAIT update || echo "apt-get update reported errors; continuing"
+
+if apt-get $LOCK_WAIT install -y --only-upgrade \
         -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
         ozwell-desktop; then
     after=$(dpkg-query -W -f='${Version}' ozwell-desktop 2>/dev/null || true)
