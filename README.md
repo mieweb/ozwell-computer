@@ -116,6 +116,30 @@ namespace is missing. On Podman with `userns = "auto"` it runs namespaced; on Do
 runs unnamespaced. The host cgroup mount in `compose.yml` is harmless under Podman's
 user namespace, because the remapped root can't write the host's cgroups.
 
+### Docker inside a Proxmox LXC
+
+Proxmox's LXCFS makes the LXC's `/proc/meminfo`, `/proc/cpuinfo` and friends show the
+LXC's limits. Docker gives each container a fresh `/proc` from the kernel, so inside the
+container `free`, `top` and `nproc` show the whole physical host. The LXC's cgroup limits
+still apply; only the reported values are wrong. That misleads anything that sizes
+itself from `/proc/meminfo`.
+
+`compose.yml` bind-mounts the LXCFS-backed files read-only into the container:
+`/proc/{cpuinfo,diskstats,loadavg,meminfo,slabinfo,stat,swaps,uptime}` and
+`/sys/devices/system/cpu`. On hosts without LXCFS they show the host's real values. With
+plain `docker run`, add the same mounts:
+
+```bash
+-v /proc/cpuinfo:/proc/cpuinfo:ro -v /proc/diskstats:/proc/diskstats:ro \
+-v /proc/loadavg:/proc/loadavg:ro -v /proc/meminfo:/proc/meminfo:ro \
+-v /proc/slabinfo:/proc/slabinfo:ro -v /proc/stat:/proc/stat:ro \
+-v /proc/swaps:/proc/swaps:ro -v /proc/uptime:/proc/uptime:ro \
+-v /sys/devices/system/cpu:/sys/devices/system/cpu:ro
+```
+
+Also consider `--memory` a little below the LXC's allocation, so the container has its
+own enforced limit and an out-of-memory kill stays inside it.
+
 **Kubernetes:** `hostUsers: false` in the pod spec requests a user namespace on clusters
 and runtimes that support it. This hasn't been tested with this image.
 

@@ -21,6 +21,20 @@ services:
     tty: true
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
+      # Resource views for nested containers (e.g. Docker in a Proxmox LXC): LXCFS
+      # virtualizes these files in the LXC, but Docker gives the container a fresh /proc
+      # and /sys from the kernel, which show the whole physical host. Passing the outer
+      # files through makes free/top/nproc and memory-sizing apps see the LXC's limits.
+      # Without LXCFS they're simply the host's values, which the container sees anyway.
+      - /proc/cpuinfo:/proc/cpuinfo:ro
+      - /proc/diskstats:/proc/diskstats:ro
+      - /proc/loadavg:/proc/loadavg:ro
+      - /proc/meminfo:/proc/meminfo:ro
+      - /proc/slabinfo:/proc/slabinfo:ro
+      - /proc/stat:/proc/stat:ro
+      - /proc/swaps:/proc/swaps:ro
+      - /proc/uptime:/proc/uptime:ro
+      - /sys/devices/system/cpu:/sys/devices/system/cpu:ro
       # The generated token persists here across `up`/`down` (removed by `down -v`).
       - state:/var/lib/ozwell-computer
       - type: bind
