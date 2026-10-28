@@ -2,9 +2,11 @@
 // environment) is handed to that provider to interpret.
 import type { Provider, ProviderFactory } from './types.ts';
 import { dockerProvider } from './docker.ts';
+import { opensourceServerProvider } from './opensource-server.ts';
 
 const registry = new Map<string, ProviderFactory>([
   ['docker', dockerProvider],
+  ['opensource-server', opensourceServerProvider],
 ]);
 
 /** Register an additional provider (e.g. from a plugin or a test). */

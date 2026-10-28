@@ -36,12 +36,12 @@ const MANAGEMENT: ToolDef[] = [
   },
   {
     name: 'create_computer',
-    description: 'Create a new ozwell-computer for you and wait until it is ready. Returns its instance_id and a viewer_url the user can open to watch or take over the screen.',
+    description: 'Create a new ozwell-computer for you. Waits up to ~40 s for it to start and returns its instance_id and a viewer_url the user can open to watch or take over the screen. If ready is false it is still starting: call get_computer (which also waits) until ready is true.',
     inputSchema: { type: 'object', properties: { display_name: { type: 'string', description: 'Optional friendly label' } } },
   },
   {
     name: 'get_computer',
-    description: 'Status and viewer_url of one of your computers.',
+    description: 'Status, readiness and viewer_url of one of your computers. If it is still starting, waits up to ~40 s for it.',
     inputSchema: { type: 'object', properties: { instance_id: { type: 'string' } }, required: ['instance_id'] },
   },
   {
@@ -73,18 +73,31 @@ export interface OrchestratorDeps {
   log?: { info: (o: object, m: string) => void; warn: (o: object, m: string) => void };
 }
 
-async function waitReady(c: Computer, timeoutMs: number) {
-  const end = Date.now() + timeoutMs;
-  while (Date.now() < end) {
-    if (c.internalUrl) {
-      try {
-        if ((await fetch(`${c.internalUrl}/health`, { signal: AbortSignal.timeout(3000) })).status === 204) return true;
-      } catch { /* starting */ }
-    }
-    await new Promise((r) => setTimeout(r, 1000));
+/** Is the computer up? (Re-reads it: providers may only learn URLs while it starts.) */
+export async function isReady(provider: Provider, id: string): Promise<{ c: Computer | null; ready: boolean }> {
+  const c = await provider.get(id);
+  if (!c?.internalUrl) return { c, ready: false };
+  try {
+    return { c, ready: (await fetch(`${c.internalUrl}/health`, { signal: AbortSignal.timeout(3000) })).status === 204 };
+  } catch {
+    return { c, ready: false };
   }
-  return false;
 }
+
+/** Wait until ready or the budget runs out (wait, then hand off; see create_computer). */
+async function waitReady(provider: Provider, c: Computer, timeoutMs: number) {
+  const end = Date.now() + timeoutMs;
+  let last = { c: c as Computer | null, ready: false };
+  for (;;) {
+    last = await isReady(provider, c.id);
+    const dead = ['failed', 'missing', 'exited', 'dead', 'offline'].includes(last.c?.status ?? '');
+    if (last.ready || dead || Date.now() >= end) return { c: last.c ?? c, ready: last.ready };
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+}
+
+/** Under common 60 s MCP client request timeouts. */
+export const CREATE_WAIT_MS = 40_000;
 
 export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server {
   const { provider, client } = deps;
@@ -117,13 +130,15 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
           return text({ computers: (await provider.list(user.id)).map(describe) });
         case 'create_computer': {
           const display = typeof args.display_name === 'string' ? args.display_name.slice(0, 64) : undefined;
-          const c = await provider.create({ owner: user, displayName: display });
-          const ready = await waitReady(c, deps.readyTimeoutMs ?? 120_000);
-          const fresh = (await provider.get(c.id)) ?? c;
-          return text({ ...describe(fresh), ready });
+          const created = await provider.create({ owner: user, displayName: display });
+          const { c, ready } = await waitReady(provider, created, deps.readyTimeoutMs ?? CREATE_WAIT_MS);
+          return text({ ...describe(c), ready });
         }
-        case 'get_computer':
-          return text(describe(await mine(args.instance_id)));
+        case 'get_computer': {
+          const c0 = await mine(args.instance_id);
+          const { c, ready } = await waitReady(provider, c0, deps.readyTimeoutMs ?? CREATE_WAIT_MS);
+          return text({ ...describe(c), ready });
+        }
         case 'destroy_computer': {
           const c = await mine(args.instance_id);
           await provider.destroy(c.id);

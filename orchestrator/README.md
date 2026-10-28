@@ -14,8 +14,11 @@ provider, and proxies every ozwell-computer tool with an extra `instance_id` arg
   tool is scoped to that user id: other users' computers are reported as not found.
   These headers are only trusted on requests carrying the pre-shared key.
 - **Tools.**
-  - Management: `list_computers`, `create_computer` (optional `display_name`; waits
-    until ready), `get_computer` and `destroy_computer`. They return `instance_id` and
+  - Management: `list_computers`, `create_computer`, `get_computer` and
+    `destroy_computer`. `create_computer` takes an optional `display_name`. It and
+    `get_computer` wait up to about 40 s for the computer to start, then return
+    `ready: false` if it is still starting (under the 60 s MCP client limit); the agent
+    calls `get_computer` again. They return `instance_id` and
     `viewer_url`, which embeds the computer's token for the user to open.
   - Proxied: every tool in `../docs/mcp-tools.json` with `instance_id` added. That
     catalog is generated from the computer (`npm run mcp-tools` at the repo root), so
@@ -67,3 +70,30 @@ Containers are named `ozc-<random>` and labelled `org.mieweb.ozwell-computer.*` 
 display name, email, user name, created). The token is in the container's environment.
 It's a reference implementation: it uses the same systemd settings as `compose.yml`,
 applies no resource limits, and anyone with the Docker socket can read every token.
+
+### `opensource-server`
+
+```
+opensource-server://manager.os.mieweb.org?site=<id>&domain=<external domain id>
+  &template=ghcr.io/mieweb/ozwell-computer:latest
+  &owner=tag|email
+  &internal=external|ip
+  &tls=0                                        (http, development only)
+```
+
+The API key comes from `OPENSOURCE_SERVER_API_KEY`.
+- **Container:** each computer is an opensource-server container named `ozc-<random>`,
+  with an `http` service on port 8080 published as `https://ozc-<random>.<domain>`.
+  `authRequired` is off, because the computer has its own token.
+- **Ownership:** it is always enforced by the Ozwell user id, kept in environment-variable
+  tags (`OZWELL_ORCHESTRATOR_*`) next to `OZWELL_COMPUTER_TOKEN`. That is the only
+  free-form metadata the API has.
+  - `owner=tag` (default): containers belong to the API key's account.
+  - `owner=email`: each container is also attributed to the opensource-server user whose
+    email matches `X-Ozwell-User-Email`, so it appears in their dashboard. This needs an
+    admin key, and creation fails for users without an opensource-server account.
+- **Internal URL:** `internal=external` (default) reaches computers through their public
+  URL. `internal=ip` uses `http://<ipv4>:8080`, for an orchestrator running on the
+  site's network.
+- **Note:** an admin key lists every container on the site; non-orchestrator containers
+  are ignored.
