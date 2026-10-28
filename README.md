@@ -284,6 +284,15 @@ The tools are: `screenshot`, `click`, `double_click`, `move`, `drag`, `scroll`,
 `get_ui_tree`, `find_element`, `ui_action`, `get_clipboard` and `set_clipboard`. When
 exec is enabled, `run_command`, `read_file` and `write_file` are also available.
 
+**Long-running commands:** `run_command` waits up to `wait_ms` (default 25 s, max 50 s,
+under typical 60 s MCP client timeouts). If the command finishes, it returns the result.
+Otherwise it returns `state: "running"` with a `job_id` and the command keeps going;
+`command_output(job_id)` waits again and returns new output (pass the returned offsets)
+or the final result, and `cancel: true` stops it. `timeout_ms` (default 1 h) kills it.
+Jobs run detached under `/var/lib/ozwell-computer/jobs/`, survive server restarts, and
+are removed 24 h after finishing. Over HTTP, `POST /api/v1/exec` with `wait_ms` returns
+`202` and a `job_id` for `GET`/`DELETE /api/v1/exec/jobs/:id`.
+
 ## Development
 
 `compose.yml` is the dev container. It uses the production image and systemd layout,

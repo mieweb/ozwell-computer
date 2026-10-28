@@ -8,6 +8,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ApiError } from '../errors.js';
 import type { AppContext } from '../server.js';
 import { runCommand, type ExecRequest } from '../process/exec.js';
+import { MAX_WAIT_MS, jobsFor } from '../process/jobs.js';
 import { loadPty } from '../process/pty.js';
 import { parseRange, safePath, signedUrl, verifySignature, type SignMethod } from '../fs/index.js';
 import { deriveKey, generateToken } from '../auth/token.js';
@@ -69,6 +70,7 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
     if (!config.exec) throw new ApiError('permission_denied', 'process and filesystem APIs are disabled (OZWELL_COMPUTER_EXEC=false)');
   };
   const root = config.fsRoot;
+  const jobs = jobsFor(config, desktop.x.displayName);
 
   // Raw uploads: accept any content type as a stream.
   app.addContentTypeParser('*', (_req, payload, done) => done(null, payload));
@@ -85,12 +87,20 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
           cmd: { type: 'string', minLength: 1 }, args: { type: 'array', items: { type: 'string' } }, cwd: { type: 'string' },
           env: { type: 'object', additionalProperties: { type: 'string' } }, timeout_ms: { type: 'integer', minimum: 1 },
           stdin: { type: 'string' }, shell: { type: 'boolean' },
+          wait_ms: { type: 'integer', minimum: 0, maximum: MAX_WAIT_MS },
         },
       },
     },
   }, async (req, reply) => {
-    const body = req.body as ExecRequest;
+    const body = req.body as ExecRequest & { wait_ms?: number };
     const stream = ['1', 'true'].includes((req.query as any).stream);
+    if (body.wait_ms !== undefined && !stream) {
+      // Wait, then hand off: 200 with the result if it finished, else 202 with a job to poll.
+      const shell = body.shell ?? !body.args?.length;
+      const id = await jobs.start({ command: body.cmd, args: shell ? undefined : body.args ?? [], cwd: body.cwd, env: body.env, timeout_ms: body.timeout_ms, stdin: body.stdin });
+      const v = await jobs.wait(id, body.wait_ms);
+      return reply.code(v.state === 'running' ? 202 : 200).send(v);
+    }
     if (!stream) return runCommand(body, desktop.x.displayName);
     reply.hijack();
     reply.raw.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
@@ -104,6 +114,20 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
     }
     reply.raw.end();
   });
+
+  const jobParams = { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] };
+  app.get('/api/v1/exec/jobs/:id', {
+    preHandler: gate,
+    schema: {
+      tags: ['exec'], summary: 'Wait for a background command and read its output', params: jobParams,
+      querystring: { type: 'object', properties: { wait_ms: { type: 'integer', minimum: 0, maximum: MAX_WAIT_MS }, stdout_offset: { type: 'integer', minimum: 0 }, stderr_offset: { type: 'integer', minimum: 0 } } },
+    },
+  }, async (req) => {
+    const q = req.query as { wait_ms?: number; stdout_offset?: number; stderr_offset?: number };
+    return jobs.wait((req.params as any).id, q.wait_ms ?? 0, { stdout: q.stdout_offset, stderr: q.stderr_offset });
+  });
+  app.delete('/api/v1/exec/jobs/:id', { preHandler: gate, schema: { tags: ['exec'], summary: 'Cancel a background command', params: jobParams } },
+    async (req) => jobs.cancel((req.params as any).id));
 
   app.get('/api/v1/pty', { websocket: true, preHandler: gate, schema: { hide: true } }, async (socket, req) => {
     const pty = await loadPty();

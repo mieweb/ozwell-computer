@@ -525,7 +525,7 @@
     },
     {
       "name": "run_command",
-      "description": "Run a shell command in the desktop environment (non-interactive) and return its output.",
+      "description": "Run a shell command in the desktop environment (non-interactive). Waits up to wait_ms (default 25 s) and returns {state, exit_code, stdout, stderr}. If it is still going, state is \"running\" with a job_id: the command keeps running, and you call command_output to wait for it. Use this for long commands (installs, builds) too.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
@@ -537,13 +537,55 @@
             "type": "string"
           },
           "timeout_ms": {
+            "description": "Kill the command after this long (default 1 h)",
             "type": "integer",
-            "minimum": -9007199254740991,
-            "maximum": 600000
+            "minimum": 1000,
+            "maximum": 86400000
+          },
+          "wait_ms": {
+            "description": "How long to wait before handing off (default 25000, max 50000)",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50000
           }
         },
         "required": [
           "command"
+        ]
+      }
+    },
+    {
+      "name": "command_output",
+      "description": "Wait for a command started by run_command (by job_id) and return its state and output. Pass stdout_offset/stderr_offset from the previous result to get only new output. cancel=true kills it.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string"
+          },
+          "wait_ms": {
+            "description": "Default 25000",
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 50000
+          },
+          "stdout_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "stderr_offset": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "cancel": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "job_id"
         ]
       }
     },

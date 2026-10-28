@@ -28,6 +28,8 @@ describe('OZWELL_COMPUTER_EXEC=false', () => {
     ['POST', '/api/v1/fs/move', { from: '/tmp/a', to: '/tmp/b' }],
     ['POST', '/api/v1/fs/mkdir', { path: '/tmp/a' }],
     ['POST', '/api/v1/fs/sign', { path: '/tmp/a' }],
+    ['GET', '/api/v1/exec/jobs/j-000000000000', undefined],
+    ['DELETE', '/api/v1/exec/jobs/j-000000000000', undefined],
   ])('%s %s → 403 permission_denied', async (method, url, payload) => {
     const r = await app.inject({
       method: method as any, url, headers: { ...auth, ...(typeof payload === 'string' ? { 'content-type': 'application/octet-stream' } : {}) },

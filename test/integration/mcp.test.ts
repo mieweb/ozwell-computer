@@ -33,7 +33,7 @@ describe('MCP tools', () => {
   it('exposes the full tool set', async () => {
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(names).toEqual([
-      'activate_window', 'click', 'double_click', 'drag', 'find_element', 'get_clipboard', 'get_ui_tree', 'hotkey',
+      'activate_window', 'click', 'command_output', 'double_click', 'drag', 'find_element', 'get_clipboard', 'get_ui_tree', 'hotkey',
       'launch_app', 'list_windows', 'move', 'press_key', 'read_file', 'run_command', 'screenshot', 'scroll',
       'set_clipboard', 'type_text', 'ui_action', 'write_file',
     ]);
@@ -96,6 +96,18 @@ describe('MCP tools', () => {
     await exec("printf 'from x' | xclip -selection clipboard -i -loops 2 >/dev/null 2>&1 &");
     await sleep(500);
     expect((await tool('get_clipboard')).text).toBe('from x');
+  });
+
+  it('run_command waits, then hands off to command_output', async () => {
+    const quick = await tool('run_command', { command: 'echo quick' });
+    expect(quick).toMatchObject({ state: 'exited', exit_code: 0, stdout: 'quick\n' });
+    const slow = await tool('run_command', { command: 'echo start; sleep 3; echo end', wait_ms: 500 });
+    expect(slow).toMatchObject({ state: 'running', stdout: 'start\n', job_id: expect.stringMatching(/^j-/) });
+    expect(slow.note).toContain('command_output');
+    const done = await tool('command_output', { job_id: slow.job_id, stdout_offset: slow.stdout_offset, wait_ms: 10000 });
+    expect(done).toMatchObject({ state: 'exited', exit_code: 0, stdout: 'end\n' });
+    const long = await tool('run_command', { command: 'sleep 60', wait_ms: 0 });
+    expect((await tool('command_output', { job_id: long.job_id, cancel: true })).state).toBe('cancelled');
   });
 
   it('write_file and read_file round-trip', async () => {

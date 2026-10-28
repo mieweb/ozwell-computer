@@ -8,7 +8,7 @@ import { z } from 'zod';
 import type { AppContext } from '../server.js';
 import { ApiError, toApiError } from '../errors.js';
 import type { Principal } from '../presence/index.js';
-import { runCommand } from '../process/exec.js';
+import { DEFAULT_WAIT_MS, MAX_WAIT_MS, jobsFor, present } from '../process/jobs.js';
 import { safePath } from '../fs/index.js';
 import { launchDetached } from '../routes/windows.js';
 import { m } from '../metrics.js';
@@ -154,13 +154,32 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
     async (a) => wrap(async () => text({ generation: await desktop.ctl().clipboard.write({ text: a.text }) })));
 
   if (config.exec) {
+    const jobs = jobsFor(config, desktop.x.displayName);
     mcp.registerTool('run_command', {
-      description: 'Run a shell command in the desktop environment (non-interactive) and return its output.',
-      inputSchema: { command: z.string(), cwd: z.string().optional(), timeout_ms: z.number().int().max(600000).optional() },
+      description: 'Run a shell command in the desktop environment (non-interactive). Waits up to wait_ms (default 25 s) ' +
+        'and returns {state, exit_code, stdout, stderr}. If it is still going, state is "running" with a job_id: ' +
+        'the command keeps running, and you call command_output to wait for it. Use this for long commands (installs, builds) too.',
+      inputSchema: {
+        command: z.string(), cwd: z.string().optional(),
+        timeout_ms: z.number().int().min(1000).max(24 * 3_600_000).optional().describe('Kill the command after this long (default 1 h)'),
+        wait_ms: z.number().int().min(0).max(MAX_WAIT_MS).optional().describe(`How long to wait before handing off (default ${DEFAULT_WAIT_MS}, max ${MAX_WAIT_MS})`),
+      },
     }, async (a) => wrap(async () => {
-      const r = await runCommand({ cmd: a.command, shell: true, cwd: a.cwd, timeout_ms: a.timeout_ms ?? 60000 }, desktop.x.displayName);
-      const cap = (s: string) => (s.length > 50_000 ? s.slice(0, 50_000) + '\n…[truncated]' : s);
-      return text({ ...r, stdout: cap(r.stdout), stderr: cap(r.stderr) });
+      const id = await jobs.start({ command: a.command, cwd: a.cwd, timeout_ms: a.timeout_ms });
+      return text(present(await jobs.wait(id, a.wait_ms ?? DEFAULT_WAIT_MS)));
+    }));
+    mcp.registerTool('command_output', {
+      description: 'Wait for a command started by run_command (by job_id) and return its state and output. ' +
+        'Pass stdout_offset/stderr_offset from the previous result to get only new output. cancel=true kills it.',
+      inputSchema: {
+        job_id: z.string(),
+        wait_ms: z.number().int().min(0).max(MAX_WAIT_MS).optional().describe(`Default ${DEFAULT_WAIT_MS}`),
+        stdout_offset: z.number().int().min(0).optional(), stderr_offset: z.number().int().min(0).optional(),
+        cancel: z.boolean().optional(),
+      },
+    }, async (a) => wrap(async () => {
+      if (a.cancel) return text(present(await jobs.cancel(a.job_id)));
+      return text(present(await jobs.wait(a.job_id, a.wait_ms ?? DEFAULT_WAIT_MS, { stdout: a.stdout_offset, stderr: a.stderr_offset })));
     }));
     mcp.registerTool('read_file', {
       description: 'Read a text file (up to 1 MiB).',

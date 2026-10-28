@@ -180,6 +180,20 @@ describe('exec and files', () => {
     expect(lines.at(-1).exit).toMatchObject({ exit_code: 4, stdout: 'one\n', stderr: 'two\n' });
   });
 
+  it('exec with wait_ms hands off long commands to /exec/jobs', async () => {
+    const quick = await api('POST', '/api/v1/exec', { cmd: 'echo hi', wait_ms: 5000 });
+    expect(quick.status).toBe(200);
+    expect(quick.body).toMatchObject({ state: 'exited', exit_code: 0, stdout: 'hi\n' });
+    const slow = await api('POST', '/api/v1/exec', { cmd: 'sleep', args: ['2'], wait_ms: 200 });
+    expect(slow.status).toBe(202);
+    expect(slow.body.state).toBe('running');
+    const done = await api('GET', `/api/v1/exec/jobs/${slow.body.job_id}?wait_ms=10000`);
+    expect(done.body).toMatchObject({ state: 'exited', exit_code: 0 });
+    const long = await api('POST', '/api/v1/exec', { cmd: 'sleep 60', wait_ms: 0 });
+    expect((await api('DELETE', `/api/v1/exec/jobs/${long.body.job_id}`)).body.state).toBe('cancelled');
+    expect((await api('GET', '/api/v1/exec/jobs/j-000000000000')).status).toBe(404);
+  });
+
   it('mkdir, move and delete', async () => {
     await exec('rm -rf /tmp/oz-fs');
     expect((await api('POST', '/api/v1/fs/mkdir', { path: '/tmp/oz-fs/a/b' })).status).toBe(200);
