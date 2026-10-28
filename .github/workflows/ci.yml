@@ -118,15 +118,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: docker/setup-qemu-action@v4
-        if: github.event_name != 'pull_request'
-      - name: Publish multi-arch image
+      # amd64 only: the base image (ghcr.io/mieweb/opensource-server/nodejs) has no
+      # arm64 variant. The package build is arch-native, so adding arm64 later is just
+      # this platform list (plus docker/setup-qemu-action).
+      - name: Publish image
         if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           tags: |
             ghcr.io/mieweb/ozwell-computer:${{ github.event_name == 'release' && github.event.release.tag_name || 'latest' }}
