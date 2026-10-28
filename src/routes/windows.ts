@@ -109,12 +109,7 @@ export default async function windowRoutes(app: FastifyInstance, ctx: AppContext
     m.sseClients.inc();
     const unsub = desktop.bus.subscribe((ev) => write(ev.type, ev.data, ev.id));
     const ka = setInterval(() => write('keepalive', { ts: Date.now() }), 15_000);
-    const started = performance.now();
-    req.raw.on('close', () => {
-      clearInterval(ka); unsub(); m.sseClients.dec();
-      // hijacked replies skip the onResponse hook, so record the stream here
-      m.httpSeconds.observe({ method: 'GET', route: '/api/v1/events', status: '200' }, (performance.now() - started) / 1000);
-    });
+    req.raw.on('close', () => { clearInterval(ka); unsub(); m.sseClients.dec(); });
   });
 
   app.post('/api/v1/presence/join', {
