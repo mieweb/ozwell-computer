@@ -98,8 +98,9 @@ describe('pointer actions', () => {
     // Poll rather than sleep: repaint timing varies with whatever else the desktop is doing.
     await api('POST', '/api/v1/input/pointer', { action: 'scroll', x: b.x + 100, y: b.y + 100, dy: -10 });
     await waitFor(async () => !(await regionShot(...region)).equals(bottom), 3000);
-    await api('POST', '/api/v1/input/pointer', { action: 'scroll', x: b.x + 100, y: b.y + 100, dy: 10 });
-    await waitFor(async () => (await regionShot(...region)).equals(bottom), 3000);
+    // Scroll down well past the bottom (clamped there) so lost/coalesced wheel events can't matter.
+    await api('POST', '/api/v1/input/pointer', { action: 'scroll', x: b.x + 100, y: b.y + 100, dy: 40 });
+    await waitFor(async () => (await regionShot(...region)).equals(bottom), 5000);
     await api('POST', `/api/v1/windows/${id}/close`);
   });
 });
