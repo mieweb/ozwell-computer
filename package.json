@@ -1,11 +1,11 @@
 {
-  "name": "@mieweb/ozwell-desktop",
+  "name": "@mieweb/ozwell-computer",
   "version": "0.0.0",
   "description": "Serve an X11 desktop to humans (noVNC) and agents (HTTP API + MCP) on one port",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "ozwell-desktop": "dist/cli.js"
+    "ozwell-computer": "dist/cli.js"
   },
   "files": [
     "dist",

@@ -1,9 +1,9 @@
---name ozwell-desktop
+--name ozwell-computer
 --architecture native
 --license MIT
 --maintainer "Medical Informatics Engineering <helpdesk@mieweb.com>"
 --vendor "Medical Informatics Engineering"
---url "https://github.com/mieweb/ozwell-desktop"
+--url "https://github.com/mieweb/ozwell-computer"
 --category x11
 --description "Headless X11 desktop served over one HTTP port: a noVNC viewer for people and an HTTP API plus MCP server for automation and AI agents."
 --depends "nodejs (>= 24)"
@@ -28,7 +28,7 @@
 --deb-suggests firefox-esr
 --deb-suggests xterm
 --deb-suggests zenity
---config-files /etc/default/ozwell-desktop
+--config-files /etc/default/ozwell-computer
 --config-files /etc/xdg/mimeapps.list
 --config-files /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
 --config-files /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml

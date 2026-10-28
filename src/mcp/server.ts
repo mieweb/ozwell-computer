@@ -43,7 +43,7 @@ const Mods = z.array(z.string()).optional().describe('Modifiers held during the 
 
 function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
   const { desktop, config } = ctx;
-  const mcp = new McpServer({ name: 'ozwell-desktop', version: ctx.version }, {
+  const mcp = new McpServer({ name: 'ozwell-computer', version: ctx.version }, {
     instructions:
       'Controls a Linux X11 desktop. Typical loop: screenshot → act using coordinates from that screenshot (pass its screenshot_id) → screenshot to verify. ' +
       'Prefer find_element/ui_action for apps that expose accessibility. Errors carry a "reason"; on stale_geometry take a new screenshot.',

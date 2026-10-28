@@ -1,18 +1,18 @@
 #!/bin/sh
-# ozwell-desktop postinst
+# ozwell-computer postinst
 set -e
 
-# Never stop or restart ozwell-desktop-upgrade.service here (or in prerm): in-app
+# Never stop or restart ozwell-computer-upgrade.service here (or in prerm): in-app
 # upgrades run apt/dpkg *inside* that service, so doing so would kill this very
 # transaction halfway. test/unit/packaging.test.ts enforces this.
-UNITS="ozwell-desktop-dbus.service ozwell-desktop-xvfb.service ozwell-desktop-session.service ozwell-desktop.service ozwell-desktop-upgrade.path"
+UNITS="ozwell-computer-dbus.service ozwell-computer-xvfb.service ozwell-computer-session.service ozwell-computer.service ozwell-computer-upgrade.path"
 
 case "$1" in
     configure)
         # Unprivileged user that owns the X display, the desktop session and the server.
         if ! getent passwd desktop >/dev/null; then
             adduser --system --group --home /home/desktop --shell /bin/bash \
-                --gecos "ozwell-desktop session" desktop
+                --gecos "ozwell-computer session" desktop
         fi
 
         command -v systemctl >/dev/null 2>&1 || exit 0
@@ -32,10 +32,10 @@ case "$1" in
             else
                 # Upgrade: restart only the server. Restarting Xvfb or the session
                 # would close every application open on the desktop.
-                systemctl try-restart ozwell-desktop.service
+                systemctl try-restart ozwell-computer.service
                 # Pick up a changed watch definition. Stopping a path unit doesn't
                 # stop the service it triggered (possibly the one running us).
-                systemctl try-restart ozwell-desktop-upgrade.path
+                systemctl try-restart ozwell-computer-upgrade.path
             fi
         fi
         ;;

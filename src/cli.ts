@@ -12,12 +12,12 @@ import { ptyAvailable } from './process/pty.js';
 import { Updater } from './update.js';
 
 /**
- * Mirror of our output onto a terminal named by OZWELL_DESKTOP_CONSOLE. The container's
+ * Mirror of our output onto a terminal named by OZWELL_COMPUTER_CONSOLE. The container's
  * systemd unit sets it to /dev/console so that `docker logs` (with a TTY) shows this
  * service's output, and only that. Without a TTY the path doesn't exist and this is a no-op.
  */
 const consoleFd: number | null = (() => {
-  const path = process.env.OZWELL_DESKTOP_CONSOLE;
+  const path = process.env.OZWELL_COMPUTER_CONSOLE;
   if (!path) return null;
   try { return openSync(path, 'a'); } catch { return null; }
 })();
@@ -94,7 +94,7 @@ async function maybeSpawnXvfb(config: Config, log: pino.Logger): Promise<ChildPr
 }
 
 /**
- * Print a startup message to stderr and, when OZWELL_DESKTOP_CONSOLE names a writable
+ * Print a startup message to stderr and, when OZWELL_COMPUTER_CONSOLE names a writable
  * terminal (set by the container's systemd unit), there too, so `docker logs` shows it.
  */
 function banner(text: string) {
@@ -172,9 +172,9 @@ async function main() {
     // Configured tokens are never printed. Written to stderr, not the structured log.
     openUrl = `${base}?token=${encodeURIComponent(token!)}`;
     const how = tokenSource === 'generated' ? 'generated a token' : 'using the generated token';
-    banner(`ozwell-desktop: ${how} (stored in ${config.tokenFile})\n  open ${openUrl}`);
+    banner(`ozwell-computer: ${how} (stored in ${config.tokenFile})\n  open ${openUrl}`);
   } else {
-    log.info(`viewer: ${base}?token=<OZWELL_DESKTOP_TOKEN>`);
+    log.info(`viewer: ${base}?token=<OZWELL_COMPUTER_TOKEN>`);
   }
   if (config.open) openInBrowser(openUrl, log);
 
@@ -198,14 +198,14 @@ async function main() {
 }
 
 process.on('uncaughtException', (e) => {
-  toConsole(`ozwell-desktop: uncaught exception: ${e?.stack ?? e}\n`);
-  process.stderr.write(`ozwell-desktop: uncaught exception: ${e?.stack ?? e}\n`);
+  toConsole(`ozwell-computer: uncaught exception: ${e?.stack ?? e}\n`);
+  process.stderr.write(`ozwell-computer: uncaught exception: ${e?.stack ?? e}\n`);
   process.exit(1);
 });
 
 main().catch((e) => {
-  toConsole(`ozwell-desktop: ${(e as Error)?.message ?? e}\n`);
-  process.stderr.write(`ozwell-desktop: ${(e as Error)?.message ?? e}\n`);
-  if (process.env.OZWELL_DESKTOP_LOG_LEVEL === 'debug') process.stderr.write(`${(e as Error)?.stack}\n`);
+  toConsole(`ozwell-computer: ${(e as Error)?.message ?? e}\n`);
+  process.stderr.write(`ozwell-computer: ${(e as Error)?.message ?? e}\n`);
+  if (process.env.OZWELL_COMPUTER_LOG_LEVEL === 'debug') process.stderr.write(`${(e as Error)?.stack}\n`);
   process.exit(1);
 });

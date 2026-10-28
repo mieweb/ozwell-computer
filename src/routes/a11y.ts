@@ -4,7 +4,7 @@ import { unsupported } from '../errors.js';
 
 export default async function a11yRoutes(app: FastifyInstance, ctx: AppContext) {
   const a11y = () => {
-    if (!ctx.a11y) throw unsupported('a11y', 'accessibility is disabled (OZWELL_DESKTOP_A11Y=off)');
+    if (!ctx.a11y) throw unsupported('a11y', 'accessibility is disabled (OZWELL_COMPUTER_A11Y=off)');
     return ctx.a11y;
   };
 

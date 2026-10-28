@@ -1,30 +1,31 @@
 # Dev container and local deployment. Same image and systemd layout as production;
 # the only difference is that your local ./dist (run `npm run build` first) is
-# mounted over /opt/ozwell-desktop/dist, so `npm run watch` changes are live.
+# mounted over /opt/ozwell-computer/dist, so `npm run watch` changes are live.
+name: ozwell-computer
 services:
-  ozwell-desktop:
+  ozwell-computer:
     build:
       context: .
       dockerfile: Dockerfile
-    image: ozwell-desktop:dev
+    image: ozwell-computer:dev
     ports:
-      - "${OZWELL_DESKTOP_HOST_PORT:-8080}:8080"
+      - "${OZWELL_COMPUTER_HOST_PORT:-8080}:8080"
     environment:
       # Set in your shell or a .env file; if empty, a token is generated
       # and persisted; `docker compose up` prints a link with it embedded.
-      OZWELL_DESKTOP_TOKEN: ${OZWELL_DESKTOP_TOKEN:-}
-      OZWELL_DESKTOP_SCREEN: ${OZWELL_DESKTOP_SCREEN:-1920x1080x24}
+      OZWELL_COMPUTER_TOKEN: ${OZWELL_COMPUTER_TOKEN:-}
+      OZWELL_COMPUTER_SCREEN: ${OZWELL_COMPUTER_SCREEN:-1920x1080x24}
       # The container can't see its host port; this makes the startup link clickable.
-      OZWELL_DESKTOP_PUBLIC_URL: http://localhost:${OZWELL_DESKTOP_HOST_PORT:-8080}
+      OZWELL_COMPUTER_PUBLIC_URL: http://localhost:${OZWELL_COMPUTER_HOST_PORT:-8080}
     # A TTY gives systemd a console, so the startup link appears in `docker compose up`.
     tty: true
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
       # The generated token persists here across `up`/`down` (removed by `down -v`).
-      - state:/var/lib/ozwell-desktop
+      - state:/var/lib/ozwell-computer
       - type: bind
         source: ./dist
-        target: /opt/ozwell-desktop/dist
+        target: /opt/ozwell-computer/dist
         read_only: true
         bind:
           # Fail clearly instead of creating an empty root-owned ./dist

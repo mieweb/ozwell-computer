@@ -71,13 +71,13 @@ export function initUpdate(btn, events) {
     } else if (s.available) {
       btn.hidden = false; btn.disabled = false;
       btn.textContent = `Update to ${s.latest}`;
-      btn.title = `ozwell-desktop ${s.latest} is available (installed: ${s.current}). The server restarts; open apps keep running.`;
+      btn.title = `ozwell-computer ${s.latest} is available (installed: ${s.current}). The server restarts; open apps keep running.`;
     }
   }
 
   btn.onclick = async () => {
     if (!status) return;
-    if (!confirm(`Upgrade ozwell-desktop ${status.current} → ${status.latest ?? 'latest'}?\nThe viewer reconnects when the server restarts.`)) return;
+    if (!confirm(`Upgrade ozwell-computer ${status.current} → ${status.latest ?? 'latest'}?\nThe viewer reconnects when the server restarts.`)) return;
     try { render(await api('/api/v1/update/apply', 'POST')); } catch (e) { alert(`Could not start the upgrade: ${e.message}`); }
   };
 

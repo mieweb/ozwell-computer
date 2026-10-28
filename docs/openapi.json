@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "ozwell-desktop",
+    "title": "ozwell-computer",
     "version": "0.0.0",
     "description": "Control an X11 desktop over HTTP"
   },
@@ -24,7 +24,7 @@
       "cookie": {
         "type": "apiKey",
         "in": "cookie",
-        "name": "ozwell_desktop_token"
+        "name": "ozwell_computer_token"
       }
     },
     "schemas": {}
@@ -84,7 +84,7 @@
     },
     "/api/v1/update/apply": {
       "post": {
-        "summary": "Upgrade the ozwell-desktop package (the server restarts)",
+        "summary": "Upgrade the ozwell-computer package (the server restarts)",
         "tags": [
           "system"
         ],

@@ -1,9 +1,0 @@
-[Unit]
-Description=Watch for ozwell-desktop upgrade requests from the web UI/API
-
-[Path]
-PathExists=/var/lib/ozwell-desktop/upgrade-request
-Unit=ozwell-desktop-upgrade.service
-
-[Install]
-WantedBy=paths.target

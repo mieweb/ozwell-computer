@@ -66,7 +66,7 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
   const { config, desktop } = ctx;
   const signKey = deriveKey(ctx.token ?? 'auth-disabled:' + generateToken(), 'files');
   const gate = async () => {
-    if (!config.exec) throw new ApiError('permission_denied', 'process and filesystem APIs are disabled (OZWELL_DESKTOP_EXEC=false)');
+    if (!config.exec) throw new ApiError('permission_denied', 'process and filesystem APIs are disabled (OZWELL_COMPUTER_EXEC=false)');
   };
   const root = config.fsRoot;
 

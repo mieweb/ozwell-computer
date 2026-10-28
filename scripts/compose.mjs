@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-export const SERVICE = 'ozwell-desktop';
+export const SERVICE = 'ozwell-computer';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export function compose(args, { inherit = false, check = true } = {}) {
@@ -27,7 +27,7 @@ export function up() {
 
 /** Restart only the Node server inside the container (picks up a new ./dist). */
 export function restartServer() {
-  compose(['exec', '-T', SERVICE, 'systemctl', 'restart', 'ozwell-desktop.service']);
+  compose(['exec', '-T', SERVICE, 'systemctl', 'restart', 'ozwell-computer.service']);
 }
 
 export function url() {
@@ -37,7 +37,7 @@ export function url() {
 }
 
 export function token() {
-  for (const cmd of [['printenv', 'OZWELL_DESKTOP_TOKEN'], ['cat', '/var/lib/ozwell-desktop/token']]) {
+  for (const cmd of [['printenv', 'OZWELL_COMPUTER_TOKEN'], ['cat', '/var/lib/ozwell-computer/token']]) {
     const r = compose(['exec', '-T', SERVICE, ...cmd], { check: false });
     if (r.status === 0 && r.out) return r.out;
   }
@@ -47,9 +47,9 @@ export function token() {
 /** The token the service generated (not one configured via its environment), or null. */
 export function generatedToken() {
   // A configured token wins over the file, and must never be copied or printed.
-  const env = compose(['exec', '-T', SERVICE, 'printenv', 'OZWELL_DESKTOP_TOKEN'], { check: false });
+  const env = compose(['exec', '-T', SERVICE, 'printenv', 'OZWELL_COMPUTER_TOKEN'], { check: false });
   if (env.status === 0 && env.out) return null;
-  const r = compose(['exec', '-T', SERVICE, 'cat', '/var/lib/ozwell-desktop/token'], { check: false });
+  const r = compose(['exec', '-T', SERVICE, 'cat', '/var/lib/ozwell-computer/token'], { check: false });
   return r.status === 0 && r.out ? r.out : null;
 }
 
@@ -67,8 +67,8 @@ export async function waitReady({ timeoutMs = 120_000 } = {}) {
       }
     } catch (e) { lastErr = e.message; }
     if (Date.now() > deadline) {
-      const logs = compose(['exec', '-T', SERVICE, 'journalctl', '-u', 'ozwell-desktop', '--no-pager', '-n', '40'], { check: false }).out;
-      throw new Error(`ozwell-desktop did not become ready within ${timeoutMs / 1000}s (${lastErr})\n${logs}`);
+      const logs = compose(['exec', '-T', SERVICE, 'journalctl', '-u', 'ozwell-computer', '--no-pager', '-n', '40'], { check: false }).out;
+      throw new Error(`ozwell-computer did not become ready within ${timeoutMs / 1000}s (${lastErr})\n${logs}`);
     }
     await sleep(500);
   }

@@ -43,7 +43,7 @@ export function defaults(): Config {
     port: 8080,
     host: container ? '0.0.0.0' : '127.0.0.1',
     token: undefined,
-    tokenFile: container ? '/var/lib/ozwell-desktop/token' : join(homedir(), '.config', 'ozwell-desktop', 'token'),
+    tokenFile: container ? '/var/lib/ozwell-computer/token' : join(homedir(), '.config', 'ozwell-computer', 'token'),
     authDisabled: false,
     display: process.env.DISPLAY || ':0',
     spawnXvfb: false,
@@ -55,29 +55,29 @@ export function defaults(): Config {
     logLevel: 'info',
     fsRoot: '/',
     publicUrl: undefined,
-    updateUrl: 'https://github.com/mieweb/ozwell-desktop/releases/latest/download/Packages',
+    updateUrl: 'https://github.com/mieweb/ozwell-computer/releases/latest/download/Packages',
     open: false,
   };
 }
 
 const ENV_MAP: Record<string, keyof Config> = {
-  OZWELL_DESKTOP_PORT: 'port',
-  OZWELL_DESKTOP_HOST: 'host',
-  OZWELL_DESKTOP_TOKEN: 'token',
-  OZWELL_DESKTOP_TOKEN_FILE: 'tokenFile',
-  OZWELL_DESKTOP_AUTH_DISABLED: 'authDisabled',
+  OZWELL_COMPUTER_PORT: 'port',
+  OZWELL_COMPUTER_HOST: 'host',
+  OZWELL_COMPUTER_TOKEN: 'token',
+  OZWELL_COMPUTER_TOKEN_FILE: 'tokenFile',
+  OZWELL_COMPUTER_AUTH_DISABLED: 'authDisabled',
   DISPLAY: 'display',
-  OZWELL_DESKTOP_SPAWN_XVFB: 'spawnXvfb',
-  OZWELL_DESKTOP_SCREEN: 'screen',
-  OZWELL_DESKTOP_VIEW_ONLY: 'viewOnly',
-  OZWELL_DESKTOP_A11Y: 'a11y',
-  OZWELL_DESKTOP_EXEC: 'exec',
-  OZWELL_DESKTOP_VNC_BACKEND: 'vncBackend',
-  OZWELL_DESKTOP_LOG_LEVEL: 'logLevel',
-  OZWELL_DESKTOP_FS_ROOT: 'fsRoot',
-  OZWELL_DESKTOP_PUBLIC_URL: 'publicUrl',
-  OZWELL_DESKTOP_UPDATE_URL: 'updateUrl',
-  OZWELL_DESKTOP_OPEN: 'open',
+  OZWELL_COMPUTER_SPAWN_XVFB: 'spawnXvfb',
+  OZWELL_COMPUTER_SCREEN: 'screen',
+  OZWELL_COMPUTER_VIEW_ONLY: 'viewOnly',
+  OZWELL_COMPUTER_A11Y: 'a11y',
+  OZWELL_COMPUTER_EXEC: 'exec',
+  OZWELL_COMPUTER_VNC_BACKEND: 'vncBackend',
+  OZWELL_COMPUTER_LOG_LEVEL: 'logLevel',
+  OZWELL_COMPUTER_FS_ROOT: 'fsRoot',
+  OZWELL_COMPUTER_PUBLIC_URL: 'publicUrl',
+  OZWELL_COMPUTER_UPDATE_URL: 'updateUrl',
+  OZWELL_COMPUTER_OPEN: 'open',
 };
 
 const FLAG_MAP: Record<string, keyof Config> = {
@@ -151,26 +151,26 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
   return { config, args };
 }
 
-export const HELP = `ozwell-desktop — X11 desktop over HTTP (noVNC + API + MCP)
+export const HELP = `ozwell-computer — X11 desktop over HTTP (noVNC + API + MCP)
 
-Usage: ozwell-desktop [flags]
+Usage: ozwell-computer [flags]
 
-  --port <n>              OZWELL_DESKTOP_PORT (8080)
-  --host <addr>           OZWELL_DESKTOP_HOST (127.0.0.1 on host, 0.0.0.0 in container)
-  --token <psk>           OZWELL_DESKTOP_TOKEN
-  --token-file <path>     OZWELL_DESKTOP_TOKEN_FILE
-  --no-auth               OZWELL_DESKTOP_AUTH_DISABLED=true
+  --port <n>              OZWELL_COMPUTER_PORT (8080)
+  --host <addr>           OZWELL_COMPUTER_HOST (127.0.0.1 on host, 0.0.0.0 in container)
+  --token <psk>           OZWELL_COMPUTER_TOKEN
+  --token-file <path>     OZWELL_COMPUTER_TOKEN_FILE
+  --no-auth               OZWELL_COMPUTER_AUTH_DISABLED=true
   --display <:n>          DISPLAY
-  --spawn-xvfb            OZWELL_DESKTOP_SPAWN_XVFB=true (development)
-  --screen <WxHxD>        OZWELL_DESKTOP_SCREEN (1920x1080x24)
-  --view-only             OZWELL_DESKTOP_VIEW_ONLY=true
-  --a11y <auto|on|off>    OZWELL_DESKTOP_A11Y
-  --no-exec               OZWELL_DESKTOP_EXEC=false
-  --vnc-backend <b>       OZWELL_DESKTOP_VNC_BACKEND (builtin | external:[host:]port)
-  --log-level <lvl>       OZWELL_DESKTOP_LOG_LEVEL (info)
-  --fs-root <dir>         OZWELL_DESKTOP_FS_ROOT (/)
-  --public-url <url>      OZWELL_DESKTOP_PUBLIC_URL: base URL shown in the startup link
-  --update-url <url|off>  OZWELL_DESKTOP_UPDATE_URL: APT Packages index checked for new releases
-  --open                  OZWELL_DESKTOP_OPEN=true: open the viewer in the default browser
+  --spawn-xvfb            OZWELL_COMPUTER_SPAWN_XVFB=true (development)
+  --screen <WxHxD>        OZWELL_COMPUTER_SCREEN (1920x1080x24)
+  --view-only             OZWELL_COMPUTER_VIEW_ONLY=true
+  --a11y <auto|on|off>    OZWELL_COMPUTER_A11Y
+  --no-exec               OZWELL_COMPUTER_EXEC=false
+  --vnc-backend <b>       OZWELL_COMPUTER_VNC_BACKEND (builtin | external:[host:]port)
+  --log-level <lvl>       OZWELL_COMPUTER_LOG_LEVEL (info)
+  --fs-root <dir>         OZWELL_COMPUTER_FS_ROOT (/)
+  --public-url <url>      OZWELL_COMPUTER_PUBLIC_URL: base URL shown in the startup link
+  --update-url <url|off>  OZWELL_COMPUTER_UPDATE_URL: APT Packages index checked for new releases
+  --open                  OZWELL_COMPUTER_OPEN=true: open the viewer in the default browser
   --print-openapi         Print the OpenAPI document and exit
 `;

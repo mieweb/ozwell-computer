@@ -35,8 +35,8 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
         clipboard_events: feat(!!s?.ext.fixes, 'XFIXES missing; clipboard generation only tracks our own writes'),
         windows: feat(!!s, 'X display not connected'),
         a11y: ctx.a11y ? await ctx.a11y.capability() : feat(false, 'accessibility disabled'),
-        exec: feat(config.exec, 'disabled by OZWELL_DESKTOP_EXEC=false'),
-        pty: feat(config.exec && ctx.ptyAvailable, config.exec ? 'node-pty not installed' : 'disabled by OZWELL_DESKTOP_EXEC=false'),
+        exec: feat(config.exec, 'disabled by OZWELL_COMPUTER_EXEC=false'),
+        pty: feat(config.exec && ctx.ptyAvailable, config.exec ? 'node-pty not installed' : 'disabled by OZWELL_COMPUTER_EXEC=false'),
         vnc: { available: true, backend: config.vncBackend, view_only: config.viewOnly },
         mcp: { available: true },
         update: ctx.updater ? await ctx.updater.status().then((u) => (u.supported ? { available: true } : { available: false, limitation: u.limitation })) : feat(false, 'update checks are not running'),
@@ -54,7 +54,7 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
     async () => updater().status());
   app.post('/api/v1/update/check', { schema: { tags: ['system'], summary: 'Check for a new release now' } },
     async () => updater().check());
-  app.post('/api/v1/update/apply', { schema: { tags: ['system'], summary: 'Upgrade the ozwell-desktop package (the server restarts)' } },
+  app.post('/api/v1/update/apply', { schema: { tags: ['system'], summary: 'Upgrade the ozwell-computer package (the server restarts)' } },
     async (_req, reply) => reply.code(202).send(await updater().apply()));
 
   app.get('/api/v1/displays', { schema: { tags: ['system'] } }, async () => ({ displays: await desktop.displays() }));

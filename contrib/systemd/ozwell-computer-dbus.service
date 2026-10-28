@@ -1,6 +1,6 @@
 [Unit]
-Description=ozwell-desktop session D-Bus (shared by the desktop session and the server)
-PartOf=ozwell-desktop.service
+Description=ozwell-computer session D-Bus (shared by the desktop session and the server)
+PartOf=ozwell-computer.service
 
 [Service]
 User=desktop

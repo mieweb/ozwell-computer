@@ -105,7 +105,7 @@ export class A11y {
   }
 
   private async connect(): Promise<any> {
-    if (this.mode === 'off') throw unsupported('a11y', 'accessibility is disabled (OZWELL_DESKTOP_A11Y=off)');
+    if (this.mode === 'off') throw unsupported('a11y', 'accessibility is disabled (OZWELL_COMPUTER_A11Y=off)');
     if (this.bus) return this.bus;
     if (!this.connecting) {
       this.connecting = (async () => {
@@ -127,7 +127,7 @@ export class A11y {
   }
 
   async capability() {
-    if (this.mode === 'off') return { available: false, limitation: 'disabled by OZWELL_DESKTOP_A11Y=off' };
+    if (this.mode === 'off') return { available: false, limitation: 'disabled by OZWELL_COMPUTER_A11Y=off' };
     try {
       await this.connect();
       return { available: true, limitation: 'coverage depends on the toolkit; GTK/Qt/Firefox expose AT-SPI, xterm and plain X apps do not' };

@@ -5,7 +5,7 @@ on:
     branches: [main]
   pull_request:
   # Versions come from git tags: publishing a GitHub release (tag vX.Y.Z) builds
-  # ozwell-desktop_X.Y.Z_<arch>.deb and the X.Y.Z image.
+  # ozwell-computer_X.Y.Z_<arch>.deb and the X.Y.Z image.
   release:
     types: [published]
 
@@ -51,24 +51,24 @@ jobs:
           context: .
           file: Dockerfile
           load: true
-          tags: ozwell-desktop:dev
+          tags: ozwell-computer:dev
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Start the compose dev container
         run: docker compose up -d --wait --wait-timeout 120
         env:
-          OZWELL_DESKTOP_TOKEN: testtoken
+          OZWELL_COMPUTER_TOKEN: testtoken
       - name: Install Playwright browsers
         run: npx playwright-core install --with-deps chromium firefox
       - name: Full regression suite (unit + integration, Chromium + Firefox)
         run: npm test
       - name: Logs on failure
         if: failure()
-        run: docker compose exec -T ozwell-desktop journalctl --no-pager -n 300
+        run: docker compose exec -T ozwell-computer journalctl --no-pager -n 300
       - name: Scan image
         uses: aquasecurity/trivy-action@0.28.0
         with:
-          image-ref: ozwell-desktop:dev
+          image-ref: ozwell-computer:dev
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: '0'
@@ -81,8 +81,8 @@ jobs:
           outputs: type=local,dest=pkg
           cache-from: type=gha
       # The release doubles as a flat APT repository (same scheme as
-      # mieweb/opensource-server); the image ships docker/ozwell-desktop.sources:
-      #   deb [trusted=yes] https://github.com/mieweb/ozwell-desktop/releases/latest/download/ ./
+      # mieweb/opensource-server); the image ships docker/ozwell-computer.sources:
+      #   deb [trusted=yes] https://github.com/mieweb/ozwell-computer/releases/latest/download/ ./
       - name: Generate flat APT repository metadata
         run: |
           command -v dpkg-scanpackages >/dev/null || { sudo apt-get update && sudo apt-get install -y dpkg-dev; }
@@ -120,5 +120,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/mieweb/ozwell-desktop:${{ github.event_name == 'release' && github.event.release.tag_name || 'latest' }}
+            ghcr.io/mieweb/ozwell-computer:${{ github.event_name == 'release' && github.event.release.tag_name || 'latest' }}
           cache-from: type=gha

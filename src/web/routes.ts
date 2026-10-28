@@ -13,10 +13,10 @@ export function loginPage(_req: FastifyRequest, reply: FastifyReply, failed: boo
     .header('content-security-policy', CSP)
     .send(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ozwell-desktop: sign in</title><link rel="stylesheet" href="/static/viewer.css"></head>
+<title>ozwell-computer: sign in</title><link rel="stylesheet" href="/static/viewer.css"></head>
 <body class="login">
 <form method="get" action="/" class="login-box">
-  <h1>ozwell-desktop</h1>
+  <h1>ozwell-computer</h1>
   ${failed ? '<p class="error">That token was not accepted.</p>' : '<p>Enter the access token to view this desktop.</p>'}
   <input type="password" name="token" autocomplete="current-password" placeholder="token" autofocus required>
   <button type="submit">Open</button>

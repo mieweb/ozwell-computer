@@ -1,4 +1,4 @@
-# Implementation Plan: `ozwell-desktop`
+# Implementation Plan: `ozwell-computer`
 
 **Goal:** A single Docker image based on `ghcr.io/mieweb/opensource-server/base:latest`
 (hardened Debian 13, systemd as PID 1) that serves one HTTP port:
@@ -48,8 +48,8 @@ optional `--spawn-xvfb` mode for development.
 ## 2. Repository layout
 
 ```
-ozwell-desktop/
-├─ package.json            # "bin": { "ozwell-desktop": "dist/cli.js" }
+ozwell-computer/
+├─ package.json            # "bin": { "ozwell-computer": "dist/cli.js" }
 ├─ tsconfig.json
 ├─ src/
 │  ├─ cli.ts               # arg/env parsing, starts server
@@ -93,19 +93,19 @@ ozwell-desktop/
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `OZWELL_DESKTOP_PORT` | `8080` | Listening port |
-| `OZWELL_DESKTOP_HOST` | `0.0.0.0` in the container, `127.0.0.1` on a host | Bind address |
-| `OZWELL_DESKTOP_TOKEN` | *(unset)* | The PSK. If unset and auth is enabled, the server generates 32 random bytes (base64url), writes them to `OZWELL_DESKTOP_TOKEN_FILE`, and logs a one-time access URL. |
-| `OZWELL_DESKTOP_TOKEN_FILE` | `/run/ozwell-desktop/token` (container) or `~/.config/ozwell-desktop/token` | Where a generated token is stored and read back, so it survives restarts |
-| `OZWELL_DESKTOP_AUTH_DISABLED` | `false` | When `true`, nothing requires auth. A loud warning is logged at startup, and binding to a non-loopback address without auth logs a second warning. |
+| `OZWELL_COMPUTER_PORT` | `8080` | Listening port |
+| `OZWELL_COMPUTER_HOST` | `0.0.0.0` in the container, `127.0.0.1` on a host | Bind address |
+| `OZWELL_COMPUTER_TOKEN` | *(unset)* | The PSK. If unset and auth is enabled, the server generates 32 random bytes (base64url), writes them to `OZWELL_COMPUTER_TOKEN_FILE`, and logs a one-time access URL. |
+| `OZWELL_COMPUTER_TOKEN_FILE` | `/run/ozwell-computer/token` (container) or `~/.config/ozwell-computer/token` | Where a generated token is stored and read back, so it survives restarts |
+| `OZWELL_COMPUTER_AUTH_DISABLED` | `false` | When `true`, nothing requires auth. A loud warning is logged at startup, and binding to a non-loopback address without auth logs a second warning. |
 | `DISPLAY` | `:0` in the container | X display to attach to |
-| `OZWELL_DESKTOP_SPAWN_XVFB` | `false` | Development only: start `Xvfb $DISPLAY` if nothing is listening |
-| `OZWELL_DESKTOP_SCREEN` | `1920x1080x24` | Geometry used with spawn-xvfb, and what the container's Xvfb unit uses |
-| `OZWELL_DESKTOP_VIEW_ONLY` | `false` | The VNC/web viewer ignores input |
-| `OZWELL_DESKTOP_A11Y` | `auto` | Enable AT-SPI when the D-Bus a11y bus is reachable |
-| `OZWELL_DESKTOP_EXEC` | `true` | Enable the process and filesystem APIs (can be turned off for safety) |
-| `OZWELL_DESKTOP_VNC_BACKEND` | `builtin` | `builtin`, or `external:<port>` to proxy to an external VNC server |
-| `OZWELL_DESKTOP_LOG_LEVEL` | `info` | |
+| `OZWELL_COMPUTER_SPAWN_XVFB` | `false` | Development only: start `Xvfb $DISPLAY` if nothing is listening |
+| `OZWELL_COMPUTER_SCREEN` | `1920x1080x24` | Geometry used with spawn-xvfb, and what the container's Xvfb unit uses |
+| `OZWELL_COMPUTER_VIEW_ONLY` | `false` | The VNC/web viewer ignores input |
+| `OZWELL_COMPUTER_A11Y` | `auto` | Enable AT-SPI when the D-Bus a11y bus is reachable |
+| `OZWELL_COMPUTER_EXEC` | `true` | Enable the process and filesystem APIs (can be turned off for safety) |
+| `OZWELL_COMPUTER_VNC_BACKEND` | `builtin` | `builtin`, or `external:<port>` to proxy to an external VNC server |
+| `OZWELL_COMPUTER_LOG_LEVEL` | `info` | |
 
 ---
 
@@ -116,7 +116,7 @@ ozwell-desktop/
 1. Query parameter `?token=<psk>` (so a URL works in a browser)
 2. `Authorization: Bearer <psk>`
 3. `X-Auth-Token: <psk>` (for gateways that strip `Authorization`)
-4. Cookie `ozwell_desktop_token` (set automatically, see the browser flow below)
+4. Cookie `ozwell_computer_token` (set automatically, see the browser flow below)
 
 **Rules:**
 
@@ -129,14 +129,14 @@ ozwell-desktop/
   the query parameter or the cookie.
 - Failures return `401` with `WWW-Authenticate: Bearer` and a JSON error body. The
   token is never logged; redact `token` from logged URLs.
-- When `OZWELL_DESKTOP_AUTH_DISABLED=true`, the hook does nothing and
+- When `OZWELL_COMPUTER_AUTH_DISABLED=true`, the hook does nothing and
   `GET /api/v1/capabilities` reports `"auth": "disabled"`.
 
 **Browser flow:**
 
 1. A user opens `http://host:8080/?token=XYZ`.
 2. The server validates the token, sets the cookie
-   `ozwell_desktop_token=XYZ; HttpOnly; SameSite=Strict; Path=/` (adding `Secure`
+   `ozwell_computer_token=XYZ; HttpOnly; SameSite=Strict; Path=/` (adding `Secure`
    when served behind TLS, detected from `X-Forwarded-Proto`), and responds
    `302 /` so the token disappears from the address bar and history.
 3. `/` serves the viewer page. Its noVNC WebSocket goes to `/websockify`, which
@@ -266,7 +266,7 @@ object paths. Acting on an expired snapshot returns `409 stale_snapshot`.
 **Role mapping:** AT-SPI role names map to one fixed vocabulary
 (`push button` → `button`, `entry` → `text_field`, and so on).
 
-### 5.7 Processes and files (gated by `OZWELL_DESKTOP_EXEC`)
+### 5.7 Processes and files (gated by `OZWELL_COMPUTER_EXEC`)
 
 - `POST /api/v1/exec`: `{cmd, args, cwd, env, timeout_ms}`. Returns
   `{exit_code, stdout, stderr}` when it finishes, or streams NDJSON when `?stream=1`.
@@ -388,7 +388,7 @@ updates the presence cursor of the human participant bound to that socket.
 **Fallback if the native-JS server isn't ready:** systemd starts `x11vnc` (apt, GPL,
 a separate process) on `localhost:5900`, and `ws-bridge.ts` simply proxies the
 WebSocket to that TCP socket in JS, with no websockify. Controlled by
-`OZWELL_DESKTOP_VNC_BACKEND=builtin|external:5900`.
+`OZWELL_COMPUTER_VNC_BACKEND=builtin|external:5900`.
 
 ---
 
@@ -412,13 +412,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       xterm firefox-esr \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /usr/local/bin/node /usr/local/bin/node
-COPY --from=build /src/dist /opt/ozwell-desktop/dist
-COPY --from=build /src/node_modules /opt/ozwell-desktop/node_modules
-COPY --from=build /src/package.json /opt/ozwell-desktop/
+COPY --from=build /src/dist /opt/ozwell-computer/dist
+COPY --from=build /src/node_modules /opt/ozwell-computer/node_modules
+COPY --from=build /src/package.json /opt/ozwell-computer/
 COPY docker/systemd/*.service /etc/systemd/system/
 COPY docker/openbox/ /etc/xdg/openbox/
 RUN useradd -m -s /bin/bash desktop \
- && systemctl enable xvfb.service desktop-session.service ozwell-desktop.service
+ && systemctl enable xvfb.service desktop-session.service ozwell-computer.service
 ENV DISPLAY=:0
 EXPOSE 8080
 STOPSIGNAL SIGRTMIN+3
@@ -437,28 +437,28 @@ STOPSIGNAL SIGRTMIN+3
 |---|---|---|
 | `xvfb.service` | `Xvfb :0 -screen 0 ${SCREEN} -nolisten tcp +extension RANDR +extension DAMAGE` as user `desktop` | `Restart=always` |
 | `desktop-session.service` | `dbus-run-session -- openbox-session` as `desktop`, with `DISPLAY=:0` and `GTK_MODULES=gail:atk-bridge`, `NO_AT_BRIDGE=0` | Brings up the a11y bus and an autostart file for any launcher or apps. `After=xvfb.service`. |
-| `ozwell-desktop-env.service` | Oneshot: copies `OZWELL_DESKTOP_*` entries from `/proc/1/environ` into `/run/ozwell-desktop.env` | systemd doesn't automatically give `docker run -e` values to its services |
-| `ozwell-desktop.service` | `/usr/local/bin/node /opt/ozwell-desktop/dist/cli.js` as `desktop` | `EnvironmentFile=-/run/ozwell-desktop.env`. `After=desktop-session.service ozwell-desktop-env.service`. `Restart=always`. |
+| `ozwell-computer-env.service` | Oneshot: copies `OZWELL_COMPUTER_*` entries from `/proc/1/environ` into `/run/ozwell-computer.env` | systemd doesn't automatically give `docker run -e` values to its services |
+| `ozwell-computer.service` | `/usr/local/bin/node /opt/ozwell-computer/dist/cli.js` as `desktop` | `EnvironmentFile=-/run/ozwell-computer.env`. `After=desktop-session.service ozwell-computer-env.service`. `Restart=always`. |
 
 **Run:**
 
 ```bash
 docker run -d -p 8080:8080 \
   --tmpfs /run --tmpfs /run/lock -v /sys/fs/cgroup:/sys/fs/cgroup:rw --cgroupns=host \
-  -e OZWELL_DESKTOP_TOKEN=$(openssl rand -hex 24) \
-  ghcr.io/mieweb/ozwell-desktop:latest
+  -e OZWELL_COMPUTER_TOKEN=$(openssl rand -hex 24) \
+  ghcr.io/mieweb/ozwell-computer:latest
 ```
 
 Then open `http://localhost:8080/?token=…`.
 
 If the token isn't set, read the generated one with
-`docker exec <c> cat /run/ozwell-desktop/token` or `journalctl -u ozwell-desktop`.
+`docker exec <c> cat /run/ozwell-computer/token` or `journalctl -u ozwell-computer`.
 
 ### 7.3 Outside Docker
 
-- `npx ozwell-desktop` attaches to `$DISPLAY`, binds to `127.0.0.1`, and generates a
-  token in `~/.config/ozwell-desktop/token`.
-- `npx ozwell-desktop --spawn-xvfb --display :99` starts a headless desktop for
+- `npx ozwell-computer` attaches to `$DISPLAY`, binds to `127.0.0.1`, and generates a
+  token in `~/.config/ozwell-computer/token`.
+- `npx ozwell-computer --spawn-xvfb --display :99` starts a headless desktop for
   development and CI. It requires Xvfb on the host.
 
 ---
@@ -472,7 +472,7 @@ If the token isn't set, read the generated one with
 | **2. Human viewer** (about 1.5 weeks) | RFB server with Raw and ZRLE, DesktopSize, Cursor pseudo-encoding, damage tracking, WebSocket bridge, noVNC static assets, `/` page, token-entry page | Stock noVNC connects through `/?token=` and works interactively at 1080p, using under 30% of one core at idle-to-light activity. The `external:5900` fallback also works. |
 | **3. Windows, clipboard, events** (about 1 week) | EWMH APIs and window epochs, launch and open, clipboard owner and requestor including PNG, SSE event bus, presence and the cursor overlay on `/` | Two browser tabs plus one API "agent" show each other's cursors. Clipboard copied in an X app appears via the API and in noVNC, and the reverse. |
 | **4. Agent interface** (about 1 week) | MCP server and tools, `X-Principal`, JSON screenshot mode, error-reason mapping in tool results | An end-to-end check with an MCP client (Claude Code, Cursor or the MCP inspector): "open xterm and run `uname -a`" succeeds and the agent's cursor is visible in `/`. |
-| **5. Accessibility, exec, files** (about 1.5 weeks) | AT-SPI tree, find and act with snapshots, exec and PTY, filesystem and signed URLs, the `OZWELL_DESKTOP_EXEC` gate | A GTK app's buttons can be found and pressed through the API. Upload, download, range and checksum tests pass. |
+| **5. Accessibility, exec, files** (about 1.5 weeks) | AT-SPI tree, find and act with snapshots, exec and PTY, filesystem and signed URLs, the `OZWELL_COMPUTER_EXEC` gate | A GTK app's buttons can be found and pressed through the API. Upload, download, range and checksum tests pass. |
 | **6. Performance and hardening** (about 1 week) | Tight/JPEG encoding, MIT-SHM if feasible, rate limits, request size limits, fuzzing of RFB input parsing, multi-arch image, image scan, documentation | Under 150 ms end-to-end latency from input to visible change over LAN. Trivy or Grype is clean against the company baseline. |
 
 **Total:** roughly 7 to 8 weeks for one engineer. Phases 3 to 5 can be split across
@@ -507,7 +507,7 @@ two engineers.
 | Unicode and IME typing on X11 | Spare-keycode remapping, with paste mode as the robust alternative |
 | AT-SPI coverage varies between toolkits | Report it under `capabilities.a11y` with a `limitation`. Agents fall back to screenshots and coordinates. |
 | Keeping systemd-in-docker portable | Document the required run flags. The app also runs without systemd (`node dist/cli.js --spawn-xvfb`) for Kubernetes or simple containers. |
-| A single PSK gives full control | Default on, never logged, rotation by restart, read-only and view-only switches, `OZWELL_DESKTOP_EXEC=false` for less trusted setups. Recommend putting TLS in front (a reverse proxy). |
+| A single PSK gives full control | Default on, never logged, rotation by restart, read-only and view-only switches, `OZWELL_COMPUTER_EXEC=false` for less trusted setups. Recommend putting TLS in front (a reverse proxy). |
 | MPL-2.0 obligations from noVNC | Serve it unmodified from npm and include its LICENSE. Any changes to noVNC files must be published. |
 
 ---

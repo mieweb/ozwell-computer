@@ -39,7 +39,7 @@ export default async function vncRoutes(app: FastifyInstance, ctx: AppContext) {
         send: (b) => { if (ws.readyState === 1) ws.send(b, { binary: true }); },
         close: (reason) => { if (ws.readyState === 1) ws.close(1000, reason?.slice(0, 120)); },
         buffered: () => ws.bufferedAmount,
-      }, { viewOnly, name: `ozwell-desktop ${desktop.x.displayName}`, participantName: q.name?.slice(0, 64), participantId: q.participant }, log);
+      }, { viewOnly, name: `ozwell-computer ${desktop.x.displayName}`, participantName: q.name?.slice(0, 64), participantId: q.participant }, log);
     } catch (e) {
       ws.close(1011, (e as Error).message.slice(0, 120));
       return;

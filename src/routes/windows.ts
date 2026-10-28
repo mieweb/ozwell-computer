@@ -74,7 +74,7 @@ export default async function windowRoutes(app: FastifyInstance, ctx: AppContext
       },
     },
   }, async (req) => {
-    if (!config.exec) throw new ApiError('permission_denied', 'launching apps is disabled (OZWELL_DESKTOP_EXEC=false)');
+    if (!config.exec) throw new ApiError('permission_denied', 'launching apps is disabled (OZWELL_COMPUTER_EXEC=false)');
     const b = req.body as { command: string; args?: string[]; env?: Record<string, string>; cwd?: string };
     return launchDetached(desktop.x.displayName, b.command, b.args, b.env, b.cwd);
   });
@@ -82,7 +82,7 @@ export default async function windowRoutes(app: FastifyInstance, ctx: AppContext
   app.post('/api/v1/open', {
     schema: { tags: ['apps'], body: { type: 'object', required: ['target'], properties: { target: { type: 'string', minLength: 1 } } } },
   }, async (req) => {
-    if (!config.exec) throw new ApiError('permission_denied', 'opening targets is disabled (OZWELL_DESKTOP_EXEC=false)');
+    if (!config.exec) throw new ApiError('permission_denied', 'opening targets is disabled (OZWELL_COMPUTER_EXEC=false)');
     const { target } = req.body as { target: string };
     if (target.startsWith('-')) throw new ApiError('invalid_request', 'target must not start with "-"');
     try {

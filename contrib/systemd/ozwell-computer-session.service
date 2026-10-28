@@ -1,7 +1,7 @@
 [Unit]
-Description=ozwell-desktop session (xfwm4, top bar, dock, AT-SPI) on :0
-After=ozwell-desktop-xvfb.service ozwell-desktop-dbus.service
-Requires=ozwell-desktop-xvfb.service ozwell-desktop-dbus.service
+Description=ozwell-computer session (xfwm4, top bar, dock, AT-SPI) on :0
+After=ozwell-computer-xvfb.service ozwell-computer-dbus.service
+Requires=ozwell-computer-xvfb.service ozwell-computer-dbus.service
 
 [Service]
 User=desktop
@@ -9,7 +9,7 @@ WorkingDirectory=~
 Environment=DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/desktop-bus/bus
 Environment=GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 GTK_MODULES=gail:atk-bridge NO_AT_BRIDGE=0 QT_ACCESSIBILITY=1 GNOME_ACCESSIBILITY=1 QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
 ExecStartPre=/bin/sh -c 'for i in $(seq 50); do [ -S /tmp/.X11-unix/X0 ] && exit 0; sleep 0.1; done; exit 1'
-ExecStart=@PREFIX@/bin/ozwell-desktop-session
+ExecStart=@PREFIX@/bin/ozwell-computer-session
 Restart=always
 RestartSec=1
 

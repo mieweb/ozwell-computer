@@ -7,7 +7,7 @@ import { makeApp } from '../helpers.js';
 const TOKEN = 'secret-token';
 const auth = { authorization: `Bearer ${TOKEN}` };
 
-describe('OZWELL_DESKTOP_EXEC=false', () => {
+describe('OZWELL_COMPUTER_EXEC=false', () => {
   let app: FastifyInstance;
   let base: string;
   beforeAll(async () => {

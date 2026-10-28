@@ -1,10 +1,10 @@
 // Update check and package upgrade.
 //
 // The installed version comes from dpkg; the latest from the `Packages` index of the
-// flat APT repository attached to GitHub releases (OZWELL_DESKTOP_UPDATE_URL overrides
+// flat APT repository attached to GitHub releases (OZWELL_COMPUTER_UPDATE_URL overrides
 // it, "off" disables). Upgrading is privileged, so the server only drops a request file
-// into its state directory; the packaged ozwell-desktop-upgrade.path unit (root) sees it
-// and runs ozwell-desktop-upgrade, which writes upgrade.status / upgrade.log back here.
+// into its state directory; the packaged ozwell-computer-upgrade.path unit (root) sees it
+// and runs ozwell-computer-upgrade, which writes upgrade.status / upgrade.log back here.
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile, stat, writeFile } from 'node:fs/promises';
@@ -16,10 +16,10 @@ import { ApiError } from './errors.js';
 
 const run = promisify(execFile);
 
-export const DEFAULT_UPDATE_URL = 'https://github.com/mieweb/ozwell-desktop/releases/latest/download/Packages';
-export const PACKAGE = 'ozwell-desktop';
-const STATE_DIR = '/var/lib/ozwell-desktop';
-const PATH_UNIT = '/usr/lib/systemd/system/ozwell-desktop-upgrade.path';
+export const DEFAULT_UPDATE_URL = 'https://github.com/mieweb/ozwell-computer/releases/latest/download/Packages';
+export const PACKAGE = 'ozwell-computer';
+const STATE_DIR = '/var/lib/ozwell-computer';
+const PATH_UNIT = '/usr/lib/systemd/system/ozwell-computer-upgrade.path';
 const CHECK_INTERVAL_MS = 6 * 3600_000;
 
 export interface PackageEntry { version: string; architecture: string }
@@ -81,7 +81,7 @@ export class Updater {
   };
 
   async start() {
-    if (!this.url) { this.limitation = 'update checks are disabled (OZWELL_DESKTOP_UPDATE_URL=off)'; return; }
+    if (!this.url) { this.limitation = 'update checks are disabled (OZWELL_COMPUTER_UPDATE_URL=off)'; return; }
     try {
       this.current = (await run('dpkg-query', ['-W', '-f=${Version}', PACKAGE])).stdout.trim() || null;
       this.arch = (await run('dpkg', ['--print-architecture'])).stdout.trim();
@@ -89,7 +89,7 @@ export class Updater {
       this.limitation = `not installed from the ${PACKAGE} Debian package`;
       return;
     }
-    if (!existsSync(PATH_UNIT)) this.limitation = 'the ozwell-desktop-upgrade.path unit is not installed';
+    if (!existsSync(PATH_UNIT)) this.limitation = 'the ozwell-computer-upgrade.path unit is not installed';
     await this.check().catch(() => undefined);
     this.timer = setInterval(() => void this.check().catch(() => undefined), CHECK_INTERVAL_MS);
     this.timer.unref();
@@ -145,7 +145,7 @@ export class Updater {
 
   private async upgradeUnitActive(): Promise<boolean> {
     try {
-      const { stdout } = await run('systemctl', ['is-active', 'ozwell-desktop-upgrade.service']);
+      const { stdout } = await run('systemctl', ['is-active', 'ozwell-computer-upgrade.service']);
       return ['active', 'activating', 'reloading'].includes(stdout.trim());
     } catch (e) {
       // is-active exits non-zero when inactive; anything else (no systemctl): assume running

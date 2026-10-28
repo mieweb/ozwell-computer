@@ -77,7 +77,7 @@ describe('coordinates', () => {
 
 describe('config', () => {
   it('merges env and flags', () => {
-    const { config } = loadConfig({ OZWELL_DESKTOP_PORT: '9000', OZWELL_DESKTOP_EXEC: 'false' }, ['--no-auth', '--display', ':5', '--vnc-backend=external:5900']);
+    const { config } = loadConfig({ OZWELL_COMPUTER_PORT: '9000', OZWELL_COMPUTER_EXEC: 'false' }, ['--no-auth', '--display', ':5', '--vnc-backend=external:5900']);
     expect(config.port).toBe(9000);
     expect(config.exec).toBe(false);
     expect(config.authDisabled).toBe(true);
@@ -85,7 +85,7 @@ describe('config', () => {
     expect(config.vncBackend).toBe('external:5900');
     expect(parseArgs(['--no-exec']).overrides.exec).toBe(false);
     expect(() => loadConfig({}, ['--bogus'])).toThrow();
-    expect(() => loadConfig({ OZWELL_DESKTOP_VNC_BACKEND: 'weird' })).toThrow();
+    expect(() => loadConfig({ OZWELL_COMPUTER_VNC_BACKEND: 'weird' })).toThrow();
   });
 });
 
@@ -181,30 +181,30 @@ describe('exec', () => {
 
 describe('startup link config', () => {
   it('parses --public-url and --open', () => {
-    const { config } = loadConfig({ OZWELL_DESKTOP_PUBLIC_URL: 'http://localhost:18080' }, ['--open']);
+    const { config } = loadConfig({ OZWELL_COMPUTER_PUBLIC_URL: 'http://localhost:18080' }, ['--open']);
     expect(config.publicUrl).toBe('http://localhost:18080');
     expect(config.open).toBe(true);
     expect(loadConfig({}, []).config.open).toBe(false);
-    expect(() => loadConfig({ OZWELL_DESKTOP_PUBLIC_URL: 'not a url' })).toThrow();
+    expect(() => loadConfig({ OZWELL_COMPUTER_PUBLIC_URL: 'not a url' })).toThrow();
   });
 });
 
 import { parsePackages, newest } from '../../src/update.js';
 describe('update check', () => {
-  const index = `Package: ozwell-desktop
+  const index = `Package: ozwell-computer
 Version: 1.2.0
 Architecture: amd64
-Filename: ./ozwell-desktop_1.2.0_amd64.deb
+Filename: ./ozwell-computer_1.2.0_amd64.deb
 
 Package: other
 Version: 9.9.9
 Architecture: amd64
 
-Package: ozwell-desktop
+Package: ozwell-computer
 Version: 1.10.0~rc1
 Architecture: amd64
 
-Package: ozwell-desktop
+Package: ozwell-computer
 Version: 1.3.0
 Architecture: arm64
 `;
@@ -224,8 +224,8 @@ Architecture: arm64
     expect(await newest([], 'amd64', lt)).toBeNull();
   });
   it('accepts an update URL or off', () => {
-    expect(loadConfig({ OZWELL_DESKTOP_UPDATE_URL: 'off' }).config.updateUrl).toBe('off');
+    expect(loadConfig({ OZWELL_COMPUTER_UPDATE_URL: 'off' }).config.updateUrl).toBe('off');
     expect(loadConfig({}, ['--update-url', 'file:///srv/repo/Packages']).config.updateUrl).toBe('file:///srv/repo/Packages');
-    expect(() => loadConfig({ OZWELL_DESKTOP_UPDATE_URL: 'nope' })).toThrow();
+    expect(() => loadConfig({ OZWELL_COMPUTER_UPDATE_URL: 'nope' })).toThrow();
   });
 });

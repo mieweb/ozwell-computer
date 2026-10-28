@@ -7,9 +7,9 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { ROOT, generatedToken, isRunning, url } from './compose.mjs';
 
-const tokenFile = process.env.OZWELL_DESKTOP_TOKEN_FILE || join(homedir(), '.config', 'ozwell-desktop', 'token');
+const tokenFile = process.env.OZWELL_COMPUTER_TOKEN_FILE || join(homedir(), '.config', 'ozwell-computer', 'token');
 
-if (!process.env.OZWELL_DESKTOP_TOKEN) {
+if (!process.env.OZWELL_COMPUTER_TOKEN) {
   let shared = null;
   try { if (isRunning()) shared = generatedToken(); } catch { /* no docker: fine */ }
   if (shared) {
@@ -25,7 +25,7 @@ if (!process.env.OZWELL_DESKTOP_TOKEN) {
 
 // Don't collide with the compose service on the default port.
 const args = process.argv.slice(2);
-const portGiven = process.env.OZWELL_DESKTOP_PORT || args.some((a) => a === '--port' || a.startsWith('--port='));
+const portGiven = process.env.OZWELL_COMPUTER_PORT || args.some((a) => a === '--port' || a.startsWith('--port='));
 if (!portGiven) {
   let composePort = null;
   try { if (isRunning()) composePort = new URL(url()).port; } catch { /* no docker */ }
@@ -37,7 +37,7 @@ if (!portGiven) {
 
 const child = spawn(process.execPath, [join(ROOT, 'dist/cli.js'), '--open', ...args], {
   stdio: 'inherit',
-  env: { ...process.env, OZWELL_DESKTOP_TOKEN_FILE: tokenFile },
+  env: { ...process.env, OZWELL_COMPUTER_TOKEN_FILE: tokenFile },
 });
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => child.kill(sig));
 child.on('exit', (code, sig) => process.exit(sig ? 1 : (code ?? 0)));

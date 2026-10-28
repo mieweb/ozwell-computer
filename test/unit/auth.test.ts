@@ -16,10 +16,10 @@ describe('auth primitives', () => {
   it('extracts credentials in priority order', () => {
     const c = extractCredentials({
       url: '/x?token=q',
-      headers: { authorization: 'Bearer b', 'x-auth-token': 'h', cookie: 'a=1; ozwell_desktop_token=c' },
+      headers: { authorization: 'Bearer b', 'x-auth-token': 'h', cookie: 'a=1; ozwell_computer_token=c' },
     } as any);
     expect(c.map((x) => x[0])).toEqual(['query', 'bearer', 'x-auth-token', 'cookie']);
-    expect(authenticate('c', { url: '/x?token=q', headers: { cookie: 'ozwell_desktop_token=c' } } as any)).toBe('cookie');
+    expect(authenticate('c', { url: '/x?token=q', headers: { cookie: 'ozwell_computer_token=c' } } as any)).toBe('cookie');
   });
   it('parses cookies and redacts urls', () => {
     expect(parseCookies('a=1; b="2"')).toEqual({ a: '1', b: '2' });
@@ -48,7 +48,7 @@ describe('auth matrix', () => {
     expect(r.statusCode).toBe(302);
     expect(r.headers.location).toBe('/?foo=1');
     const cookie = String(r.headers['set-cookie']);
-    expect(cookie).toContain('ozwell_desktop_token=' + TOKEN);
+    expect(cookie).toContain('ozwell_computer_token=' + TOKEN);
     expect(cookie).toContain('HttpOnly');
     expect(cookie).toContain('SameSite=Strict');
     expect(cookie).not.toContain('Secure');
@@ -64,7 +64,7 @@ describe('auth matrix', () => {
   it.each([
     ['bearer', { authorization: 'Bearer ' + TOKEN }],
     ['x-auth-token', { 'x-auth-token': TOKEN }],
-    ['cookie', { cookie: 'ozwell_desktop_token=' + TOKEN }],
+    ['cookie', { cookie: 'ozwell_computer_token=' + TOKEN }],
   ])('%s → 200', async (_n, headers) => {
     const r = await app.inject({ url: '/api/v1/capabilities', headers });
     expect(r.statusCode).toBe(200);

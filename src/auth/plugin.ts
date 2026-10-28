@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ApiError } from '../errors.js';
 import { tokenEquals } from './token.js';
 
-export const COOKIE_NAME = 'ozwell_desktop_token';
+export const COOKIE_NAME = 'ozwell_computer_token';
 
 export function parseCookies(header: string | undefined): Record<string, string> {
   const out: Record<string, string> = {};

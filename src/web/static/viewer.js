@@ -15,8 +15,8 @@ const api = (path, opts = {}) =>
 function setStatus(text, cls) { status.textContent = text; status.className = cls || ''; }
 
 let me = null;
-const myName = localStorage.getItem('ozwell-desktop-name') || `viewer-${Math.random().toString(36).slice(2, 6)}`;
-localStorage.setItem('ozwell-desktop-name', myName);
+const myName = localStorage.getItem('ozwell-computer-name') || `viewer-${Math.random().toString(36).slice(2, 6)}`;
+localStorage.setItem('ozwell-computer-name', myName);
 
 let rfb = null;
 let retry = 0;

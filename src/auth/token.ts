@@ -39,5 +39,5 @@ export async function resolveToken(explicit: string | undefined, tokenFile: stri
 
 /** HMAC key for signed URLs, derived from the PSK so rotating the token invalidates them. */
 export function deriveKey(token: string, purpose: string): Buffer {
-  return createHash('sha256').update(`ozwell-desktop:${purpose}:`).update(token).digest();
+  return createHash('sha256').update(`ozwell-computer:${purpose}:`).update(token).digest();
 }

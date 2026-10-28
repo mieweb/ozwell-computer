@@ -1,4 +1,4 @@
-# ozwell-desktop
+# ozwell-computer
 
 One HTTP port that serves an X11 desktop to people and to agents:
 
@@ -16,8 +16,8 @@ wire-compatible with it.
 ```bash
 docker run -d -p 8080:8080 \
   --tmpfs /run --tmpfs /run/lock -v /sys/fs/cgroup:/sys/fs/cgroup:rw --cgroupns=host \
-  -e OZWELL_DESKTOP_TOKEN=$(openssl rand -hex 24) \
-  ghcr.io/mieweb/ozwell-desktop:latest
+  -e OZWELL_COMPUTER_TOKEN=$(openssl rand -hex 24) \
+  ghcr.io/mieweb/ozwell-computer:latest
 ```
 
 Inside the container, the `desktop` user has passwordless sudo. Prefer Podman with
@@ -28,20 +28,20 @@ Open `http://localhost:8080/?token=<token>`. The server sets an HttpOnly cookie 
 redirects, which removes the token from the address bar.
 
 If you don't set a token, the server generates one, stores it in
-`/var/lib/ozwell-desktop/token` (mount a volume there to keep it), and prints a link
+`/var/lib/ozwell-computer/token` (mount a volume there to keep it), and prints a link
 with the token embedded at startup. Run with `-t` to see it in `docker logs`; that's
 how `docker compose up` shows it. A token you configure yourself is never printed.
 
 The image is based on `ghcr.io/mieweb/opensource-server/nodejs`, with systemd as PID 1,
-and installs the `ozwell-desktop` Debian package (below) plus a few sample apps. The
+and installs the `ozwell-computer` Debian package (below) plus a few sample apps. The
 package provides these units, all running as the `desktop` user:
 
 | Unit | Purpose |
 |---|---|
-| `ozwell-desktop-dbus.service` | session D-Bus at the fixed address `unix:path=/run/desktop-bus/bus` |
-| `ozwell-desktop-xvfb.service` | `Xvfb :0` at `$OZWELL_DESKTOP_SCREEN` |
-| `ozwell-desktop-session.service` | xfwm4 plus `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). It also starts the AT-SPI bus and a terminal (xfce4-terminal); Thunar is the file manager. |
-| `ozwell-desktop.service` | this server |
+| `ozwell-computer-dbus.service` | session D-Bus at the fixed address `unix:path=/run/desktop-bus/bus` |
+| `ozwell-computer-xvfb.service` | `Xvfb :0` at `$OZWELL_COMPUTER_SCREEN` |
+| `ozwell-computer-session.service` | xfwm4 plus `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). It also starts the AT-SPI bus and a terminal (xfce4-terminal); Thunar is the file manager. |
+| `ozwell-computer.service` | this server |
 
 Apps launched through the API share the session bus and have the GTK/Qt
 accessibility bridges enabled, so their UI shows up in `/api/v1/a11y/*`.
@@ -63,8 +63,8 @@ is a disposable workstation for one person and one agent.
 The consequence is that **anyone holding the access token, and any agent driving the
 desktop, is root inside the container.** That includes an agent manipulated by a web
 page it reads. Treat the token as root credentials for the instance, and use
-`OZWELL_DESKTOP_EXEC=false` where agents should have less access. The rules live in
-`docker/` (`sudoers.d/ozwell-desktop` and a drop-in that lifts the server unit's
+`OZWELL_COMPUTER_EXEC=false` where agents should have less access. The rules live in
+`docker/` (`sudoers.d/ozwell-computer` and a drop-in that lifts the server unit's
 `NoNewPrivileges`). The Debian package grants no sudo.
 
 ### Run in a user namespace (recommended)
@@ -79,7 +79,7 @@ lands as that unprivileged uid, not host root.
 Either pass `--userns=auto`:
 
 ```bash
-podman run -d --userns=auto --systemd=always -p 8080:8080 ghcr.io/mieweb/ozwell-desktop:latest
+podman run -d --userns=auto --systemd=always -p 8080:8080 ghcr.io/mieweb/ozwell-computer:latest
 ```
 
 or make it the default for every container (including `docker compose` against
@@ -121,19 +121,19 @@ and runtimes that support it. This hasn't been tested with this image.
 
 ## Debian package
 
-`ozwell-desktop_<version>_<arch>.deb` installs the app under `/opt/ozwell-desktop`,
-the systemd units, `/usr/bin/ozwell-desktop`, and the desktop configuration
-(`/etc/xdg/...`). Settings go in `/etc/default/ozwell-desktop`.
+`ozwell-computer_<version>_<arch>.deb` installs the app under `/opt/ozwell-computer`,
+the systemd units, `/usr/bin/ozwell-computer`, and the desktop configuration
+(`/etc/xdg/...`). Settings go in `/etc/default/ozwell-computer`.
 - It needs Node.js 24 or newer from NodeSource, which provides the `nodejs` package.
 - Installing it creates the `desktop` user, then enables and starts the services.
 - Upgrading restarts only the server, so applications open on the desktop survive.
 - Removing it stops and disables the services; purging also deletes
-  `/var/lib/ozwell-desktop`.
+  `/var/lib/ozwell-computer`.
 
 ```bash
 make deps               # npm ci
 make build              # npm run build
-make install DESTDIR=/tmp/stage PREFIX=/opt/ozwell-desktop   # stage the files
+make install DESTDIR=/tmp/stage PREFIX=/opt/ozwell-computer   # stage the files
 make deb                # stage into .pkg/buildroot (or DESTDIR=...) and run fpm
 docker buildx build --target deb --output type=local,dest=out .   # .deb without local fpm
 ```
@@ -146,26 +146,26 @@ are in `contrib/`.
 - **Releases:** publishing a GitHub release builds the `.deb`, attaches it to the
   release with flat APT repository metadata (`Packages`, `Packages.gz`), and pushes the
   image with that version. The latest release is therefore an apt source; the image
-  ships it as `/etc/apt/sources.list.d/ozwell-desktop.sources`:
+  ships it as `/etc/apt/sources.list.d/ozwell-computer.sources`:
 
   ```
-  deb [trusted=yes] https://github.com/mieweb/ozwell-desktop/releases/latest/download/ ./
+  deb [trusted=yes] https://github.com/mieweb/ozwell-computer/releases/latest/download/ ./
   ```
 
   Until the first release is published, `apt-get update` reports a 404 for this
   source.
 - **In-app updates:** every 6 hours the server compares the installed package version
-  with the newest one in `OZWELL_DESKTOP_UPDATE_URL`. When a newer one exists, the
+  with the newest one in `OZWELL_COMPUTER_UPDATE_URL`. When a newer one exists, the
   viewer toolbar shows an "Update to X" button.
   - `GET /api/v1/update` reports versions and upgrade progress,
     `POST /api/v1/update/check` checks now, and `POST /api/v1/update/apply` upgrades.
   - The server can't run apt itself, so applying writes
-    `/var/lib/ozwell-desktop/upgrade-request`. The packaged root unit
-    `ozwell-desktop-upgrade.path` sees it and runs `apt-get install --only-upgrade
-    ozwell-desktop`, logging to `upgrade.log` beside it.
+    `/var/lib/ozwell-computer/upgrade-request`. The packaged root unit
+    `ozwell-computer-upgrade.path` sees it and runs `apt-get install --only-upgrade
+    ozwell-computer`, logging to `upgrade.log` beside it.
   - Upgrades restart only the server; the viewer reconnects and apps on the desktop
     stay open. apt installs whatever version its configured sources offer.
-  - apt and dpkg run inside `ozwell-desktop-upgrade.service`, so maintainer scripts
+  - apt and dpkg run inside `ozwell-computer-upgrade.service`, so maintainer scripts
     must never stop or restart that service; a unit test enforces this.
   - An upgrade restarts the watcher (`.path`), so changes to it take effect at once.
     A changed upgrade script or service is used from the next upgrade.
@@ -180,39 +180,39 @@ are in `contrib/`.
 ## Run without Docker
 
 ```bash
-npx @mieweb/ozwell-desktop                          # attach to $DISPLAY, bind 127.0.0.1:8080
-npx @mieweb/ozwell-desktop --spawn-xvfb --display :99 # headless desktop for development (needs Xvfb)
+npx @mieweb/ozwell-computer                          # attach to $DISPLAY, bind 127.0.0.1:8080
+npx @mieweb/ozwell-computer --spawn-xvfb --display :99 # headless desktop for development (needs Xvfb)
 ```
 
 When no token is configured, one is generated and stored in
-`~/.config/ozwell-desktop/token`, and a one-time access URL is printed to stderr.
+`~/.config/ozwell-computer/token`, and a one-time access URL is printed to stderr.
 
 ## Configuration
 
 | Variable / flag | Default | |
 |---|---|---|
-| `OZWELL_DESKTOP_PORT` / `--port` | `8080` | |
-| `OZWELL_DESKTOP_HOST` / `--host` | `0.0.0.0` in a container, otherwise `127.0.0.1` | |
-| `OZWELL_DESKTOP_TOKEN` / `--token` | generated | Pre-shared key |
-| `OZWELL_DESKTOP_TOKEN_FILE` | `/var/lib/ozwell-desktop/token` (container) or `~/.config/ozwell-desktop/token` | Where a generated token is kept |
-| `OZWELL_DESKTOP_PUBLIC_URL` / `--public-url` | derived | Base URL used in the startup link (for example the host port behind Docker) |
-| `OZWELL_DESKTOP_UPDATE_URL` / `--update-url` | the latest GitHub release's `Packages` | APT `Packages` index checked for new releases (`https://` or `file://`); `off` disables update checks |
-| `OZWELL_DESKTOP_OPEN` / `--open` | `false` | Open the viewer in the default browser at startup |
-| `OZWELL_DESKTOP_AUTH_DISABLED` / `--no-auth` | `false` | Logs loud warnings |
+| `OZWELL_COMPUTER_PORT` / `--port` | `8080` | |
+| `OZWELL_COMPUTER_HOST` / `--host` | `0.0.0.0` in a container, otherwise `127.0.0.1` | |
+| `OZWELL_COMPUTER_TOKEN` / `--token` | generated | Pre-shared key |
+| `OZWELL_COMPUTER_TOKEN_FILE` | `/var/lib/ozwell-computer/token` (container) or `~/.config/ozwell-computer/token` | Where a generated token is kept |
+| `OZWELL_COMPUTER_PUBLIC_URL` / `--public-url` | derived | Base URL used in the startup link (for example the host port behind Docker) |
+| `OZWELL_COMPUTER_UPDATE_URL` / `--update-url` | the latest GitHub release's `Packages` | APT `Packages` index checked for new releases (`https://` or `file://`); `off` disables update checks |
+| `OZWELL_COMPUTER_OPEN` / `--open` | `false` | Open the viewer in the default browser at startup |
+| `OZWELL_COMPUTER_AUTH_DISABLED` / `--no-auth` | `false` | Logs loud warnings |
 | `DISPLAY` / `--display` | `:0` | |
-| `OZWELL_DESKTOP_SPAWN_XVFB` / `--spawn-xvfb` | `false` | Development only |
-| `OZWELL_DESKTOP_SCREEN` / `--screen` | `1920x1080x24` | |
-| `OZWELL_DESKTOP_VIEW_ONLY` / `--view-only` | `false` | VNC viewers can't send input |
-| `OZWELL_DESKTOP_A11Y` / `--a11y` | `auto` | `auto`, `on` or `off` |
-| `OZWELL_DESKTOP_EXEC` / `--no-exec` | `true` | Controls the process, PTY, file and app-launch APIs |
-| `OZWELL_DESKTOP_VNC_BACKEND` / `--vnc-backend` | `builtin` | `external:[host:]port` proxies to another VNC server, such as x11vnc |
-| `OZWELL_DESKTOP_FS_ROOT` / `--fs-root` | `/` | Root directory for the file API |
-| `OZWELL_DESKTOP_LOG_LEVEL` / `--log-level` | `info` | |
+| `OZWELL_COMPUTER_SPAWN_XVFB` / `--spawn-xvfb` | `false` | Development only |
+| `OZWELL_COMPUTER_SCREEN` / `--screen` | `1920x1080x24` | |
+| `OZWELL_COMPUTER_VIEW_ONLY` / `--view-only` | `false` | VNC viewers can't send input |
+| `OZWELL_COMPUTER_A11Y` / `--a11y` | `auto` | `auto`, `on` or `off` |
+| `OZWELL_COMPUTER_EXEC` / `--no-exec` | `true` | Controls the process, PTY, file and app-launch APIs |
+| `OZWELL_COMPUTER_VNC_BACKEND` / `--vnc-backend` | `builtin` | `external:[host:]port` proxies to another VNC server, such as x11vnc |
+| `OZWELL_COMPUTER_FS_ROOT` / `--fs-root` | `/` | Root directory for the file API |
+| `OZWELL_COMPUTER_LOG_LEVEL` / `--log-level` | `info` | |
 
 ## Authentication
 
 The server accepts any one of these credentials, checked in this order:
-`?token=`, `Authorization: Bearer`, `X-Auth-Token`, or the `ozwell_desktop_token`
+`?token=`, `Authorization: Bearer`, `X-Auth-Token`, or the `ozwell_computer_token`
 cookie. WebSocket upgrades (`/websockify`, `/api/v1/pty`) follow the same rules.
 
 Only these paths are exempt: `GET /health`, the static assets under `/novnc/*` and
@@ -220,7 +220,7 @@ Only these paths are exempt: `GET /health`, the static assets under `/novnc/*` a
 logs.
 
 There is one key and one role, so anyone holding the token has full control. Put TLS
-in front of the server, and use `OZWELL_DESKTOP_EXEC=false` or `--view-only` when less
+in front of the server, and use `OZWELL_COMPUTER_EXEC=false` or `--view-only` when less
 access is appropriate.
 
 ## API quick tour
@@ -263,7 +263,7 @@ exec is enabled, `run_command`, `read_file` and `write_file` are also available.
 ## Development
 
 `compose.yml` is the dev container. It uses the production image and systemd layout,
-with your local `./dist` mounted over `/opt/ozwell-desktop/dist`.
+with your local `./dist` mounted over `/opt/ozwell-computer/dist`.
 
 ```bash
 nvm use                 # Node 26 (.nvmrc); the container runs the base image's Node 24
@@ -280,7 +280,7 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
 - `npm test` builds `./dist` and installs Playwright's Chromium and Firefox if
   missing. It then starts the compose service if it isn't running, or restarts the
   server inside it if it is, and leaves the service running.
-- **Startup link:** when no `OZWELL_DESKTOP_TOKEN` is set, the server generates a
+- **Startup link:** when no `OZWELL_COMPUTER_TOKEN` is set, the server generates a
   token and keeps it (compose stores it in the `state` volume, which survives
   `down` but not `down -v`). Every start then prints a link with the token
   embedded. A token you configure (environment or `.env`) is never printed.
@@ -304,7 +304,7 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
   `docker compose up -d --force-recreate` if you do. Rebuilding into `dist`, or
   emptying it, is fine: until `dist/cli.js` exists the service logs a hint and keeps
   retrying.
-- If port 8080 is taken, set `OZWELL_DESKTOP_HOST_PORT` in a `.env` file. The tests
+- If port 8080 is taken, set `OZWELL_COMPUTER_HOST_PORT` in a `.env` file. The tests
   discover the port and token from compose.
 - `npm run openapi` regenerates `docs/openapi.json`.
 - The compose container mounts `./dist` read-only, so an in-app upgrade there fails

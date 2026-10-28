@@ -1,5 +1,5 @@
 /**
- * End-to-end tests against a throwaway ozwell-desktop container (see global-setup.ts).
+ * End-to-end tests against a throwaway ozwell-computer container (see global-setup.ts).
  *   npm test                       unit + integration
  *   OZ_URL=... OZ_TOKEN=... npm run test:integration   against an existing server
  */

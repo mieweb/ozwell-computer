@@ -1,10 +1,10 @@
 #!/bin/sh
-# ozwell-desktop prerm
+# ozwell-computer prerm
 set -e
 
-# ozwell-desktop-upgrade.service is deliberately absent: an in-app upgrade runs this
+# ozwell-computer-upgrade.service is deliberately absent: an in-app upgrade runs this
 # script from inside it. On removal it is a oneshot that isn't running anyway.
-UNITS="ozwell-desktop-upgrade.path ozwell-desktop.service ozwell-desktop-session.service ozwell-desktop-xvfb.service ozwell-desktop-dbus.service"
+UNITS="ozwell-computer-upgrade.path ozwell-computer.service ozwell-computer-session.service ozwell-computer-xvfb.service ozwell-computer-dbus.service"
 
 case "$1" in
     remove|deconfigure)

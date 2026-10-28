@@ -58,13 +58,13 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(fastifySwagger, {
     openapi: {
       openapi: '3.1.0',
-      info: { title: 'ozwell-desktop', version: ctx.version, description: 'Control an X11 desktop over HTTP' },
+      info: { title: 'ozwell-computer', version: ctx.version, description: 'Control an X11 desktop over HTTP' },
       components: {
         securitySchemes: {
           bearer: { type: 'http', scheme: 'bearer' },
           header: { type: 'apiKey', in: 'header', name: 'X-Auth-Token' },
           query: { type: 'apiKey', in: 'query', name: 'token' },
-          cookie: { type: 'apiKey', in: 'cookie', name: 'ozwell_desktop_token' },
+          cookie: { type: 'apiKey', in: 'cookie', name: 'ozwell_computer_token' },
         },
       },
       security: [{ bearer: [] }, { header: [] }, { query: [] }, { cookie: [] }],

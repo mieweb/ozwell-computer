@@ -1,11 +1,11 @@
 #!/bin/sh
-# Upgrade the ozwell-desktop package. Run as root by ozwell-desktop-upgrade.service
-# when the server (unprivileged) drops /var/lib/ozwell-desktop/upgrade-request.
+# Upgrade the ozwell-computer package. Run as root by ozwell-computer-upgrade.service
+# when the server (unprivileged) drops /var/lib/ozwell-computer/upgrade-request.
 # Progress goes to upgrade.status ("<state> <epoch>") and upgrade.log in the same
 # directory, which the server reports through GET /api/v1/update.
 set -u
 
-STATE=/var/lib/ozwell-desktop
+STATE=/var/lib/ozwell-computer
 
 status() {
     printf '%s %s\n' "$1" "$(date +%s)" > "$STATE/upgrade.status.tmp"
@@ -21,7 +21,7 @@ rm -f "$STATE/upgrade-request"
 chmod 0644 "$STATE/upgrade.log"
 exec >>"$STATE/upgrade.log" 2>&1
 
-before=$(dpkg-query -W -f='${Version}' ozwell-desktop 2>/dev/null || true)
+before=$(dpkg-query -W -f='${Version}' ozwell-computer 2>/dev/null || true)
 echo "installed: ${before:-none}"
 
 export DEBIAN_FRONTEND=noninteractive
@@ -38,8 +38,8 @@ apt-get $LOCK_WAIT update || echo "apt-get update reported errors; continuing"
 
 if apt-get $LOCK_WAIT install -y --only-upgrade \
         -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold \
-        ozwell-desktop; then
-    after=$(dpkg-query -W -f='${Version}' ozwell-desktop 2>/dev/null || true)
+        ozwell-computer; then
+    after=$(dpkg-query -W -f='${Version}' ozwell-computer 2>/dev/null || true)
     echo "installed now: ${after:-none}"
     if [ "$after" = "$before" ]; then status unchanged; else status succeeded; fi
 else

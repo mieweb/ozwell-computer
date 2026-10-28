@@ -1,5 +1,5 @@
 #!/bin/sh
-# ozwell-desktop postrm
+# ozwell-computer postrm
 set -e
 
 case "$1" in
@@ -11,7 +11,7 @@ case "$1" in
     purge)
         # The generated access token and other state. The "desktop" user and its
         # home directory are kept: they may hold the user's files.
-        rm -rf /var/lib/ozwell-desktop
+        rm -rf /var/lib/ozwell-computer
         ;;
     upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
         ;;
