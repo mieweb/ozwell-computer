@@ -1,0 +1,66 @@
+# ozwell-computer orchestrator (per-user MCP proxy).
+#
+# Install (manual):
+#   - the repo's orchestrator/ at /opt/ozwell-computer/orchestrator, with
+#     `npm ci --omit=dev` already run there
+#   - settings (see .env.example) in /etc/default/ozwell-computer-orchestrator,
+#     mode 0600 (it holds ORCHESTRATOR_TOKEN and any provider API key)
+#   - this file in /etc/systemd/system/, then:
+#       systemctl daemon-reload && systemctl enable --now ozwell-computer-orchestrator
+#
+# docker:// provider: uncomment SupplementaryGroups=docker below. Membership of the
+# docker group is root-equivalent on the host; prefer the opensource-server provider
+# (needs only outbound HTTPS) where you can.
+
+[Unit]
+Description=ozwell-computer orchestrator
+Documentation=https://github.com/mieweb/ozwell-computer/tree/main/orchestrator
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ozwell-computer/orchestrator
+EnvironmentFile=/etc/default/ozwell-computer-orchestrator
+Environment=NODE_ENV=production
+# npm wants a writable cache/home; DynamicUser has neither.
+CacheDirectory=ozwell-computer-orchestrator
+Environment=npm_config_cache=%C/ozwell-computer-orchestrator HOME=%C/ozwell-computer-orchestrator
+Environment=npm_config_update_notifier=false
+ExecStart=/usr/bin/env npm start
+Restart=on-failure
+RestartSec=5
+
+DynamicUser=yes
+#SupplementaryGroups=docker
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectHostname=yes
+ProtectClock=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RemoveIPC=yes
+UMask=0077
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+# Not MemoryDenyWriteExecute: V8's JIT needs W+X memory.
+
+[Install]
+WantedBy=multi-user.target
