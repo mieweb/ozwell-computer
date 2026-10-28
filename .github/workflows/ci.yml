@@ -119,8 +119,10 @@ jobs:
       - name: Copy out the .deb
         run: |
           rm -rf pkg && mkdir pkg
-          docker run --rm -v "$PWD/pkg:/out" ozwell-computer:build \
-            sh -c "cp /usr/src/ozwell-computer/*.deb /out/ && chown $(id -u):$(id -g) /out/*.deb"
+          # --entrypoint: the base image's ENTRYPOINT is /sbin/init, which would boot systemd
+          # instead of running the command. Stream it out as a tar so no mount/chown is needed.
+          docker run --rm --entrypoint sh ozwell-computer:build \
+            -c 'cd /usr/src/ozwell-computer && tar -cf - *.deb' | tar -xf - -C pkg
           ls -l pkg
       # The release doubles as a flat APT repository (same scheme as
       # mieweb/opensource-server); the image ships docker/ozwell-computer.sources:
