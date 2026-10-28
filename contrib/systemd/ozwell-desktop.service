@@ -1,0 +1,22 @@
+[Unit]
+Description=ozwell-desktop (noVNC + HTTP API + MCP)
+After=ozwell-desktop-session.service ozwell-desktop-dbus.service network.target
+Wants=ozwell-desktop-session.service
+StartLimitIntervalSec=0
+
+[Service]
+User=desktop
+WorkingDirectory=~
+StateDirectory=ozwell-desktop
+StateDirectoryMode=0700
+Environment=DISPLAY=:0 OZWELL_DESKTOP_TOKEN_FILE=/var/lib/ozwell-desktop/token
+# Apps launched through the API join the desktop's session bus and expose AT-SPI
+Environment=GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/desktop-bus/bus GTK_MODULES=gail:atk-bridge NO_AT_BRIDGE=0 QT_ACCESSIBILITY=1 QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+EnvironmentFile=-/etc/default/ozwell-desktop
+ExecStart=/usr/bin/node @PREFIX@/dist/cli.js
+Restart=always
+RestartSec=1
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

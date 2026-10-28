@@ -1,6 +1,6 @@
 [Unit]
-Description=Session D-Bus for the desktop user (fixed address shared by the session and ozwell-desktop)
-After=environment.service
+Description=ozwell-desktop session D-Bus (shared by the desktop session and the server)
+PartOf=ozwell-desktop.service
 
 [Service]
 User=desktop

@@ -1,0 +1,44 @@
+#!/bin/sh
+# ozwell-desktop postinst
+set -e
+
+UNITS="ozwell-desktop-dbus.service ozwell-desktop-xvfb.service ozwell-desktop-session.service ozwell-desktop.service"
+
+case "$1" in
+    configure)
+        # Unprivileged user that owns the X display, the desktop session and the server.
+        if ! getent passwd desktop >/dev/null; then
+            adduser --system --group --home /home/desktop --shell /bin/bash \
+                --gecos "ozwell-desktop session" desktop
+        fi
+
+        command -v systemctl >/dev/null 2>&1 || exit 0
+
+        # Enable on first install only ($2 is the previously configured version),
+        # so an administrator's `systemctl disable` survives upgrades. Enabling only
+        # creates symlinks, so it also works during an image build.
+        if [ -z "$2" ]; then
+            systemctl enable $UNITS >/dev/null
+        fi
+
+        # Starting needs a running systemd (not the case during an image build).
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload
+            if [ -z "$2" ]; then
+                systemctl start $UNITS
+            else
+                # Upgrade: restart only the server. Restarting Xvfb or the session
+                # would close every application open on the desktop.
+                systemctl try-restart ozwell-desktop.service
+            fi
+        fi
+        ;;
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+    *)
+        echo "postinst called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

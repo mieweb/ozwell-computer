@@ -1,0 +1,38 @@
+--name ozwell-desktop
+--architecture native
+--license MIT
+--maintainer "Medical Informatics Engineering <helpdesk@mieweb.com>"
+--vendor "Medical Informatics Engineering"
+--url "https://github.com/mieweb/ozwell-desktop"
+--category x11
+--description "Headless X11 desktop served over one HTTP port: a noVNC viewer for people and an HTTP API plus MCP server for automation and AI agents."
+--depends "nodejs (>= 24)"
+--depends libc6
+--depends libstdc++6
+--depends adduser
+--depends xvfb
+--depends xfwm4
+--depends xfce4-panel
+--depends xfconf
+--depends xfce4-terminal
+--depends thunar
+--depends adwaita-icon-theme
+--depends dbus-daemon
+--depends at-spi2-core
+--depends libatk-adaptor
+--depends xdg-utils
+--depends x11-xserver-utils
+--depends xclip
+--depends fonts-dejavu-core
+--depends fonts-noto-core
+--deb-suggests firefox-esr
+--deb-suggests xterm
+--deb-suggests zenity
+--config-files /etc/default/ozwell-desktop
+--config-files /etc/xdg/mimeapps.list
+--config-files /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
+--config-files /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml
+--deb-no-default-config-files
+--after-install contrib/postinst
+--before-remove contrib/prerm
+--after-remove contrib/postrm

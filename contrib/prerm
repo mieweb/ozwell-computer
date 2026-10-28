@@ -1,0 +1,24 @@
+#!/bin/sh
+# ozwell-desktop prerm
+set -e
+
+UNITS="ozwell-desktop.service ozwell-desktop-session.service ozwell-desktop-xvfb.service ozwell-desktop-dbus.service"
+
+case "$1" in
+    remove|deconfigure)
+        command -v systemctl >/dev/null 2>&1 || exit 0
+        if [ -d /run/systemd/system ]; then
+            systemctl stop $UNITS || true
+        fi
+        systemctl disable $UNITS >/dev/null || true
+        ;;
+    upgrade|failed-upgrade)
+        # Leave everything running; postinst restarts the server afterwards.
+        ;;
+    *)
+        echo "prerm called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

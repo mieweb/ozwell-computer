@@ -3,8 +3,11 @@ name: CI
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
+  # Versions come from git tags: publishing a GitHub release (tag vX.Y.Z) builds
+  # ozwell-desktop_X.Y.Z_<arch>.deb and the X.Y.Z image.
+  release:
+    types: [published]
 
 permissions:
   contents: read
@@ -29,10 +32,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     permissions:
-      contents: read
+      contents: write  # release assets
       packages: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # tags, for ./package-version
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -44,7 +49,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile
+          file: Dockerfile
           load: true
           tags: ozwell-desktop:dev
           cache-from: type=gha
@@ -67,23 +72,40 @@ jobs:
           severity: CRITICAL,HIGH
           ignore-unfixed: true
           exit-code: '0'
+      - name: Build the .deb
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          target: deb
+          outputs: type=local,dest=pkg
+          cache-from: type=gha
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb
+          path: pkg/*.deb
+      - name: Attach the .deb to the release
+        if: github.event_name == 'release'
+        run: gh release upload "${{ github.event.release.tag_name }}" pkg/*.deb --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
       - name: Log in to GHCR
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - uses: docker/setup-qemu-action@v3
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
       - name: Publish multi-arch image
-        if: github.event_name == 'push'
+        if: github.event_name != 'pull_request'
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: docker/Dockerfile
+          file: Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/mieweb/ozwell-desktop:${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
+            ghcr.io/mieweb/ozwell-desktop:${{ github.event_name == 'release' && github.event.release.tag_name || 'latest' }}
           cache-from: type=gha

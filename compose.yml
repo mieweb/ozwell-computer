@@ -5,7 +5,7 @@ services:
   ozwell-desktop:
     build:
       context: .
-      dockerfile: docker/Dockerfile
+      dockerfile: Dockerfile
     image: ozwell-desktop:dev
     ports:
       - "${OZWELL_DESKTOP_HOST_PORT:-8080}:8080"

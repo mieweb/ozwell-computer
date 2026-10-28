@@ -28,19 +28,51 @@ If you don't set a token, the server generates one, stores it in
 with the token embedded at startup. Run with `-t` to see it in `docker logs`; that's
 how `docker compose up` shows it. A token you configure yourself is never printed.
 
-The image is based on `ghcr.io/mieweb/opensource-server/nodejs`, with systemd as PID 1.
-It runs these units:
+The image is based on `ghcr.io/mieweb/opensource-server/nodejs`, with systemd as PID 1,
+and installs the `ozwell-desktop` Debian package (below) plus a few sample apps. The
+package provides these units, all running as the `desktop` user:
 
 | Unit | Purpose |
 |---|---|
-| `environment.service` | (from the base image) copies `docker run -e` values into `/etc/environment` |
-| `desktop-dbus.service` | session D-Bus at the fixed address `unix:path=/run/desktop-bus/bus` |
-| `xvfb.service` | `Xvfb :0` at `$OZWELL_DESKTOP_SCREEN` |
-| `desktop-session.service` | xfwm4 plus `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). It also starts the AT-SPI bus and a terminal (xfce4-terminal); Thunar is the file manager. Config is in `docker/xfce/`. |
-| `ozwell-desktop.service` | this server, running as user `desktop` |
+| `ozwell-desktop-dbus.service` | session D-Bus at the fixed address `unix:path=/run/desktop-bus/bus` |
+| `ozwell-desktop-xvfb.service` | `Xvfb :0` at `$OZWELL_DESKTOP_SCREEN` |
+| `ozwell-desktop-session.service` | xfwm4 plus `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). It also starts the AT-SPI bus and a terminal (xfce4-terminal); Thunar is the file manager. |
+| `ozwell-desktop.service` | this server |
 
 Apps launched through the API share the session bus and have the GTK/Qt
 accessibility bridges enabled, so their UI shows up in `/api/v1/a11y/*`.
+
+Container-only adjustments live in `docker/` and are applied by the `Dockerfile`, not
+the package: `docker run -e` values reach the services through the base image's
+`environment.service`, and systemd's own output is kept off the console so
+`docker logs` shows only the server.
+
+## Debian package
+
+`ozwell-desktop_<version>_<arch>.deb` installs the app under `/opt/ozwell-desktop`,
+the systemd units, `/usr/bin/ozwell-desktop`, and the desktop configuration
+(`/etc/xdg/...`). Settings go in `/etc/default/ozwell-desktop`.
+- It needs Node.js 24 or newer from NodeSource, which provides the `nodejs` package.
+- Installing it creates the `desktop` user, then enables and starts the services.
+- Upgrading restarts only the server, so applications open on the desktop survive.
+- Removing it stops and disables the services; purging also deletes
+  `/var/lib/ozwell-desktop`.
+
+```bash
+make deps               # npm ci
+make build              # npm run build
+make install DESTDIR=/tmp/stage PREFIX=/opt/ozwell-desktop   # stage the files
+make deb                # stage into .pkg/buildroot (or DESTDIR=...) and run fpm
+docker buildx build --target deb --output type=local,dest=out .   # .deb without local fpm
+```
+
+Package metadata and dependencies are in `.fpm`. The maintainer scripts and units
+are in `contrib/`.
+- **Versions come from git tags** (`./package-version deb`): `v1.2.3` gives `1.2.3`,
+  3 commits later `1.2.3+3.g<hash>`, `v1.3.0-rc1` gives `1.3.0~rc1`, and no tag gives
+  `0.0.0`.
+- **Releases:** publishing a GitHub release builds the `.deb`, attaches it to the
+  release, and pushes the image with that version.
 
 ## Run without Docker
 
@@ -131,8 +163,8 @@ with your local `./dist` mounted over `/opt/ozwell-desktop/dist`.
 
 ```bash
 nvm use                 # Node 26 (.nvmrc); the container runs the base image's Node 24
-npm ci
-npm run build           # ./dist must exist before the first `docker compose up`
+make deps               # npm ci
+make build              # ./dist must exist before the first `docker compose up`
 docker compose up       # prints "open http://localhost:8080/?token=…" (use -d, then
                         # `docker compose logs`, to run it in the background)
 npm run watch           # rebuild on save; restarts the server in the container (about 1 s);
@@ -158,8 +190,11 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
   the check.
 - `npm run test:unit` runs only the fast unit tests.
 - `OZ_URL=… OZ_TOKEN=… npm test` runs the suite against any other server.
-- Run `docker compose up -d --build` after changing the image itself: `docker/`
-  (Dockerfile, systemd units, XFCE config) or dependencies.
+- Run `docker compose up -d --build` after changing anything packaged other than
+  `./dist`: `contrib/` (units, XFCE config, maintainer scripts), `.fpm`, `docker/`, the
+  `Dockerfile`, or dependencies. The image is rebuilt from a fresh `.deb`.
+- The compose container mounts `./dist` read-only, so don't `dpkg -i` or `apt` the
+  package inside it. Use `docker compose up -d --build` instead.
 - Don't delete the `dist` directory itself (`rm -rf dist`) while the container is
   running. The bind mount stays attached to the old directory; run
   `docker compose up -d --force-recreate` if you do. Rebuilding into `dist`, or

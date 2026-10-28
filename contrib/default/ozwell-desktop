@@ -1,0 +1,16 @@
+# Settings for the ozwell-desktop services (read by ozwell-desktop.service and
+# ozwell-desktop-xvfb.service). See `ozwell-desktop --help` for every option.
+# Restart after editing: systemctl restart ozwell-desktop-xvfb ozwell-desktop
+
+# Access token. If unset, one is generated and kept in /var/lib/ozwell-desktop/token.
+#OZWELL_DESKTOP_TOKEN=
+
+# Listen address and port (the address defaults to 127.0.0.1 outside containers).
+#OZWELL_DESKTOP_HOST=0.0.0.0
+#OZWELL_DESKTOP_PORT=8080
+
+# Virtual screen geometry (WIDTHxHEIGHTxDEPTH).
+#OZWELL_DESKTOP_SCREEN=1920x1080x24
+
+# Disable the process, file and app-launch APIs.
+#OZWELL_DESKTOP_EXEC=false
