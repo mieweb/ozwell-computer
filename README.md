@@ -156,13 +156,6 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
   returned a 2xx, or any MCP tool was never called. It reads the server's own counters
   from `/api/v1/metrics`, so new routes and tools need a test. Runs filtered to some files or tests skip
   the check.
-- **Load tests:** `npm run loadtest` scrapes `/api/v1/metrics` through baseline, load and
-  cooldown phases and writes `results/*.json` and `.csv`.
-  - `--workload ehr` has an MCP agent work in WebChart through Firefox: patient search,
-    chart review, Medical Record sections, Documents, a Phone Note task, the Scheduler and
-    the Task List. It needs `OZ_WEBCHART_USER` and `OZ_WEBCHART_PASS` (and optionally
-    `OZ_WEBCHART_URL`).
-  - `node scripts/workloads/debug.mjs` runs one agent cycle and saves a screenshot per step.
 - `npm run test:unit` runs only the fast unit tests.
 - `OZ_URL=… OZ_TOKEN=… npm test` runs the suite against any other server.
 - Run `docker compose up -d --build` after changing the image itself: `docker/`

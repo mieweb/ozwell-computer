@@ -9,7 +9,7 @@ import WebSocket from 'ws';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
-import { URL_, TOKEN, auth, sleep, api, exec, waitFor, freshXterm, RfbClient, zenity, fileContent } from './helpers.js';
+import { URL_, TOKEN, auth, sleep, api, exec, waitFor, freshXterm, RfbClient } from './helpers.js';
 
 beforeAll(async () => {
   await waitFor(async () => (await fetch(URL_ + '/health')).status === 204, 30000);
@@ -247,17 +247,16 @@ describe('MCP', () => {
 
 describe('accessibility', () => {
   it('finds and presses GTK buttons', async () => {
-    // Scoped to the dialog's window: other apps (e.g. Firefox) expose text fields too.
-    const id = await zenity(['--entry', '--text=Name?'], '/tmp/oz-a11y.txt', 'oz-a11y-gtk');
+    await api('POST', '/api/v1/apps/launch', { command: 'sh', args: ['-c', 'zenity --entry --text=Name? > /tmp/oz-a11y.txt'] });
     const tf = await waitFor(async () => {
-      const r = (await api('POST', '/api/v1/a11y/find', { role: 'text_field', window: id })).body;
+      const r = (await api('POST', '/api/v1/a11y/find', { role: 'text_field' })).body;
       return r.matches?.length ? r : null;
     });
     expect((await api('POST', '/api/v1/a11y/act', { snapshot_id: tf.snapshot_id, element_id: tf.matches[0].element_id, action: 'set_value', value: 'Grace' })).body.ok).toBe(true);
-    const ok = (await api('POST', '/api/v1/a11y/find', { role: 'button', name: 'OK', window: id })).body;
+    const ok = (await api('POST', '/api/v1/a11y/find', { role: 'button', name: 'OK' })).body;
     const r = await api('POST', '/api/v1/a11y/act', { snapshot_id: ok.snapshot_id, element_id: ok.matches[0].element_id, action: 'press' });
     expect(r.body).toMatchObject({ ok: true, delivery: 'background' });
-    expect(await fileContent('/tmp/oz-a11y.txt')).toBe('Grace\n');
+    expect(await waitFor(async () => (await exec('cat /tmp/oz-a11y.txt 2>/dev/null')).stdout)).toBe('Grace\n');
   });
 });
 

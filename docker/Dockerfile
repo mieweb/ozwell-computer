@@ -29,8 +29,6 @@ COPY docker/xfce/xfconf/ /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/
 COPY docker/xfce/applications/ /usr/share/applications/
 COPY docker/xfce/session.sh /usr/local/bin/ozwell-desktop-session
 COPY docker/xfce/mimeapps.list /etc/xdg/mimeapps.list
-# Firefox without first-run pages, password-save prompts or telemetry (agent-friendly)
-COPY docker/firefox/policies.json /etc/firefox/policies/policies.json
 COPY docker/systemd/quiet.conf /etc/systemd/system.conf.d/ozwell-desktop.conf
 RUN useradd -m -s /bin/bash desktop \
  && install -d -o desktop -g desktop -m 700 /var/lib/ozwell-desktop \

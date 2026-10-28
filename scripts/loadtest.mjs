@@ -4,7 +4,6 @@
 //   npm run loadtest                              typical: 1 human (Chromium noVNC) + 1 MCP agent, 15 min
 //   npm run loadtest -- --profile stress          + 4 raw VNC viewers and 2 more agents
 //   npm run loadtest -- --duration 60m --interval 2s
-//   npm run loadtest -- --workload ehr          agent works in WebChart (needs OZ_WEBCHART_USER/PASS)
 //   OZ_URL=... OZ_TOKEN=... npm run loadtest      against another server (no compose)
 //
 // Phases: baseline (idle) → load → cooldown (idle). Writes results/loadtest-<time>.{json,csv}.
@@ -15,7 +14,6 @@ import { chromium } from 'playwright-core';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ROOT, isRunning, up, waitReady } from './compose.mjs';
-import { ehrAgent, ehrConfig, ehrHuman } from './workloads/ehr.mjs';
 
 // ---------------------------------------------------------------- options
 
@@ -28,13 +26,12 @@ const dur = (s) => {
   if (!m) throw new Error(`bad duration: ${s}`);
   return Number(m[1]) * { ms: 1, s: 1000, m: 60_000, h: 3_600_000 }[m[2] ?? 's'];
 };
-const WORKLOADS = ['basic', 'ehr'];
-const opts = { workload: 'basic', profile: 'typical', duration: '15m', baseline: '30s', cooldown: '60s', interval: '1s', out: join(ROOT, 'results'), thinkMs: 2000 };
+const opts = { profile: 'typical', duration: '15m', baseline: '30s', cooldown: '60s', interval: '1s', out: join(ROOT, 'results'), thinkMs: 2000 };
 const argv = process.argv.slice(2);
 for (let i = 0; i < argv.length; i++) {
   const [k, v] = argv[i].replace(/^--/, '').split('=');
   if (k === 'help' || k === 'h') {
-    process.stdout.write('options: --workload basic|ehr --profile typical|stress --duration 15m --baseline 30s --cooldown 60s --interval 1s --think-ms 2000 --out results/\n');
+    process.stdout.write('options: --profile typical|stress --duration 15m --baseline 30s --cooldown 60s --interval 1s --think-ms 2000 --out results/\n');
     process.exit(0);
   }
   const key = k.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
@@ -43,8 +40,6 @@ for (let i = 0; i < argv.length; i++) {
 }
 const profile = PROFILES[opts.profile];
 if (!profile) throw new Error(`unknown profile ${opts.profile}`);
-if (!WORKLOADS.includes(opts.workload)) throw new Error(`unknown workload ${opts.workload}`);
-if (opts.workload === 'ehr') ehrConfig(); // fail fast on missing credentials
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const jitter = (ms) => ms * (0.5 + Math.random());
 const log = (m) => process.stderr.write(`[loadtest ${new Date().toISOString().slice(11, 19)}] ${m}\n`);
@@ -118,8 +113,6 @@ async function timed(name, fn) {
   try { return await fn(); } finally { (latencies[name] ??= []).push(performance.now() - t); }
 }
 const errors = {};
-const steps = {}; // completed workload steps by name
-const mark = (name) => { steps[name] = (steps[name] ?? 0) + 1; };
 const countError = (where, e) => { errors[where] = (errors[where] ?? 0) + 1; if (errors[where] <= 3) log(`${where}: ${e?.message ?? e}`); };
 
 const ANIM_PAGE = `<!doctype html><title>oz-load</title><body style="margin:0;background:#111;color:#eee;font:14px sans-serif">
@@ -146,7 +139,6 @@ async function human(browser, i) {
   const toPage = (fx, fy) => [box.x + fx * box.width, box.y + fy * box.height];
   const terminal = async () => (await api('GET', '/api/v1/windows')).windows.find((w) => w.title === 'oz-load-human');
   const caps = await api('GET', '/api/v1/capabilities');
-  if (opts.workload === 'ehr') { await ehrHuman(page, toPage, stop, countError, i); await ctx.close(); return; }
   let n = 0;
   while (!stop.flag) {
     try {
@@ -181,15 +173,6 @@ async function agent(i) {
     if (r.isError) throw new Error(`${name}: ${r.content?.[0]?.text}`);
     return r;
   });
-  if (opts.workload === 'ehr') {
-    try {
-      await ehrAgent({ call, stop, countError, think: () => sleep(jitter(Number(opts.thinkMs))), log, mark }, i);
-    } finally {
-      await transport.terminateSession().catch(() => undefined);
-      await client.close().catch(() => undefined);
-    }
-    return;
-  }
   const title = `oz-load-agent-${i}`;
   await call('launch_app', { command: 'xfce4-terminal', args: ['--disable-server', `--title=${title}`, `--geometry=90x24+${700 + i * 60}+${120 + i * 60}`] });
   if (i === 0) await call('launch_app', { command: 'firefox-esr', args: ['--new-window', 'file:///tmp/oz-load.html'] });
@@ -317,7 +300,7 @@ const top = (prefix) => keys.filter((k) => k.startsWith(prefix))
   .filter(([, peak]) => peak > 1).sort((x, y) => y[1] - x[1]);
 
 const summary = {
-  workload: opts.workload, profile: opts.profile, ...profile, duration: opts.duration, target: URL_, samples: samples.length,
+  profile: opts.profile, ...profile, duration: opts.duration, target: URL_, samples: samples.length,
   container: {
     // anon = process memory (what leaks / OOM-kills); total also counts reclaimable page cache
     anon_baseline_mib: MiB(avg(base, 'stat:anon')), anon_peak_mib: MiB(max(load, 'stat:anon')), anon_after_cooldown_mib: MiB(avg(cool.slice(-10), 'stat:anon')),
@@ -333,13 +316,12 @@ const summary = {
   processes_peak_pss_mib: Object.fromEntries(top('cmd:').slice(0, 15).map(([k, p]) => [k, p])),
   vnc: vncRate,
   latency_ms: Object.fromEntries(Object.entries(latencies).map(([k, xs]) => [k, { n: xs.length, p50: Math.round(pct(xs, 50)), p95: Math.round(pct(xs, 95)), max: Math.round(Math.max(...xs)) }])),
-  steps,
   errors,
 };
 
 mkdirSync(opts.out, { recursive: true });
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-const base_ = join(opts.out, `loadtest-${opts.workload}-${opts.profile}-${stamp}`);
+const base_ = join(opts.out, `loadtest-${opts.profile}-${stamp}`);
 writeFileSync(`${base_}.json`, JSON.stringify({ options: opts, summary, samples }, null, 2));
 writeFileSync(`${base_}.csv`, [keys.join(','), ...samples.map((s) => keys.map((k) => s[k] ?? '').join(','))].join('\n') + '\n');
 process.stdout.write(JSON.stringify(summary, null, 2) + '\n');
