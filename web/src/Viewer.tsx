@@ -8,6 +8,7 @@ import { Textarea } from '@mieweb/ui/components/Textarea';
 import { api } from './api';
 import { clipboardSupported, useClipboardSync } from './clipboard';
 import { openServerEvents, useServerEvent } from './events';
+import { JobsPanel, useJobs } from './jobs';
 import { Perf, UpdateControls } from './status';
 import { ThemeToggle } from './theme';
 
@@ -30,7 +31,7 @@ function canvasBox(screen: HTMLElement | null, overlay: HTMLElement | null) {
   return { x: a.left - b.left, y: a.top - b.top, w: a.width, h: a.height };
 }
 
-export function Viewer({ serverViewOnly }: { serverViewOnly: boolean }) {
+export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec: boolean }) {
   const screenRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
@@ -43,6 +44,9 @@ export function Viewer({ serverViewOnly }: { serverViewOnly: boolean }) {
   const prefs = useRef({ viewOnly, fit: scale === 'fit' });
   const [clipOpen, setClipOpen] = useState(false);
   const [clipText, setClipText] = useState('');
+  const [jobsOpen, setJobsOpen] = useState(false);
+  const { jobs, refresh: refreshJobs } = useJobs(exec);
+  const running = jobs.filter((j) => j.state === 'running').length;
   const [toast, setToast] = useState({ text: '', shown: false });
   const [roster, setRoster] = useState(new Map<string, Participant>());
   const [cursors, setCursors] = useState(new Map<string, Cursor>());
@@ -143,6 +147,10 @@ export function Viewer({ serverViewOnly }: { serverViewOnly: boolean }) {
           <Button id="btn-clip" size="sm" variant="outline" onClick={toggleClip}
             title="Clipboard sharing needs HTTPS (or localhost); edit the desktop clipboard here instead">Clipboard</Button>
         )}
+        {exec && (
+          <Button id="btn-jobs" size="sm" variant={running ? 'secondary' : 'outline'} title="Background commands started through the API or MCP"
+            onClick={() => setJobsOpen(!jobsOpen)}>{running ? `Jobs (${running})` : 'Jobs'}</Button>
+        )}
         <Checkbox id="chk-viewonly" size="sm" label="view only" title="Ignore my input"
           checked={viewOnly} disabled={serverViewOnly} onChange={(e) => setViewOnly(e.target.checked)} />
         <div className="w-24">
@@ -170,6 +178,7 @@ export function Viewer({ serverViewOnly }: { serverViewOnly: boolean }) {
           <Button id="clip-refresh" size="sm" variant="outline" onClick={refreshClip}>Refresh</Button>
         </div>
       )}
+      {exec && jobsOpen && <JobsPanel jobs={jobs} refresh={refreshJobs} canCancel={!viewOnly} toast={showToast} />}
       <div className="relative flex-1 overflow-hidden">
         <div id="screen" className="absolute inset-0" ref={screenRef} />
         <div id="overlay" className="pointer-events-none absolute inset-0" ref={overlayRef}>

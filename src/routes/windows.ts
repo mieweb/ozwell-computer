@@ -1,9 +1,11 @@
 import { spawn } from 'node:child_process';
+import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { ApiError } from '../errors.js';
 import type { AppContext } from '../server.js';
 import { m } from '../metrics.js';
 import { bounds, errors, media, ok, prop, record, roster, windowInfo, windowRef } from './schemas.js';
+import { eventStreams, openSse } from './sse.js';
 
 const idParams = { type: 'object', properties: { id: prop('string', windowRef) }, required: ['id'] };
 const epochQuery = {
@@ -137,30 +139,20 @@ export default async function windowRoutes(app: FastifyInstance, ctx: AppContext
   app.get('/api/v1/events', {
     schema: {
       tags: ['events'], summary: 'Server-sent event stream',
-      description: 'Starts with a hello event carrying the presence roster, then window.*, clipboard.changed, display.*, presence and update events as they happen, with a keepalive every 15 s. Each data line is JSON.',
+      description: 'Starts with a hello event carrying the presence roster and a `stream_id`, then window.*, clipboard.changed, display.*, '
+        + 'presence, update, `job` and `job.removed` events as they happen, with a keepalive every 15 s. Each data line is JSON. With exec '
+        + 'enabled, PUT /api/v1/events/{stream_id}/job makes this stream also carry one job\'s output.',
       response: { 200: media('An endless text/event-stream', ['text/event-stream'], { type: 'string' }), ...errors },
     },
-  }, (req, reply) => {
-    reply.hijack();
-    const res = reply.raw;
-    res.writeHead(200, {
-      'content-type': 'text/event-stream',
-      'cache-control': 'no-store',
-      connection: 'keep-alive',
-      'x-accel-buffering': 'no',
-    });
-    const write = (type: string, data: unknown, id?: number) =>
-      res.write(`${id ? `id: ${id}\n` : ''}event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
-    write('hello', { roster: desktop.presence.roster() });
+  }, (_req, reply) => {
+    const sse = openSse(reply, '/api/v1/events');
+    if (sse.signal.aborted) return;
+    const stream_id = randomBytes(16).toString('base64url');
+    eventStreams.set(stream_id, sse);
+    sse.send('hello', { roster: desktop.presence.roster(), stream_id });
     m.sseClients.inc();
-    const unsub = desktop.bus.subscribe((ev) => write(ev.type, ev.data, ev.id));
-    const ka = setInterval(() => write('keepalive', { ts: Date.now() }), 15_000);
-    const started = performance.now();
-    req.raw.on('close', () => {
-      clearInterval(ka); unsub(); m.sseClients.dec();
-      // hijacked replies skip the onResponse hook, so record the stream here
-      m.httpSeconds.observe({ method: 'GET', route: '/api/v1/events', status: '200' }, (performance.now() - started) / 1000);
-    });
+    const unsub = desktop.bus.subscribe((ev) => sse.send(ev.type, ev.data, ev.id));
+    sse.signal.addEventListener('abort', () => { unsub(); eventStreams.delete(stream_id); m.sseClients.dec(); });
   });
 
   app.post('/api/v1/presence/join', {

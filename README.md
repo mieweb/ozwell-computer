@@ -363,7 +363,7 @@ curl -H "$T" -H 'content-type: application/json' \
   -d '{"action":"type","text":"hello"}' $B/input/keyboard
 curl -H "$T" $B/windows
 curl -H "$T" -H 'content-type: application/json' -d '{"role":"button","name":"OK"}' $B/a11y/find
-curl -N -H "$T" $B/events                                           # SSE: windows, clipboard, presence
+curl -N -H "$T" $B/events                                           # SSE: windows, clipboard, presence, jobs
 ```
 
 - **Coordinates:** `space` is one of `screen`, `window`, `screenshot` or `normalized`.
@@ -401,7 +401,14 @@ Otherwise it returns `state: "running"` with a `job_id` and the command keeps go
 or the final result, and `cancel: true` stops it. `timeout_ms` (default 1 h) kills it.
 Jobs run detached under `/var/lib/ozwell-computer/jobs/`, survive server restarts, and
 are removed 24 h after finishing. Over HTTP, `POST /api/v1/exec` with `wait_ms` returns
-`202` and a `job_id` for `GET`/`DELETE /api/v1/exec/jobs/:id`.
+`202` and a `job_id` for `GET`/`DELETE /api/v1/exec/jobs/:id`; `GET /api/v1/exec/jobs`
+lists them and `GET /api/v1/exec/jobs/:id/stream` tails their output as server-sent
+events. Starts and finishes are also published as `job` events on `/api/v1/events`, and
+removals as `job.removed`. That stream can also carry one job's output: `PUT
+/api/v1/events/:stream_id/job` (with the `stream_id` from its `hello` event) makes it send
+`job.output`, `job.state` and `job.end` events for that job.
+The viewer's **Jobs** toolbar button shows them with live output (over that one stream) and a
+Cancel button (hidden in view-only mode).
 
 ## Development
 

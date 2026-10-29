@@ -8,7 +8,7 @@ import './index.css';
 // Until the viewer loads the desktop's theme (and on the login view), follow the browser.
 applyScheme(prefersScheme());
 
-type Capabilities = { display: { name: string }; features: { vnc: { view_only: boolean } } };
+type Capabilities = { display: { name: string }; features: { exec: { available: boolean }; vnc: { view_only: boolean } } };
 
 function App() {
   const [caps, setCaps] = useState<Capabilities | 'login' | null>(null);
@@ -29,7 +29,7 @@ function App() {
     void load();
   }, []);
   if (caps === 'login') return <Login />;
-  if (caps) return <Viewer serverViewOnly={caps.features.vnc.view_only} />;
+  if (caps) return <Viewer serverViewOnly={caps.features.vnc.view_only} exec={caps.features.exec.available} />;
   return error && <p className="m-auto text-muted-foreground">Server unavailable ({error}), retrying…</p>;
 }
 
