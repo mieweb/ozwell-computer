@@ -21,6 +21,7 @@ import mcpRoutes from './mcp/server.js';
 import type { A11y } from './a11y/atspi.js';
 import type { Updater } from './update.js';
 import { m, render as renderMetrics } from './metrics.js';
+import { errors, media } from './routes/schemas.js';
 
 const require = createRequire(import.meta.url);
 export const VERSION: string = require('../package.json').version;
@@ -43,6 +44,8 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
     trustProxy: true,
     ajv: { customOptions: { coerceTypes: 'array', removeAdditional: false, allErrors: false } },
   });
+  // Response schemas only document the API; never let them filter or coerce a reply.
+  app.setSerializerCompiler(() => (data) => JSON.stringify(data));
 
   app.setErrorHandler((err, req, reply) => {
     const e = toApiError(err);
@@ -86,7 +89,11 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
     m.httpSeconds.observe({ method: req.method, route, status: String(reply.statusCode) }, reply.elapsedTime / 1000);
   });
   app.get('/api/v1/metrics', {
-    schema: { tags: ['system'], summary: 'Prometheus metrics (text exposition format)' },
+    schema: {
+      tags: ['system'], summary: 'Prometheus metrics (text exposition format)',
+      description: 'Node process metrics, container and per-command memory, HTTP request durations, VNC/MCP/SSE sessions, MCP tool calls, screenshot timings and X connection state.',
+      response: { 200: media('Metrics in the Prometheus text format', ['text/plain'], { type: 'string' }), ...errors },
+    },
     logLevel: 'warn', // scraped every few seconds
   }, async (_req, reply) => {
     const { body, contentType } = await renderMetrics();
