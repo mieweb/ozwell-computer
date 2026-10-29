@@ -6,6 +6,23 @@ import { safePath, signedUrl, verifySignature, parseRange } from '../../src/fs/i
 import { deriveKey } from '../../src/auth/token.js';
 import { addRect } from '../../src/x11/damage.js';
 import { Presence, EventBus, parsePrincipal } from '../../src/presence/index.js';
+import { checkResult, versionTitle, type UpdateStatus } from '../../web/src/version.js';
+
+describe('viewer version button', () => {
+  const s: UpdateStatus = { supported: true, current: '1.2.3', latest: '1.2.4', available: true, checked_at: null, error: null };
+  it('explains the update status in the tooltip', () => {
+    expect(versionTitle(null)).toBe('Update checks unavailable: update checks are not running');
+    expect(versionTitle({ supported: false, limitation: 'not a package', current: null })).toBe('Update checks unavailable: not a package');
+    expect(versionTitle(s)).toBe('Not checked yet\nLatest release: 1.2.4\nClick to check for updates now.');
+    expect(versionTitle({ ...s, checked_at: '2026-01-01T00:00:00Z', error: 'boom' }))
+      .toMatch(/^Last checked .+\nLast check failed: boom\nClick to check for updates now\.$/);
+  });
+  it('summarizes a check', () => {
+    expect(checkResult(s)).toBe('ozwell-computer 1.2.4 is available');
+    expect(checkResult({ ...s, available: false })).toBe('Up to date');
+    expect(checkResult({ ...s, error: 'offline' })).toBe('Update check failed: offline');
+  });
+});
 
 describe('keymap', () => {
   it('resolves W3C codes, names, chars, keysym names, hex', () => {

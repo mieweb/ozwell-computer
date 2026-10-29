@@ -24,7 +24,7 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  deps     install dependencies (npm ci)"
-	@echo "  build    compile the server and copy viewer assets (npm run build)"
+	@echo "  build    compile the server and build the viewer (npm run build)"
 	@echo "  test     run the full test suite (npm test; uses the compose dev container)"
 	@echo "  install  stage the application, units and config into DESTDIR (default /)"
 	@echo "  deb      build ozwell-computer_<version>_amd64.deb with fpm"
@@ -45,6 +45,7 @@ test:
 install: build
 	$(INSTALL) -d $(DESTAPP) $(DESTAPP)/bin
 	cp -a dist package.json package-lock.json node_modules $(DESTAPP)/
+	chmod 0755 $(DESTAPP)/dist/cli.js
 	# Runtime dependencies only, and the release version (the installed app has no git checkout).
 	cd $(DESTAPP) && npm prune --omit=dev --no-audit --no-fund >/dev/null \
 		&& npm pkg set version="$$(cd "$(CURDIR)" && ./package-version node)"

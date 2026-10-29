@@ -15,10 +15,10 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "build": "tsc -p tsconfig.json && vite build -c web/vite.config.ts -l warn",
     "dev": "tsx src/cli.ts",
     "start": "node scripts/start.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && tsc -p web/tsconfig.json",
     "test": "vitest run",
     "test:integration": "vitest run --project integration",
     "openapi": "node dist/cli.js --print-openapi > docs/openapi.json",
@@ -30,12 +30,21 @@
     "mcp-tools": "node dist/cli.js --print-mcp-tools > docs/mcp-tools.json"
   },
   "devDependencies": {
+    "@mieweb/ui": "^0.11.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.5",
     "@types/pngjs": "^6.0.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@types/ws": "^8.18.2",
+    "@vitejs/plugin-react": "^6.1.2",
     "playwright-core": "^1.64.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",
     "typescript": "^7.0.2",
+    "vite": "^8.3.5",
     "vitest": "^5.0.5"
   },
   "dependencies": {

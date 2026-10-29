@@ -15,7 +15,7 @@ import coreRoutes from './routes/core.js';
 import windowRoutes from './routes/windows.js';
 import execRoutes from './routes/exec.js';
 import a11yRoutes from './routes/a11y.js';
-import webRoutes, { loginPage } from './web/routes.js';
+import webRoutes from './web/routes.js';
 import vncRoutes from './vnc/routes.js';
 import mcpRoutes from './mcp/server.js';
 import type { A11y } from './a11y/atspi.js';
@@ -72,12 +72,13 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   });
   await app.register(fastifySwaggerUi, { routePrefix: '/api/docs' });
 
-  registerAuth(app, { token: ctx.token, loginPage });
+  registerAuth(app, { token: ctx.token });
 
   const novncDir = dirname(dirname(require.resolve('@novnc/novnc'))); // exports → core/rfb.js
   await app.register(fastifyStatic, { root: novncDir, prefix: '/novnc/', decorateReply: false, index: false });
-  const here = dirname(fileURLToPath(import.meta.url));
-  await app.register(fastifyStatic, { root: join(here, 'web', 'static'), prefix: '/static/', decorateReply: false, index: false });
+  // Vite builds the viewer into dist/web/static; resolved from dist/ or src/ (npm run dev).
+  const staticDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'web', 'static');
+  await app.register(fastifyStatic, { root: staticDir, prefix: '/static/', index: false });
 
   app.get('/api/v1/openapi.json', { schema: { hide: true } }, async () => app.swagger());
 
@@ -100,6 +101,6 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(async (s) => a11yRoutes(s, ctx));
   await app.register(async (s) => vncRoutes(s, ctx));
   await app.register(async (s) => mcpRoutes(s, ctx));
-  await app.register(async (s) => webRoutes(s, ctx));
+  await app.register(async (s) => webRoutes(s));
   return app;
 }

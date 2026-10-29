@@ -1,0 +1,8 @@
+/* Tailwind 4 setup per @mieweb/ui's init.css; the Ozwell brand overrides its default BlueHive tokens. */
+@import 'tailwindcss' source(none);
+@import '@mieweb/ui/init.css';
+@import '@mieweb/ui/brands/ozwell.css';
+
+@source '../index.html';
+@source '.';
+@source '../../node_modules/@mieweb/ui/dist';
