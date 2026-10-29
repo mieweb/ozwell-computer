@@ -32,6 +32,7 @@ function canvasBox(screen: HTMLElement | null, overlay: HTMLElement | null) {
 }
 
 export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec: boolean }) {
+  const wrapRef = useRef<HTMLDivElement>(null);
   const screenRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
@@ -50,6 +51,7 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
   const [toast, setToast] = useState({ text: '', shown: false });
   const [roster, setRoster] = useState(new Map<string, Participant>());
   const [cursors, setCursors] = useState(new Map<string, Cursor>());
+  const [fullscreen, setFullscreen] = useState(false);
   const [, relayout] = useReducer((n: number) => n + 1, 0);
 
   const showToast = (text: string) => {
@@ -114,6 +116,17 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
       navigator.sendBeacon('/api/v1/presence/leave', new Blob([JSON.stringify({ participant_id: meRef.current.participant_id })], { type: 'application/json' }));
     });
   }, []);
+  useEffect(() => {
+    // Keyboard Lock API: not in lib.dom yet.
+    const { keyboard } = navigator as Navigator & { keyboard?: { lock(): Promise<void>; unlock(): void } };
+    document.addEventListener('fullscreenchange', () => {
+      const full = document.fullscreenElement === wrapRef.current;
+      setFullscreen(full);
+      // Send Esc, Alt+Tab etc. to the desktop while fullscreen (Chromium only; hold Esc to exit).
+      if (full) void keyboard?.lock(); else keyboard?.unlock();
+      rfbRef.current?.focus();
+    });
+  }, []);
   // Last: every useServerEvent above and in the children is subscribed by now.
   useEffect(openServerEvents, []);
 
@@ -157,8 +170,9 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
           <Select id="sel-scale" size="sm" aria-label="Scaling" value={scale} onValueChange={setScale}
             options={[{ value: 'fit', label: 'fit' }, { value: 'remote', label: '1:1' }]} />
         </div>
-        <Button id="btn-full" size="sm" variant="outline" title="Fullscreen"
-          onClick={() => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen())}>Fullscreen</Button>
+        <Button id="btn-full" size="sm" variant={fullscreen ? 'primary' : 'outline'} aria-pressed={fullscreen}
+          title="Show only the remote desktop, fullscreen (hold Esc to exit)"
+          onClick={() => (document.fullscreenElement ? document.exitFullscreen() : wrapRef.current!.requestFullscreen())}>Fullscreen</Button>
         <ThemeToggle viewOnly={serverViewOnly} toast={showToast} />
         <span id="roster" className="flex gap-1">
           {[...roster.values()].map((p) => (
@@ -179,7 +193,7 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
         </div>
       )}
       {exec && jobsOpen && <JobsPanel jobs={jobs} refresh={refreshJobs} canCancel={!viewOnly} toast={showToast} />}
-      <div className="relative flex-1 overflow-hidden">
+      <div id="screen-wrap" className="relative flex-1 overflow-hidden [&:fullscreen]:size-full [&:fullscreen]:bg-background" ref={wrapRef}>
         <div id="screen" className="absolute inset-0" ref={screenRef} />
         <div id="overlay" className="pointer-events-none absolute inset-0" ref={overlayRef}>
           {[...cursors.values()].map((p) => (
