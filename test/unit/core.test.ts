@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { resolveKeysym, charToKeysym, keysymToChar, normalizeModifier, XK } from '../../src/x11/keymap.js';
 import { ScreenshotRegistry, resolvePoint, fitSize } from '../../src/coords.js';
 import { loadConfig, parseArgs } from '../../src/config.js';
@@ -189,7 +189,7 @@ describe('startup link config', () => {
   });
 });
 
-import { parsePackages, newest } from '../../src/update.js';
+import { parsePackages, newest, parseUpdateSource, parseLsRemote } from '../../src/update.js';
 describe('update check', () => {
   const index = `Package: ozwell-computer
 Version: 1.2.0
@@ -227,5 +227,57 @@ Architecture: arm64
     expect(loadConfig({ OZWELL_COMPUTER_UPDATE_URL: 'off' }).config.updateUrl).toBe('off');
     expect(loadConfig({}, ['--update-url', 'file:///srv/repo/Packages']).config.updateUrl).toBe('file:///srv/repo/Packages');
     expect(() => loadConfig({ OZWELL_COMPUTER_UPDATE_URL: 'nope' })).toThrow();
+  });
+  it('accepts git+https://<repo>#<branch> only', () => {
+    const url = 'git+https://github.com/mieweb/ozwell-computer.git#main';
+    expect(loadConfig({ OZWELL_COMPUTER_UPDATE_URL: url }).config.updateUrl).toBe(url);
+    for (const bad of ['git+http://example.com/r.git#main', 'git+ssh://git@github.com/r.git#main', 'git+https://github.com/r.git', 'git+https://github.com/r.git#a;b'])
+      expect(() => loadConfig({ OZWELL_COMPUTER_UPDATE_URL: bad }), bad).toThrow();
+  });
+  it('picks the channel from the URL', () => {
+    expect(parseUpdateSource('git+https://github.com/mieweb/ozwell-computer.git#release/1.x'))
+      .toEqual({ kind: 'git', repo: 'https://github.com/mieweb/ozwell-computer.git', branch: 'release/1.x' });
+    expect(parseUpdateSource('https://example.com/Packages')).toEqual({ kind: 'apt', url: 'https://example.com/Packages' });
+  });
+  it('reads the branch head from git ls-remote output', () => {
+    const a = 'a'.repeat(40), b = 'b'.repeat(40);
+    const out = `${a}\trefs/heads/main-old\n${b}\trefs/heads/main\n`;
+    expect(parseLsRemote(out, 'refs/heads/main')).toBe(b);
+    expect(parseLsRemote(out, 'refs/heads/dev')).toBeNull();
+    expect(parseLsRemote('', 'refs/heads/main')).toBeNull();
+  });
+});
+
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import pino from 'pino';
+import { readInstalled, Updater } from '../../src/update.js';
+describe('git update channel', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'oz-update-'));
+  const installed = 'c'.repeat(40);
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  class FakeRemote extends Updater {
+    head = installed;
+    protected override async lsRemote(_repo: string, ref: string) { return `${this.head}\t${ref}\n`; }
+  }
+
+  it('reads the version and REVISION that make install wrote', async () => {
+    expect(await readInstalled(dir)).toBeNull();
+    writeFileSync(join(dir, 'package.json'), JSON.stringify({ version: '1.2.3+4.gccccccc' }));
+    writeFileSync(join(dir, 'REVISION'), 'not a sha\n');
+    expect(await readInstalled(dir)).toBeNull();
+    writeFileSync(join(dir, 'REVISION'), `${installed}\n`);
+    expect(await readInstalled(dir)).toEqual({ version: '1.2.3+4.gccccccc', revision: installed });
+  });
+
+  it('offers an update when the branch head differs from the installed commit', async () => {
+    const u = new FakeRemote('git+https://github.com/mieweb/ozwell-computer.git#main', pino({ level: 'silent' }), undefined, dir, dir);
+    await u.start();
+    u.stop();
+    expect(await u.status()).toMatchObject({ current: '1.2.3+4.gccccccc', latest: 'main@ccccccc', available: false, error: null, revision: { current: installed, latest: installed } });
+    u.head = 'd'.repeat(40);
+    expect(await u.check()).toMatchObject({ latest: 'main@ddddddd', available: true, revision: { current: installed, latest: u.head } });
   });
 });
