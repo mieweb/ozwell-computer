@@ -42,19 +42,22 @@ async function xfsettingsdRunning(display: string) {
   return ours.includes(true);
 }
 
+const onDisplay = (display: string) => ({ env: { ...process.env, DISPLAY: display } });
+
 // xfconf only stores the theme; xfsettingsd publishes it to GTK apps. The XFCE session starts it,
 // but not on a spawned Xvfb, nor after #26's xsettingsd took the XSETTINGS selection first.
-async function ensureSettingsDaemon(display: string) {
+export async function ensureSettingsDaemon(display: string) {
   if (await xfsettingsdRunning(display)) return;
-  await run('xfsettingsd', ['--replace', '--daemon', '--disable-wm-check', '--sm-client-disable'], { env: { ...process.env, DISPLAY: display } })
+  await run('xfsettingsd', ['--replace', '--daemon', '--disable-wm-check', '--sm-client-disable'], onDisplay(display))
     .catch(missing('xfsettingsd'));
 }
 
 // --create makes the property when no channel default provides it (e.g. --spawn-xvfb hosts).
 // allSettled: a failed write must not release the queue while the other is still running.
-async function apply(scheme: ColorScheme) {
+async function apply(scheme: ColorScheme, display: string) {
   const results = await Promise.allSettled(PROPERTIES.map(([channel, property]) =>
-    run('xfconf-query', ['-c', channel, '-p', property, '-n', '-t', 'string', '-s', THEME[scheme]]).catch(missing('xfconf-query'))));
+    run('xfconf-query', ['-c', channel, '-p', property, '-n', '-t', 'string', '-s', THEME[scheme]], onDisplay(display))
+      .catch(missing('xfconf-query'))));
   const failed = results.find((r) => r.status === 'rejected');
   if (failed) throw failed.reason;
 }
@@ -67,7 +70,7 @@ export function setTheme(scheme: ColorScheme, display: string, onlyIfUnset = fal
     const current = await getTheme();
     if (onlyIfUnset && current.set) return current;
     await ensureSettingsDaemon(display);
-    await apply(scheme);
+    await apply(scheme, display);
     await mkdir(dirname(MARKER), { recursive: true });
     await writeFile(MARKER, `${scheme}\n`);
     return { scheme, set: true };

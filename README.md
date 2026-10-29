@@ -280,8 +280,8 @@ are in `contrib/`.
   - release: `apt-get install --only-upgrade ozwell-computer`. apt installs whatever
     version its configured sources offer.
   - main: fetch the branch into `/usr/src/ozwell-computer` (cloning it if missing),
-    then `make deps build`, `apt-get install` of the system packages listed in `.fpm`,
-    and, only if those succeeded, `make install`. A failed
+    then `make deps build`, `make system-deps` (`apt-get install` of the packages listed
+    in `.fpm`), and, only if those succeeded, `make install`. A failed
     build leaves the installed version in place. `make install` keeps existing
     config files (`/etc/default/ozwell-computer`, the xfconf defaults).
   - **Security:** a `:main` image runs `npm ci` and the build of whatever is on `main`

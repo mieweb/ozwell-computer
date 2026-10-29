@@ -48,7 +48,7 @@ describe('git update channel', () => {
     expect(git).toMatch(/if \[ "\$after" = "\$before" \]; then status unchanged; exit 0; fi/);
   });
 
-  describe('upgrade.sh in a sandbox (fake git, make, apt-get, systemctl and node)', () => {
+  describe('upgrade.sh in a sandbox (fake git, make, systemctl and node)', () => {
     // Runs the script with FAIL_ON (a `case` pattern over "<command> <args>") failing; returns the outcome.
     function run(dir: string, failOn = '__none__') {
       writeFileSync(join(dir, 'calls'), '');
@@ -56,7 +56,7 @@ describe('git update channel', () => {
       return {
         status: readFileSync(join(dir, 'state/upgrade.status'), 'utf8').split(' ')[0],
         revision: readFileSync(join(dir, 'prefix/REVISION'), 'utf8').trim(),
-        calls: readFileSync(join(dir, 'calls'), 'utf8').split('\n').filter((l) => /^(make|apt-get|systemctl)/.test(l)),
+        calls: readFileSync(join(dir, 'calls'), 'utf8').split('\n').filter((l) => /^(make|systemctl)/.test(l)),
       };
     }
     function sandbox() {
@@ -64,13 +64,12 @@ describe('git update channel', () => {
       for (const d of ['state', 'prefix', 'src/.git', 'bin']) mkdirSync(join(dir, d), { recursive: true });
       writeFileSync(join(dir, 'prefix/REVISION'), 'old\n');
       writeFileSync(join(dir, 'prefix/package.json'), '{"version":"1.0.0"}');
-      writeFileSync(join(dir, 'src/.fpm'), '--depends "nodejs (>= 24)"\n--depends xvfb\n--depends greybird-gtk-theme\n');
       writeFileSync(join(dir, 'upgrade'), sh.replace(/^STATE=.*$/m, `STATE=${dir}/state`).replace('@PREFIX@', `${dir}/prefix`).replace(/^SRC=.*$/m, `SRC=${dir}/src`));
-      for (const c of ['git', 'make', 'apt-get', 'systemctl', 'node', 'sleep']) {
+      for (const c of ['git', 'make', 'systemctl', 'node', 'sleep']) {
         writeFileSync(join(dir, 'bin', c), `#!/bin/sh
 echo "${c} $*" >> ${dir}/calls
 case "${c} $*" in $FAIL_ON) exit 1 ;; esac
-case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/src -o build install"*) echo new > ${dir}/prefix/REVISION ;; esac
+case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/src -o build -o system-deps install"*) echo new > ${dir}/prefix/REVISION ;; esac
 `, { mode: 0o755 });
       }
       return dir;
@@ -85,10 +84,9 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
       expect(r).toMatchObject({ status: 'succeeded', revision: 'new' });
       expect(r.calls.map((l) => l.replace(dir, ''))).toEqual([
         'make -C /src deps build',
-        'apt-get -o DPkg::Lock::Timeout=600 update',
-        'apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends xvfb greybird-gtk-theme',
+        'make -C /src system-deps',
         'systemctl stop ozwell-computer.service',
-        `make -C /src -o build install PREFIX=${dir}/prefix`,
+        `make -C /src -o build -o system-deps install PREFIX=${dir}/prefix`,
         'systemctl daemon-reload',
         'systemctl start ozwell-computer.service',
         'systemctl try-restart ozwell-computer-upgrade.path',
@@ -103,7 +101,7 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
     });
 
     it('a failed system package install leaves the server and the install alone', () => {
-      const r = run(fresh(), 'apt-get*install*');
+      const r = run(fresh(), 'make*system-deps');
       expect(r).toMatchObject({ status: 'failed', revision: 'old' });
       expect(r.calls.some((l) => l.startsWith('systemctl'))).toBe(false);
     });
@@ -123,6 +121,13 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
         expect(retry.calls).toContain('systemctl stop ozwell-computer.service');
       },
     );
+  });
+
+  it('make installs the .fpm packages for a real install (older updaters run it), not for a staged one', () => {
+    const dry = (...args: string[]) => spawnSync('make', ['-n', ...args], { cwd: new URL('../..', import.meta.url), encoding: 'utf8' }).stdout;
+    expect(dry('system-deps')).toMatch(/apt-get .*install -y --no-install-recommends/);
+    expect(dry('-o', 'build', 'install', 'DESTDIR=/')).toContain('apt-get');
+    expect(dry('-o', 'build', 'install', 'DESTDIR=/tmp/oz-stage')).not.toContain('apt-get');
   });
 
   it('the upgrade unit takes its channel from root-owned config, not the request file', () => {
