@@ -20,6 +20,10 @@ provider, and proxies every ozwell-computer tool with an extra `instance_id` arg
     `ready: false` if it is still starting (under the 60 s MCP client limit); the agent
     calls `get_computer` again. They return `instance_id` and
     `viewer_url`, which embeds the computer's token for the user to open.
+  - Quota: with `ORCHESTRATOR_MAX_INSTANCES` set, `create_computer` fails with
+    `quota_exceeded` once the user has that many computers (counted from the provider,
+    whatever their status). The error lists them and tells the agent to reuse one, or to
+    `destroy_computer` one only after the user explicitly agrees.
   - Proxied: every tool in `../docs/mcp-tools.json` with `instance_id` added. That
     catalog is generated from the computer (`npm run mcp-tools` at the repo root), so
     the orchestrator knows the tools without a running instance.
@@ -42,6 +46,7 @@ the environment take precedence.
 | `ORCHESTRATOR_AUTH_DISABLED` | `false` | development only: no PSK, so any caller can claim any user |
 | `ORCHESTRATOR_HOST` / `ORCHESTRATOR_PORT` | `127.0.0.1` / `8090` | listen address |
 | `TOOL_CATALOG` | `../docs/mcp-tools.json` | proxied tool definitions |
+| `ORCHESTRATOR_MAX_INSTANCES` | unlimited | computers each user may have |
 | `LOG_LEVEL` | `info` | |
 
 Configure Ozwell's workspace MCP server as `http(s)://<orchestrator>/mcp` (Streamable

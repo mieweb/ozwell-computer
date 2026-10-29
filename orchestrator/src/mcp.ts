@@ -28,7 +28,7 @@ export function describe(c: Computer) {
   };
 }
 
-const MANAGEMENT: ToolDef[] = [
+const managementTools = (maxInstances: number | undefined): ToolDef[] => [
   {
     name: 'list_computers',
     description: 'List your ozwell-computers (virtual Linux desktops). Use an instance_id with the other tools.',
@@ -36,7 +36,8 @@ const MANAGEMENT: ToolDef[] = [
   },
   {
     name: 'create_computer',
-    description: 'Create a new ozwell-computer for you. Waits up to ~40 s for it to start and returns its instance_id and a viewer_url the user can open to watch or take over the screen. If ready is false it is still starting: call get_computer (which also waits) until ready is true.',
+    description: 'Create a new ozwell-computer for you. Waits up to ~40 s for it to start and returns its instance_id and a viewer_url the user can open to watch or take over the screen. If ready is false it is still starting: call get_computer (which also waits) until ready is true.' +
+      (maxInstances === undefined ? '' : ` Each user may have at most ${maxInstances} computer(s): prefer reusing an existing one from list_computers.`),
     inputSchema: { type: 'object', properties: { display_name: { type: 'string', description: 'Optional friendly label' } } },
   },
   {
@@ -70,6 +71,8 @@ export interface OrchestratorDeps {
   client: InstanceClient;
   version: string;
   readyTimeoutMs?: number;
+  /** Per-user limit on computers; undefined means unlimited. */
+  maxInstances?: number;
   log?: { info: (o: object, m: string) => void; warn: (o: object, m: string) => void };
 }
 
@@ -118,7 +121,28 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
     return c;
   };
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...MANAGEMENT, ...proxied] }));
+  /** The quota error when the requester is at the limit, else null. Counted from the provider so it survives restarts. */
+  const overQuota = async () => {
+    const max = deps.maxInstances;
+    if (max === undefined) return null;
+    const existing = await provider.list(user.id);
+    if (existing.length < max) return null;
+    return {
+      ...text({
+        error: {
+          reason: 'quota_exceeded',
+          message: `You already have ${existing.length} computer(s); the limit is ${max}. ` +
+            'Reuse one of the computers below by its instance_id. Only if the user explicitly agrees, ' +
+            'call destroy_computer on one they choose to free up quota, then create_computer again. ' +
+            'Never destroy a computer without asking the user first: everything on it is lost.',
+        },
+        computers: existing.map(describe),
+      }),
+      isError: true,
+    };
+  };
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...managementTools(deps.maxInstances), ...proxied] }));
 
   server.setRequestHandler(CallToolRequestSchema, async (req): Promise<any> => {
     const { name } = req.params;
@@ -129,6 +153,8 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
         case 'list_computers':
           return text({ computers: (await provider.list(user.id)).map(describe) });
         case 'create_computer': {
+          const over = await overQuota();
+          if (over) return over;
           const display = typeof args.display_name === 'string' ? args.display_name.slice(0, 64) : undefined;
           const created = await provider.create({ owner: user, displayName: display });
           const { c, ready } = await waitReady(provider, created, deps.readyTimeoutMs ?? CREATE_WAIT_MS);
