@@ -21,7 +21,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && tsc -p web/tsconfig.json",
     "test": "vitest run",
     "test:integration": "vitest run --project integration",
-    "openapi": "node dist/cli.js --print-openapi > docs/openapi.json",
     "pretest": "npm run build && playwright-core install chromium firefox",
     "test:unit": "vitest run --project unit",
     "pretest:integration": "npm run build && playwright-core install chromium firefox",

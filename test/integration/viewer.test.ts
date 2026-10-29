@@ -53,10 +53,12 @@ describe('noVNC viewer', () => {
     }, null, { timeout: 15000 });
     // Toolbar resource readout from /api/v1/metrics (CPU appears after the second sample).
     await page.waitForFunction(() => /CPU \d+%.*Mem \d+ MiB/.test(document.getElementById('perf')?.textContent ?? ''), null, { timeout: 15000 });
-    expect(await page.locator('#btn-update').isHidden()).toBe(true); // nothing newer published
-    // The installed version is always shown; clicking it checks for a release now.
-    const current = (await (await fetch(`${URL_}/api/v1/update`, { headers: auth })).json()).current;
-    await page.waitForFunction((v) => document.getElementById('btn-version')?.textContent === `v${v}`, current, { timeout: 10000 });
+    // Shown iff the server reports something to act on (on the git channel main may have moved).
+    const u = await (await fetch(`${URL_}/api/v1/update`, { headers: auth })).json();
+    const shown = u.supported && (u.available || ['requested', 'running', 'failed'].includes(u.upgrade.state));
+    await page.waitForFunction((v) => !!document.getElementById('btn-update') === v, shown, { timeout: 5000 });
+    // The installed version is always shown; clicking it checks for an update now.
+    await page.waitForFunction((v) => document.getElementById('btn-version')?.textContent === `v${v}`, u.current, { timeout: 10000 });
     await page.locator('#btn-version').click();
     await page.waitForFunction(() => /Up to date|is available|Update check failed/.test(document.getElementById('toast')?.textContent ?? ''), null, { timeout: 20000 });
     expect(await page.locator('#btn-version').getAttribute('title')).toContain('Last checked');

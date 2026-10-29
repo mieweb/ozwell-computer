@@ -3,7 +3,7 @@
 One HTTP port that serves an X11 desktop to people and to agents:
 
 - `/`: a noVNC viewer for humans, with presence cursors, local clipboard sharing and special keys
-- `/api/v1/*`: JSON API for screenshots, input, windows, clipboard, accessibility, processes and files ([OpenAPI](docs/openapi.json), Swagger UI at `/api/docs`)
+- `/api/v1/*`: JSON API for screenshots, input, windows, clipboard, accessibility, processes and files (Swagger UI at `/api/docs`, OpenAPI at `/api/docs/json`)
 - `/mcp`: an MCP server (Streamable HTTP) with the same capabilities as tools
 
 The VNC server is written in TypeScript and runs in-process; it talks to X through
@@ -255,17 +255,43 @@ are in `contrib/`.
 
   Until the first release is published, `apt-get update` reports a 404 for this
   source.
-- **In-app updates:** every 6 hours the server compares the installed package version
-  with the newest one in `OZWELL_COMPUTER_UPDATE_URL`. When a newer one exists, the
-  viewer toolbar shows an "Update to X" button.
+- **In-app updates** come from one of two channels, set by `OZWELL_COMPUTER_UPDATE_URL`:
+  - **release** (release images, the `.deb`): every 6 hours the server compares the
+    installed package version with the newest one in the `Packages` index.
+  - **main** (`ghcr.io/mieweb/ozwell-computer:main`): every minute the server compares
+    the commit it was built from (`$PREFIX/REVISION`, written by `make install`) with
+    the head of the branch (`git ls-remote`), so a push to `main` is offered within
+    about a minute. CI builds these images with `--build-arg UPDATE_CHANNEL=main`,
+    which adds the build toolchain (git, make, python3, g++), a checkout of the
+    image's commit in `/usr/src/ozwell-computer`, and
+    `OZWELL_COMPUTER_UPDATE_URL=git+https://github.com/mieweb/ozwell-computer.git#main`
+    in `/etc/default/ozwell-computer`, and leaves out the apt source.
+
+  When something newer exists, the viewer toolbar shows an "Update to X" button.
   - `GET /api/v1/update` reports versions and upgrade progress,
     `POST /api/v1/update/check` checks now, and `POST /api/v1/update/apply` upgrades.
-  - The server can't run apt itself, so applying writes
+    Nothing is installed until someone applies it.
+  - The server can't upgrade itself, so applying writes
     `/var/lib/ozwell-computer/upgrade-request`. The packaged root unit
-    `ozwell-computer-upgrade.path` sees it and runs `apt-get install --only-upgrade
-    ozwell-computer`, logging to `upgrade.log` beside it.
+    `ozwell-computer-upgrade.path` sees it and runs `ozwell-computer-upgrade`, logging
+    to `upgrade.log` beside it. The unit reads the channel from its own environment
+    (`/etc/default/ozwell-computer`, and `/etc/environment` in the image), never from
+    the request.
+  - release: `apt-get install --only-upgrade ozwell-computer`. apt installs whatever
+    version its configured sources offer.
+  - main: fetch the branch into `/usr/src/ozwell-computer` (cloning it if missing),
+    then `make deps build` and, only if that succeeded, `make install`. A failed
+    build leaves the installed version in place. `make install` keeps existing
+    config files (`/etc/default/ozwell-computer`, the xfconf defaults).
+  - **Security:** a `:main` image runs `npm ci` and the build of whatever is on `main`
+    as root when someone applies an update. It trusts the `main` branch (and its
+    npm dependencies) as much as the image itself. Use a release image, or set
+    `OZWELL_COMPUTER_UPDATE_URL=off`, where that's not acceptable. (A release
+    `Packages` URL alone isn't enough on a `:main` image: it has no apt source, so
+    apt would never install the release it reports; restore
+    `/etc/apt/sources.list.d/ozwell-computer.sources` as above too.)
   - Upgrades restart only the server; the viewer reconnects and apps on the desktop
-    stay open. apt installs whatever version its configured sources offer.
+    stay open.
   - apt and dpkg run inside `ozwell-computer-upgrade.service`, so maintainer scripts
     must never stop or restart that service; a unit test enforces this.
   - An upgrade restarts the watcher (`.path`), so changes to it take effect at once.
@@ -297,7 +323,7 @@ When no token is configured, one is generated and stored in
 | `OZWELL_COMPUTER_TOKEN` / `--token` | generated | Pre-shared key |
 | `OZWELL_COMPUTER_TOKEN_FILE` | `/var/lib/ozwell-computer/token` (container) or `~/.config/ozwell-computer/token` | Where a generated token is kept |
 | `OZWELL_COMPUTER_PUBLIC_URL` / `--public-url` | derived | Base URL used in the startup link (for example the host port behind Docker) |
-| `OZWELL_COMPUTER_UPDATE_URL` / `--update-url` | the latest GitHub release's `Packages` | APT `Packages` index checked for new releases (`https://` or `file://`); `off` disables update checks |
+| `OZWELL_COMPUTER_UPDATE_URL` / `--update-url` | the latest GitHub release's `Packages` (`git+https://github.com/mieweb/ozwell-computer.git#main` in `:main` images) | APT `Packages` index checked for new releases (`https://` or `file://`), or `git+https://<repo>#<branch>` to build that branch from git; `off` disables update checks |
 | `OZWELL_COMPUTER_OPEN` / `--open` | `false` | Open the viewer in the default browser at startup |
 | `OZWELL_COMPUTER_FRAME_ANCESTORS` / `--frame-ancestors` | none | Origins, space or comma separated (`https://app.ozwell.ai https://*.example.com`), allowed to embed the viewer in an iframe, via CSP `frame-ancestors`. The viewer is always frameable by its own origin |
 | `OZWELL_COMPUTER_AUTH_DISABLED` / `--no-auth` | `false` | Logs loud warnings |
@@ -330,6 +356,7 @@ access is appropriate.
 ```bash
 T="Authorization: Bearer $TOKEN"; B=http://localhost:8080/api/v1
 curl -H "$T" "$B/screenshot?max_dimension=1280" -D - -o s.png     # note X-Screenshot-Id
+curl -H "$T" "$B/screenshot?window=0x1a00004&ocr=true"             # JSON with image_base64 and OCR text
 curl -H "$T" -H 'content-type: application/json' \
   -d '{"action":"click","x":640,"y":360,"screenshot_id":"<id>"}' $B/input/pointer
 curl -H "$T" -H 'content-type: application/json' \
@@ -428,7 +455,6 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
   retrying.
 - If port 8080 is taken, set `OZWELL_COMPUTER_HOST_PORT` in a `.env` file. The tests
   discover the port and token from compose.
-- `npm run openapi` regenerates `docs/openapi.json`.
 - The compose container mounts `./dist` read-only, so an in-app upgrade there fails
   to replace it. Test upgrades in a container started with `docker run`.
 

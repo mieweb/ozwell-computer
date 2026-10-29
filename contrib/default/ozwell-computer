@@ -1,5 +1,6 @@
-# Settings for the ozwell-computer services (read by ozwell-computer.service and
-# ozwell-computer-xvfb.service). See `ozwell-computer --help` for every option.
+# Settings for the ozwell-computer services (read by ozwell-computer.service,
+# ozwell-computer-xvfb.service and ozwell-computer-upgrade.service). See
+# `ozwell-computer --help` for every option.
 # Restart after editing: systemctl restart ozwell-computer-xvfb ozwell-computer
 
 # Access token. If unset, one is generated and kept in /var/lib/ozwell-computer/token.

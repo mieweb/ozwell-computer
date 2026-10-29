@@ -8,6 +8,7 @@ import { listDisplays } from './x11/displays.js';
 import { normalizeModifier, resolveKeysym, isModifierKeysym, type Modifier } from './x11/keymap.js';
 import { ScreenshotRegistry, resolvePoint, fitSize, type Space, type ScreenshotEntry } from './coords.js';
 import { encodeFrame, CONTENT_TYPES, type ImageFormat } from './image.js';
+import { ocr } from './ocr.js';
 import { ApiError, unsupported } from './errors.js';
 import { EventBus, Presence, type Principal } from './presence/index.js';
 import { m } from './metrics.js';
@@ -28,6 +29,7 @@ export interface ScreenshotOptions {
   region?: Rect;
   window?: string;
   cursor?: boolean;
+  ocr?: boolean;
 }
 
 export interface ScreenshotResult {
@@ -35,6 +37,7 @@ export interface ScreenshotResult {
   contentType: string;
   format: ImageFormat;
   entry: ScreenshotEntry;
+  text?: string;
 }
 
 export interface PointerRequest {
@@ -149,7 +152,11 @@ export class Desktop {
       if (c) compositeCursor(frame, c);
     }
     const fit = fitSize(frame.width, frame.height, o.max_dimension);
-    const enc = await encodeFrame(frame, format, { quality: o.quality, width: fit.width, height: fit.height });
+    // OCR reads the native-resolution capture, not the possibly downscaled image.
+    const [enc, text] = await Promise.all([
+      encodeFrame(frame, format, { quality: o.quality, width: fit.width, height: fit.height }),
+      o.ocr ? ocr(frame) : undefined,
+    ]);
     const entry = this.registry.add({
       origin: { x: frame.x, y: frame.y },
       scale: fit.scale,
@@ -159,7 +166,7 @@ export class Desktop {
       geometryEpoch: epoch,
       window,
     });
-    return { data: enc.data, contentType: CONTENT_TYPES[enc.format], format: enc.format, entry };
+    return { data: enc.data, contentType: CONTENT_TYPES[enc.format], format: enc.format, entry, text };
   }
 
   async cursor() {
