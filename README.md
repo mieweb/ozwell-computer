@@ -13,6 +13,8 @@ wire-compatible with it.
 
 ## Run the container
 
+For local macOS development, see [macOS with OrbStack](#macos-with-orbstack).
+
 ```bash
 docker run -d -p 8080:8080 \
   --tmpfs /run --tmpfs /run/lock -v /sys/fs/cgroup:/sys/fs/cgroup:rw --cgroupns=host \
@@ -297,6 +299,7 @@ are removed 24 h after finishing. Over HTTP, `POST /api/v1/exec` with `wait_ms` 
 
 `compose.yml` is the dev container. It uses the production image and systemd layout,
 with your local `./dist` mounted over `/opt/ozwell-computer/dist`.
+On macOS, apply the [OrbStack override](#macos-with-orbstack) before starting it.
 
 ```bash
 nvm use                 # Node 26 (.nvmrc); the container runs the base image's Node 24
@@ -347,6 +350,76 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
 - `npm run openapi` regenerates `docs/openapi.json`.
 - The compose container mounts `./dist` read-only, so an in-app upgrade there fails
   to replace it. Test upgrades in a container started with `docker run`.
+
+### macOS with OrbStack
+
+OrbStack runs the Linux container; **Xvfb inside the container creates the virtual
+display**. XFCE and Firefox run on that display, and your Mac's browser views it
+through noVNC. This needs no XQuartz or additional macOS monitor. Each container
+has one desktop shared by its viewers and agents.
+
+Start OrbStack and use Docker Compose **2.24.4 or newer**. From the repository root:
+
+```bash
+nvm use
+export DOCKER_CONTEXT=orbstack
+export COMPOSE_FILE=compose.yml:compose.mac.yml
+
+npm ci
+npm run build
+docker compose up -d --build --wait --wait-timeout 180
+docker compose logs ozwell-computer
+```
+
+Open the token-bearing link from the logs in your browser. If you configured a
+token yourself, use `http://localhost:8080/?token=<token>` instead. Set
+`OZWELL_COMPUTER_HOST_PORT` in `.env` if port 8080 is already taken, and use that
+port in the URL.
+
+The checked-in [compose.mac.yml](compose.mac.yml) captures two requirements found
+while testing on an Apple Silicon Mac:
+
+- **AMD64 emulation.** The base image currently has no ARM64 variant. Setting
+  `platform: linux/amd64` selects OrbStack's [Intel emulation](https://docs.orbstack.dev/docker/#intel-x86-emulation)
+  for both building and running; no separate `DOCKER_DEFAULT_PLATFORM` export is
+  needed. The first image build can be slower under emulation.
+- **Remove the Linux resource bind mounts.** The base Compose file includes
+  `/proc/*` and `/sys/devices/system/cpu` mounts for LXCFS resource reporting. On
+  OrbStack, startup failed with `error while creating mount source path
+  '/proc/slabinfo': mkdir /proc/slabinfo: no such file or directory`. The override
+  replaces the volume list, keeping the cgroup mount needed by systemd, the token
+  state volume and the read-only `./dist` mount. It uses [`!override`](https://docs.docker.com/reference/compose-file/merge/#replace-value)
+  (Compose 2.24.4+), because ordinary volume merging would retain the failing mounts.
+
+Repeat both exports in **every terminal** used for this project, including a second
+terminal running `npm run watch`. The npm helpers inherit them when invoking Compose;
+passing `-f` only to the initial `up` command does not configure later npm commands.
+You can also put `COMPOSE_FILE=compose.yml:compose.mac.yml` in the ignored `.env` file
+to select the override for this checkout.
+
+With the same environment, the usual development commands work:
+
+```bash
+npm run watch           # rebuild and restart the server inside the container
+npm test                # full unit + integration suite; leaves the container running
+docker compose down     # stop it; preserves the generated token in the state volume
+```
+
+macOS resolves `/tmp` to `/private/tmp`, so commands such as `pwd` can report the
+canonical path. Tests that check a working directory should resolve symlinks before
+comparing paths.
+
+The macOS smoke check verified a healthy 1920x1080 Xvfb display, API keyboard input,
+Firefox loading a webpage, desktop/window PNG captures, and a connected noVNC viewer
+in Chrome without page errors. That check used the existing development image
+with freshly built local `dist`; it did not run the full integration suite or test
+Docker Desktop. Use `npm test` for the full regression suite. Run through Compose
+for this setup: `npm start` attaches to a local X11 display instead of starting the
+Linux desktop container.
+
+Screenshots from the OrbStack smoke check: [desktop](docs/screenshots/macos-orbstack-desktop.png),
+[Firefox](docs/screenshots/macos-orbstack-firefox.png), and
+[browser viewer](docs/screenshots/macos-orbstack-viewer.png).
 
 ## Known limitations
 
