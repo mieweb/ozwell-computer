@@ -8,7 +8,7 @@ import { Textarea } from '@mieweb/ui/components/Textarea';
 import { api } from './api';
 import { clipboardSupported, useClipboardSync } from './clipboard';
 import { openServerEvents, useServerEvent } from './events';
-import { Perf, UpdateButton } from './status';
+import { Perf, UpdateControls } from './status';
 
 type Participant = { participant_id: string; name: string; kind: string; color: string; cursor?: { x: number; y: number; visible: boolean } };
 type Cursor = Pick<Participant, 'participant_id' | 'name' | 'color'> & { x: number; y: number; visible: boolean };
@@ -132,7 +132,7 @@ export function Viewer({ serverViewOnly }: { serverViewOnly: boolean }) {
       <div id="toolbar" className="flex flex-none items-center gap-1.5 border-b border-border bg-card px-2 py-1">
         <span id="status" className={status.cls}>{status.text}</span>
         <Perf />
-        <UpdateButton />
+        <UpdateControls toast={showToast} />
         <span className="flex-1" />
         <Button id="btn-cad" size="sm" variant="outline" title="Send Ctrl+Alt+Del" onClick={() => rfbRef.current?.sendCtrlAltDel()}>Ctrl+Alt+Del</Button>
         <Button id="btn-super" size="sm" variant="outline" title="Send Super" onClick={() => rfbRef.current?.sendKey(0xffeb, 'MetaLeft')}>Super</Button>
