@@ -20,10 +20,10 @@ export function ThemeToggle({ viewOnly, toast }: { viewOnly: boolean; toast: (te
   useEffect(() => applyScheme(scheme), [scheme]);
   // Bumped by every event and request; a response that arrives after a newer one is dropped.
   const gen = useRef(0);
-  const latest = async (p: Promise<ThemeState>) => {
+  const latest = async (p: Promise<ThemeState>, onError?: (e: Error) => void) => {
     const g = ++gen.current;
-    const t = await p;
-    if (g === gen.current) setScheme(t.scheme);
+    const t = await p.catch((e: Error) => { if (g === gen.current) onError?.(e); return null; });
+    if (t && g === gen.current) setScheme(t.scheme);
   };
   useServerEvent<ThemeState>('desktop.theme', (t) => { gen.current++; setScheme(t.scheme); });
   // On every (re)connect: the stream doesn't replay changes missed while it was down.
@@ -38,11 +38,13 @@ export function ThemeToggle({ viewOnly, toast }: { viewOnly: boolean; toast: (te
   });
 
   const next: Scheme = scheme === 'dark' ? 'light' : 'dark';
-  const local = () => { gen.current++; setScheme(next); };
   const toggle = () => {
-    if (viewOnly) return local();
-    void latest(putTheme({ scheme: next })).catch((e: Error) => {
-      local();
+    if (viewOnly) {
+      gen.current++;
+      return setScheme(next);
+    }
+    void latest(putTheme({ scheme: next }), (e) => {
+      setScheme(next);
       toast(`Switched this viewer only; the desktop theme could not be changed: ${e.message}`);
     });
   };

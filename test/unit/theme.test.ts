@@ -1,11 +1,13 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 describe('desktop theme', () => {
   const home = mkdtempSync(join(tmpdir(), 'oz-theme-'));
   const env = { HOME: process.env.HOME, PATH: process.env.PATH };
+  // Before any test imports src/theme.ts, which resolves ~/.xsettingsd at load.
+  beforeAll(() => { process.env.HOME = home; });
   afterAll(() => {
     Object.assign(process.env, env);
     rmSync(home, { recursive: true, force: true });
@@ -13,7 +15,7 @@ describe('desktop theme', () => {
 
   it('rolls back a choice that could not be applied, so if_unset can retry', async () => {
     // No xsettingsd on PATH, and a display nothing serves.
-    Object.assign(process.env, { HOME: home, PATH: home });
+    process.env.PATH = home;
     const { getTheme, setTheme } = await import('../../src/theme.js');
     writeFileSync(join(home, '.xsettingsd'), 'Gtk/FontName "Sans 10"\n');
     await expect(setTheme('dark', ':4242', true)).rejects.toMatchObject({ reason: 'feature_unsupported' });
