@@ -1,19 +1,12 @@
 // `npm run watch`: rebuild on change and refresh the compose dev container.
 //  - server code (src/**/*.ts): tsc --watch, then restart the Node server in the container
-//  - viewer assets (src/web/static): copied to dist; just reload the browser
+//  - viewer (web/): vite build --watch into dist/web/static; just reload the browser
 import { spawn } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, watch } from 'node:fs';
+import { existsSync, mkdirSync, watch } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT, isRunning, restartServer } from './compose.mjs';
 
 const log = (m) => process.stdout.write(`[watch] ${m}\n`);
-const STATIC_SRC = join(ROOT, 'src/web/static');
-const STATIC_DST = join(ROOT, 'dist/web/static');
-
-function copyStatic() {
-  mkdirSync(STATIC_DST, { recursive: true });
-  cpSync(STATIC_SRC, STATIC_DST, { recursive: true });
-}
 
 let restartTimer = null;
 function scheduleRestart() {
@@ -31,9 +24,8 @@ function scheduleRestart() {
   }, 300);
 }
 
-copyStatic();
-watch(STATIC_SRC, { recursive: true }, () => {
-  try { copyStatic(); log('viewer assets updated; reload the page'); } catch { /* mid-write */ }
+const vite = spawn(process.execPath, [join(ROOT, 'node_modules/vite/bin/vite.js'), 'build', '-c', 'web/vite.config.ts', '--watch', '-l', 'warn'], {
+  cwd: ROOT, stdio: 'inherit',
 });
 
 // tsc rewrites only changed outputs; restart when any server JS lands in dist.
@@ -46,4 +38,4 @@ const tsc = spawn(process.execPath, [join(ROOT, 'node_modules/typescript/bin/tsc
   cwd: ROOT, stdio: 'inherit',
 });
 tsc.on('exit', (code) => process.exit(code ?? 0));
-process.on('SIGINT', () => { tsc.kill(); process.exit(0); });
+process.on('SIGINT', () => { tsc.kill(); vite.kill(); process.exit(0); });

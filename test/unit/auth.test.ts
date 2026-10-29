@@ -70,11 +70,15 @@ describe('auth matrix', () => {
     expect(r.statusCode).toBe(200);
     expect(r.json().auth).toBe('token');
   });
-  it('/ without credentials shows login page', async () => {
-    const r = await app.inject({ url: '/' });
-    expect(r.statusCode).toBe(401);
-    expect(r.headers['content-type']).toContain('text/html');
-    expect(r.body).toContain('name="token"');
+  it('/ without credentials serves the app shell; its API calls are refused', async () => {
+    // The shell comes from the Vite build, which may not exist when unit tests run.
+    for (const url of ['/', '/index.html', '/?token=wrong']) {
+      const r = await app.inject({ url });
+      expect(r.statusCode, url).not.toBe(401);
+      expect(r.headers['set-cookie'], url).toBeUndefined();
+    }
+    expect((await app.inject({ url: '/api/v1/capabilities' })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'POST', url: '/' })).statusCode).toBe(401);
   });
   it('/health and /novnc are exempt', async () => {
     expect((await app.inject({ url: '/health' })).statusCode).toBe(503); // no X in unit tests, but not 401
@@ -110,6 +114,5 @@ describe('auth disabled', () => {
     const r = await app.inject({ url: '/api/v1/capabilities' });
     expect(r.statusCode).toBe(200);
     expect(r.json().auth).toBe('disabled');
-    expect((await app.inject({ url: '/' })).statusCode).toBe(200);
   });
 });

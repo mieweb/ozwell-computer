@@ -1,4 +1,4 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { ApiError } from '../errors.js';
 import { tokenEquals } from './token.js';
 
@@ -76,9 +76,16 @@ function isBrowserPage(req: FastifyRequest): boolean {
   return !(path.startsWith('/api/v1') || path === '/mcp' || path === '/websockify');
 }
 
+/** The SPA shell; it holds no data, and shows its login view when the API answers 401. */
+function isShell(req: FastifyRequest): boolean {
+  if (req.method !== 'GET' && req.method !== 'HEAD') return false;
+  if (req.headers.upgrade) return false;
+  const path = req.url.split('?')[0];
+  return path === '/' || path === '/index.html';
+}
+
 export interface AuthOptions {
   token: string | null; // null => disabled
-  loginPage: (req: FastifyRequest, reply: FastifyReply, failed: boolean) => unknown;
 }
 
 export function registerAuth(app: FastifyInstance, opts: AuthOptions): void {
@@ -89,7 +96,6 @@ export function registerAuth(app: FastifyInstance, opts: AuthOptions): void {
   app.addHook('onRequest', async (req, reply) => {
     if (isExempt(req)) return;
     const src = authenticate(token, req);
-    const path = req.url.split('?')[0];
     if (src) {
       (req as FastifyRequest & { authSource: CredentialSource | null }).authSource = src;
       if (src === 'query' && isBrowserPage(req)) {
@@ -111,11 +117,7 @@ export function registerAuth(app: FastifyInstance, opts: AuthOptions): void {
       }
       return;
     }
-    // Unauthenticated
-    const hadQuery = extractCredentials(req).some(([s]) => s === 'query');
-    if (req.method === 'GET' && !req.headers.upgrade && (path === '/' || path === '/index.html')) {
-      return opts.loginPage(req, reply, hadQuery);
-    }
+    if (isShell(req)) return;
     const e = new ApiError('unauthenticated', 'missing or invalid token');
     reply.code(401).header('www-authenticate', 'Bearer').send(e.toBody());
     return reply;
