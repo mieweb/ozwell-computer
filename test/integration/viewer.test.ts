@@ -3,7 +3,7 @@
  * (installed by `npm test`). Set CHROME_PATH to use another Chrome build.
  */
 import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest';
-import { chromium, type Browser, type Page } from 'playwright-core';
+import { chromium, type Browser, type Page, type WebSocket } from 'playwright-core';
 
 const URL_ = inject('ozUrl');
 const TOKEN = inject('ozToken');
@@ -16,10 +16,14 @@ describe('noVNC viewer', () => {
   beforeAll(async () => { browser = await chromium.launch({ executablePath: CHROME, args: ['--no-sandbox'] }); });
   afterAll(async () => { await browser?.close(); });
 
+  // Every WebSocket each viewer page opened, in order.
+  const sockets = new WeakMap<Page, WebSocket[]>();
   async function openViewer(colorScheme: 'light' | 'dark' = 'light'): Promise<Page> {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme, permissions: ['clipboard-read', 'clipboard-write'] });
     const page = await ctx.newPage();
     page.on('pageerror', (e) => { throw e; });
+    sockets.set(page, []);
+    page.on('websocket', (ws) => sockets.get(page)!.push(ws));
     await page.goto(`${URL_}/?token=${TOKEN}`);
     expect(page.url()).toBe(`${URL_}/`); // token stripped from the address bar
     await page.waitForFunction(() => document.getElementById('status')?.textContent === 'connected', null, { timeout: 15000 });
@@ -137,14 +141,20 @@ describe('noVNC viewer', () => {
     await exec('rm -f ~/.config/ozwell-computer/color-scheme');
   });
 
-  it('the jobs panel streams a background command\'s output and cancels it', async () => {
+  it('the jobs tab streams a background command\'s output and cancels it', async () => {
     const start = await (await fetch(`${URL_}/api/v1/exec`, {
       method: 'POST', headers: { ...auth, 'content-type': 'application/json' },
       body: JSON.stringify({ cmd: 'echo first; sleep 1; echo second >&2; sleep 60', wait_ms: 0 }),
     })).json();
     const page = await openViewer();
-    await page.locator('#btn-jobs').waitFor({ state: 'visible', timeout: 10000 });
-    await page.click('#btn-jobs');
+    const vnc = () => sockets.get(page)!.filter((w) => w.url().includes('/websockify'));
+    const [ws] = vnc();
+    await page.locator('#tab-jobs').waitFor({ state: 'visible', timeout: 10000 });
+    await page.click('#tab-jobs');
+    expect(await page.locator('#tab-jobs').getAttribute('aria-selected')).toBe('true');
+    expect(await page.locator('#screen-wrap').isHidden()).toBe(true);
+    // Resize while the desktop is hidden, so a stale canvas size would show when it returns.
+    await page.setViewportSize({ width: 1000, height: 640 });
     await page.waitForFunction(() => document.getElementById('jobs-cmd')?.textContent?.includes('sleep 60'), null, { timeout: 10000 });
     expect(await page.locator('#jobs-list li.sel button').getAttribute('aria-pressed')).toBe('true');
     await page.waitForFunction(() => {
@@ -157,6 +167,47 @@ describe('noVNC viewer', () => {
     expect(await page.locator('#jobs-cancel').isHidden()).toBe(true);
     const v = await (await fetch(`${URL_}/api/v1/exec/jobs/${start.job_id}`, { headers: auth })).json();
     expect(v.state).toBe('cancelled');
+    // Back on the desktop the same connection is shown again, rescaled to the new visible area.
+    await page.click('#tab-desktop');
+    expect(await page.locator('#jobs-panel').count()).toBe(0);
+    expect(vnc()).toEqual([ws]);
+    expect(ws.isClosed()).toBe(false);
+    await page.waitForFunction(() => {
+      const c = document.querySelector('#screen canvas')!.getBoundingClientRect();
+      const s = document.getElementById('screen')!.getBoundingClientRect();
+      if (!c.width || !c.height || !s.width || !s.height) return false; // still hidden
+      return c.width <= s.width + 1 && c.height <= s.height + 1 && (Math.abs(c.width - s.width) < 2 || Math.abs(c.height - s.height) < 2);
+    }, null, { timeout: 5000 });
+    await page.context().close();
+  });
+
+  it('keyboard users enter the desktop with Enter and leave it with Shift+Esc, also from fullscreen', async () => {
+    const page = await openViewer();
+    const where = () => page.evaluate(() => {
+      const a = document.activeElement!;
+      const panel = document.getElementById('screen-wrap')!.parentElement!;
+      return a === panel ? 'panel' : document.getElementById('screen')!.contains(a) ? 'desktop' : 'elsewhere';
+    });
+    await page.evaluate(() => document.getElementById('screen-wrap')!.parentElement!.focus());
+    expect(await where()).toBe('panel');
+    expect(await page.locator('#desktop-keys').isVisible()).toBe(true);
+    await page.keyboard.press('Enter');
+    expect(await where()).toBe('desktop');
+    // Escape with other modifiers is a desktop shortcut, not the way out.
+    await page.keyboard.press('Control+Shift+Escape');
+    expect(await where()).toBe('desktop');
+    await page.keyboard.press('Shift+Escape');
+    expect(await where()).toBe('panel');
+    await page.keyboard.press('Shift+Tab');
+    expect(await where()).toBe('elsewhere');
+    // From fullscreen, Shift+Esc leaves fullscreen and lands on the (visible) panel, not back in the canvas.
+    await page.click('#btn-full');
+    await page.waitForFunction(() => document.fullscreenElement?.id === 'screen-wrap', null, { timeout: 5000 });
+    expect(await where()).toBe('desktop');
+    await page.keyboard.press('Shift+Escape');
+    await page.waitForFunction(() => !document.fullscreenElement, null, { timeout: 5000 });
+    await sleep(200); // let any late fullscreenchange focus run
+    expect(await where()).toBe('panel');
     await page.context().close();
   });
 
