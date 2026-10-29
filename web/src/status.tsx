@@ -6,18 +6,13 @@ import { api } from './api';
 import { useServerEvent } from './events';
 import { checkResult, versionTitle, type UpdateStatus } from './version';
 import { perfTitle, readMetrics, type Sample } from './metrics';
-import { PLACEHOLDER, perfParts } from './perf';
-
-// Literal class names so Tailwind generates them; fixed widths keep the toolbar from shifting.
-const WIDTH: Record<number, string> = { 3: 'w-[3ch]', 4: 'w-[4ch]', 5: 'w-[5ch]' };
+import { perfParts } from './perf';
 
 export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
-  const [parts, setParts] = useState(() => perfParts(null, null, undefined));
+  const [parts, setParts] = useState(() => perfParts(null, null));
   const [cpus, setCpus] = useState<number>();
   useEffect(() => {
     let prev: Sample | null = null;
-    // Static per container, so it survives failed fetches and keeps its slot.
-    let limit: number | null | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
     const tick = async (next: number) => {
@@ -25,12 +20,11 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
         const res = await fetch('/api/v1/metrics', { credentials: 'same-origin' });
         if (!res.ok) throw new Error(res.statusText);
         const now = { ...readMetrics(await res.text()), t: performance.now() };
-        limit = now.limit || null;
-        setParts(perfParts(prev, now, limit));
+        setParts(perfParts(prev, now));
         setCpus(now.cpus);
         prev = now;
       } catch {
-        setParts(perfParts(null, null, limit));
+        setParts(perfParts(null, null));
         prev = null;
       }
       if (stopped) return;
@@ -43,20 +37,9 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
   return (
     <span id="perf" className="font-mono text-[11px] whitespace-nowrap text-muted-foreground" title={perfTitle(cpus)}>
       {parts.map((p, i) => (
-        <Fragment key={p.label}>
+        <Fragment key={i}>
           {i > 0 && ' · '}
-          <span className={p.hot ? 'text-warning' : undefined}>
-            {`${p.label} `}
-            <span className={`inline-block text-right tabular-nums ${WIDTH[p.width]}`}>{p.value ?? PLACEHOLDER}</span>
-            {p.unit}
-            {'limit' in p && p.limit !== null && (
-              <>
-                {' / '}
-                <span className={`inline-block text-right tabular-nums ${WIDTH[p.width]}`}>{p.limit ?? PLACEHOLDER}</span>
-                {' MiB'}
-              </>
-            )}
-          </span>
+          <span className={p.hot ? 'text-warning' : undefined}>{p.text}</span>
         </Fragment>
       ))}
     </span>

@@ -1,42 +1,24 @@
 // The toolbar's resource readout, as plain data so it can be unit-tested without a DOM.
 import { cpuPercent, type Sample } from './metrics.js';
 
-/** One readout field; `value` is undefined while it shows a placeholder, `width` is in ch. `limit` (Mem
- * only) is a second fixed-width value: undefined until known, null when there is none. */
-export type Part = { label: string; value?: string; unit: string; width: number; hot?: boolean; limit?: string | null };
+export type Part = { text: string; hot?: boolean };
 
-const MiB = (b: number) => Math.round(b / 2 ** 20);
+const PLACEHOLDER = '–';
 
-const rate = (prev: Sample, now: Sample, key: 'vnc') => {
-  const a = prev[key], b = now[key];
-  return a === undefined || b === undefined ? undefined : (b - a) / ((now.t - prev.t) / 1000);
-};
+const MiB = (b: number) => `${Math.round(b / 2 ** 20)} MiB`;
 
-/** The readout for two samples, or the same layout with placeholders until there is a pair. `limit` is
- * the memory limit in bytes, null without one, or undefined before the first sample. */
-export function perfParts(prev: Sample | null, now: Sample | null, limit: number | null | undefined): Part[] {
-  // Rates need two samples, so every value waits for the second one.
-  const cpuOf = (a: Sample, b: Sample) =>
-    a.cpu === undefined || b.cpu === undefined ? undefined : cpuPercent({ cpu: a.cpu, t: a.t }, { cpu: b.cpu, t: b.t, cpus: b.cpus });
-  const pair = prev && now ? { cpu: cpuOf(prev, now), vnc: rate(prev, now, 'vnc'), mem: now.mem } : {};
-  const { cpu, vnc, mem } = pair;
-  const kbs = vnc === undefined ? undefined : vnc / 1024;
-  const mbs = kbs !== undefined && kbs >= 1024;
+/** The readout for the latest samples; the CPU and VNC rates need two, so they show a placeholder until then. */
+export function perfParts(prev: Sample | null, now: Sample | null): Part[] {
+  const cpu = prev?.cpu !== undefined && now?.cpu !== undefined
+    ? cpuPercent({ cpu: prev.cpu, t: prev.t }, { cpu: now.cpu, t: now.t, cpus: now.cpus }) : undefined;
+  const kbs = prev?.vnc !== undefined && now?.vnc !== undefined ? (now.vnc - prev.vnc) / ((now.t - prev.t) / 1000) / 1024 : undefined;
+  const mem = now?.mem;
+  const limit = now?.limit;
   return [
-    { label: 'CPU', value: cpu?.toFixed(0), unit: '%', width: 3, hot: cpu !== undefined && cpu > 80 },
-    {
-      label: 'Mem',
-      value: mem === undefined ? undefined : String(MiB(mem)),
-      unit: ' MiB',
-      width: 5,
-      hot: mem !== undefined && !!limit && mem / limit > 0.85,
-      limit: limit === null ? null : limit === undefined || mem === undefined ? undefined : String(MiB(limit)),
-    },
-    { label: 'VNC', value: kbs === undefined ? undefined : mbs ? (kbs / 1024).toFixed(1) : kbs.toFixed(0), unit: mbs ? ' MB/s' : ' KB/s', width: 4 },
+    { text: `CPU ${cpu?.toFixed(0) ?? PLACEHOLDER}%`, hot: cpu !== undefined && cpu > 80 },
+    { text: `Mem ${mem === undefined ? `${PLACEHOLDER} MiB` : MiB(mem)}${limit ? ` / ${MiB(limit)}` : ''}`, hot: mem !== undefined && !!limit && mem / limit > 0.85 },
+    { text: `VNC ${kbs === undefined ? `${PLACEHOLDER} KB/s` : kbs >= 1024 ? `${(kbs / 1024).toFixed(1)} MB/s` : `${kbs.toFixed(0)} KB/s`}` },
   ];
 }
 
-export const PLACEHOLDER = '–';
-
-export const perfText = (parts: Part[]) => parts.map((p) =>
-  `${p.label} ${p.value ?? PLACEHOLDER}${p.unit}${'limit' in p && p.limit !== null ? ` / ${p.limit ?? PLACEHOLDER} MiB` : ''}`).join(' · ');
+export const perfText = (parts: Part[]) => parts.map((p) => p.text).join(' · ');
