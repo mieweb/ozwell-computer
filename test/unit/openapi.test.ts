@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { makeApp } from '../helpers.js';
 import { strictResponses } from '../../src/server.js';
+import { updateStatus } from '../../src/routes/schemas.js';
 
 describe('OpenAPI document', () => {
   let app: FastifyInstance;
@@ -64,6 +65,19 @@ describe('strict responses', () => {
     expect(dropped.json().message).toBe('GET /dropped: the response schema changed the reply at .b: sent nothing, handler returned 1');
     expect((await app.inject({ url: '/coerced' })).json().message).toContain('.n: sent "", handler returned null');
     expect((await app.inject({ url: '/exact' })).json()).toEqual({ a: 'x' });
+    await app.close();
+  });
+
+  it('keeps the git channel revision in update status', async () => {
+    const app = Fastify();
+    strictResponses(app);
+    const status = {
+      supported: true, url: 'git+https://github.com/mieweb/ozwell-computer#main', current: '1.0.0', latest: '1.0.0', available: true,
+      checked_at: null, error: null, revision: { current: 'a'.repeat(40), latest: 'b'.repeat(40) },
+      upgrade: { state: 'idle', at: null, log: '' },
+    };
+    app.get('/update', { schema: { response: { 200: updateStatus } } }, async () => status);
+    expect((await app.inject({ url: '/update' })).json()).toEqual(status);
     await app.close();
   });
 });

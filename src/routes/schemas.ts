@@ -117,12 +117,16 @@ export const execResult = record('Result of a finished command', {
 export const updateStatus = obj('Installed and latest versions, and upgrade progress', {
   supported: prop('boolean', 'Whether in-place upgrades are possible on this install'),
   limitation: prop('string', 'Why upgrades are unsupported'),
-  url: prop(['string', 'null'], 'Release index that is checked, or null when checks are disabled'),
+  url: prop(['string', 'null'], 'Release index or git+https://<repo>#<branch> that is checked, or null when checks are disabled'),
   current: prop(['string', 'null'], 'Installed package version'),
   latest: prop(['string', 'null'], 'Newest released version seen'),
   available: prop('boolean', 'Whether latest is newer than current'),
   checked_at: prop(['string', 'null'], 'Time of the last check', { format: 'date-time' }),
   error: prop(['string', 'null'], 'Error from the last check'),
+  revision: record('Git update channel only: installed and branch-head commits', {
+    current: prop('string', 'Installed commit'),
+    latest: prop(['string', 'null'], 'Branch-head commit seen by the last check'),
+  }),
   upgrade: record('Progress of the most recent upgrade', {
     state: prop('string', 'Upgrade state', { enum: ['idle', 'requested', 'running', 'succeeded', 'unchanged', 'failed'] }),
     at: prop(['string', 'null'], 'When the state was reached', { format: 'date-time' }),
