@@ -226,7 +226,8 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
       {!exec && <div className="flex min-h-0 flex-1 flex-col">{desktop}</div>}
       {/* Kept mounted while hidden so the VNC session stays connected; noVNC rescales when it is shown again. */}
       {exec && (
-        <TabsContent value="desktop" forceMount tabIndex={-1} className={`mt-0 min-h-0 flex-1 flex-col rounded-none ${tab === 'desktop' ? 'flex' : 'hidden'}`}>
+        <TabsContent value="desktop" forceMount tabIndex={0} onFocus={(e) => { if (e.target === e.currentTarget) rfbRef.current?.focus(); }}
+          className={`mt-0 min-h-0 flex-1 flex-col rounded-none ${tab === 'desktop' ? 'flex' : 'hidden'}`}>
           {desktop}
         </TabsContent>
       )}
