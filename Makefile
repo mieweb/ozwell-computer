@@ -44,12 +44,11 @@ test:
 
 install: build
 	$(INSTALL) -d $(DESTAPP) $(DESTAPP)/bin
+	rm -f $(DESTAPP)/REVISION
 	cp -a dist package.json package-lock.json node_modules $(DESTAPP)/
 	# Runtime dependencies only, and the release version (the installed app has no git checkout).
 	cd $(DESTAPP) && npm prune --omit=dev --no-audit --no-fund >/dev/null \
-		&& npm pkg set version="$$($(CURDIR)/package-version node)"
-	# The source commit, for in-app updates from git (contrib/upgrade.sh).
-	git rev-parse --verify -q HEAD > $(DESTAPP)/REVISION 2>/dev/null || rm -f $(DESTAPP)/REVISION
+		&& npm pkg set version="$$(cd "$(CURDIR)" && ./package-version node)"
 	$(INSTALL) -m 0755 contrib/xfce/session.sh $(DESTAPP)/bin/ozwell-computer-session
 	sed 's|@PREFIX@|$(PREFIX)|g' contrib/upgrade.sh > $(DESTAPP)/bin/ozwell-computer-upgrade
 	chmod 0755 $(DESTAPP)/bin/ozwell-computer-upgrade
@@ -64,6 +63,8 @@ install: build
 	$(call conffile,contrib/xfce/mimeapps.list,$(DESTDIR)/etc/xdg/mimeapps.list)
 	for f in contrib/xfce/xfconf/*.xml; do $(call conffile,$$f,$(XFCONF)/$${f##*/}) || exit 1; done
 	$(INSTALL_DATA) contrib/xfce/applications/*.desktop $(DESTDIR)/usr/share/applications/
+	# Last: the source commit marks a complete install for in-app updates from git (contrib/upgrade.sh).
+	git rev-parse --verify -q HEAD > $(DESTAPP)/REVISION 2>/dev/null || rm -f $(DESTAPP)/REVISION
 
 deb:
 	@case "$(STAGE)" in /|"") echo "refusing to package from DESTDIR=$(STAGE)" >&2; exit 1;; esac
