@@ -19,19 +19,20 @@ describe('system', () => {
 });
 
 describe('desktop theme', () => {
-  it('sets the GTK theme once with if_unset, then only on explicit changes', async () => {
-    await exec('rm -f ~/.xsettingsd');
+  const reset = () => exec('rm -f ~/.config/ozwell-computer/color-scheme');
+  const effective = async () => (await exec('xfconf-query -c xsettings -p /Net/ThemeName; xfconf-query -c xfwm4 -p /general/theme')).stdout.trim().split('\n');
+
+  it('sets the GTK and xfwm4 themes once with if_unset, then only on explicit changes', async () => {
+    await reset();
     expect((await api('GET', '/api/v1/desktop/theme')).body).toEqual({ scheme: 'light', set: false });
     expect((await api('PUT', '/api/v1/desktop/theme', { scheme: 'dark', if_unset: true })).body).toEqual({ scheme: 'dark', set: true });
     expect((await api('PUT', '/api/v1/desktop/theme', { scheme: 'light', if_unset: true })).body).toEqual({ scheme: 'dark', set: true });
-    expect((await exec('cat ~/.xsettingsd')).stdout).toContain('Net/ThemeName "Adwaita-dark"');
-    // xsettingsd serves it to GTK apps
-    expect((await exec('grep -lx xsettingsd /proc/[0-9]*/comm')).exit_code).toBe(0);
+    expect(await effective()).toEqual(['Greybird-dark', 'Greybird-dark']);
     expect((await api('PUT', '/api/v1/desktop/theme', { scheme: 'light' })).body).toEqual({ scheme: 'light', set: true });
     expect((await api('GET', '/api/v1/desktop/theme')).body).toEqual({ scheme: 'light', set: true });
-    expect((await exec('cat ~/.xsettingsd')).stdout).toContain('Net/ThemeName "Adwaita"');
+    expect(await effective()).toEqual(['Greybird', 'Greybird']);
     expect((await api('PUT', '/api/v1/desktop/theme', { scheme: 'blue' })).status).toBe(400);
-    await exec('rm -f ~/.xsettingsd');
+    await reset();
   });
 });
 

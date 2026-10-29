@@ -3,7 +3,7 @@
   <property name="general" type="empty">
     <!-- No compositing on Xvfb: saves CPU and avoids extra damage for the VNC encoder -->
     <property name="use_compositing" type="bool" value="false"/>
-    <property name="theme" type="string" value="Default"/>
+    <property name="theme" type="string" value="Greybird"/>
     <property name="title_alignment" type="string" value="center"/>
     <property name="workspace_count" type="int" value="1"/>
     <property name="placement_ratio" type="int" value="100"/>

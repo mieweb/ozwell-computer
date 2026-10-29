@@ -163,6 +163,15 @@ describe('desktop session', () => {
     expect(read('.fpm')).toMatch(/^--depends xfce4-session$/m);
   });
 
+  it('the default GTK and xfwm4 themes are the installed light Greybird', () => {
+    expect(read('.fpm')).toMatch(/^--depends greybird-gtk-theme$/m);
+    expect(read('.fpm')).not.toMatch(/xsettingsd/);
+    expect(read('contrib/xfce/xsettings.xml')).toMatch(/<property name="ThemeName" type="string" value="Greybird"\/>/);
+    expect(read('contrib/xfce/xfconf/xfwm4.xml')).toMatch(/<property name="theme" type="string" value="Greybird"\/>/);
+    // Not /etc/xdg: xfce4-settings owns that xsettings.xml.
+    expect(read('Makefile')).toMatch(/^\t\$\(INSTALL_DATA\) .*contrib\/xfce\/xsettings\.xml .*\$\(APP_XFCONF\)\/$/m);
+  });
+
   it('Firefox restores the previous session', () => {
     expect(JSON.parse(read('docker/firefox/policies.json')).policies.Homepage.StartPage).toBe('previous-session');
   });

@@ -65,7 +65,7 @@ install: build
 	$(call conffile,contrib/xfce/mimeapps.list,$(DESTDIR)/etc/xdg/mimeapps.list)
 	for f in contrib/xfce/xfconf/*.xml; do $(call conffile,$$f,$(XFCONF)/$${f##*/}) || exit 1; done
 	$(INSTALL) -d $(APP_XFCONF)
-	$(INSTALL_DATA) contrib/xfce/xfce4-session.xml $(APP_XFCONF)/
+	$(INSTALL_DATA) contrib/xfce/xfce4-session.xml contrib/xfce/xsettings.xml $(APP_XFCONF)/
 	$(INSTALL_DATA) contrib/xfce/applications/*.desktop $(DESTDIR)/usr/share/applications/
 	# Last: the source commit marks a complete install for in-app updates from git (contrib/upgrade.sh).
 	rev=$$(git rev-parse --verify -q HEAD 2>/dev/null); if [ -n "$$rev" ]; then echo "$$rev" > $(DESTAPP)/REVISION; else rm -f $(DESTAPP)/REVISION; fi
