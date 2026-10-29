@@ -69,7 +69,7 @@ describe('git update channel', () => {
         writeFileSync(join(dir, 'bin', c), `#!/bin/sh
 echo "${c} $*" >> ${dir}/calls
 case "${c} $*" in $FAIL_ON) exit 1 ;; esac
-case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/src -o build install"*) echo new > ${dir}/prefix/REVISION ;; esac
+case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/src -o build -o system-deps install"*) echo new > ${dir}/prefix/REVISION ;; esac
 `, { mode: 0o755 });
       }
       return dir;
@@ -84,8 +84,9 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
       expect(r).toMatchObject({ status: 'succeeded', revision: 'new' });
       expect(r.calls.map((l) => l.replace(dir, ''))).toEqual([
         'make -C /src deps build',
+        'make -C /src system-deps',
         'systemctl stop ozwell-computer.service',
-        `make -C /src -o build install PREFIX=${dir}/prefix`,
+        `make -C /src -o build -o system-deps install PREFIX=${dir}/prefix`,
         'systemctl daemon-reload',
         'systemctl start ozwell-computer.service',
         'systemctl try-restart ozwell-computer-upgrade.path',
@@ -97,6 +98,12 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
     it('a failed build leaves the server and the install alone', () => {
       const r = run(fresh(), 'make*deps*');
       expect(r).toMatchObject({ status: 'failed', revision: 'old', calls: [expect.stringContaining('deps build')] });
+    });
+
+    it('a failed system package install leaves the server and the install alone', () => {
+      const r = run(fresh(), 'make*system-deps');
+      expect(r).toMatchObject({ status: 'failed', revision: 'old' });
+      expect(r.calls.some((l) => l.startsWith('systemctl'))).toBe(false);
     });
 
     it.each(['make*install*', 'systemctl daemon-reload', 'systemctl start*', 'node*', 'systemctl try-restart*'])(
@@ -114,6 +121,13 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
         expect(retry.calls).toContain('systemctl stop ozwell-computer.service');
       },
     );
+  });
+
+  it('make installs the .fpm packages for a real install (older updaters run it), not for a staged one', () => {
+    const dry = (...args: string[]) => spawnSync('make', ['-n', ...args], { cwd: new URL('../..', import.meta.url), encoding: 'utf8' }).stdout;
+    expect(dry('system-deps')).toMatch(/apt-get .*install -y --no-install-recommends/);
+    expect(dry('-o', 'build', 'install', 'DESTDIR=/')).toContain('apt-get');
+    expect(dry('-o', 'build', 'install', 'DESTDIR=/tmp/oz-stage')).not.toContain('apt-get');
   });
 
   it('the upgrade unit takes its channel from root-owned config, not the request file', () => {
@@ -161,6 +175,17 @@ describe('desktop session', () => {
     expect(unit('ozwell-computer-dbus')).toMatch(/^Environment=XDG_CONFIG_DIRS=@PREFIX@\/xdg:\/etc\/xdg$/m);
     expect(read('Makefile')).toMatch(/^APP_XFCONF := \$\(DESTAPP\)\/xdg\/xfce4\/xfconf\/xfce-perchannel-xml$/m);
     expect(read('.fpm')).toMatch(/^--depends xfce4-session$/m);
+  });
+
+  it('the default themes are installed and light: Adwaita apps and panel, Greybird borders', () => {
+    expect(read('.fpm')).toMatch(/^--depends greybird-gtk-theme$/m);
+    expect(read('.fpm')).toMatch(/^--depends gnome-themes-extra-data$/m);
+    expect(read('.fpm')).not.toMatch(/xsettingsd/);
+    expect(read('contrib/xfce/xsettings.xml')).toMatch(/<property name="ThemeName" type="string" value="Adwaita"\/>/);
+    expect(read('contrib/xfce/xfconf/xfwm4.xml')).toMatch(/<property name="theme" type="string" value="Greybird"\/>/);
+    expect(read('contrib/xfce/xfconf/xfce4-panel.xml')).toMatch(/<property name="dark-mode" type="bool" value="false"\/>/);
+    // Not /etc/xdg: xfce4-settings owns that xsettings.xml.
+    expect(read('Makefile')).toMatch(/^\t\$\(INSTALL_DATA\) .*contrib\/xfce\/xsettings\.xml .*\$\(APP_XFCONF\)\/$/m);
   });
 
   it('Firefox restores the previous session', () => {

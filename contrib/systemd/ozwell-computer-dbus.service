@@ -4,8 +4,8 @@ Description=ozwell-computer session D-Bus (shared by the desktop session and the
 
 [Service]
 User=desktop
-# For the xfconfd it activates: our xfce4-session.xml (the one in /etc/xdg belongs to the
-# xfce4-session package) takes precedence over the defaults.
+# For the xfconfd it activates: our xfce4-session.xml and xsettings.xml (the ones in /etc/xdg
+# belong to xfce4-session and xfce4-settings) take precedence over the defaults.
 Environment=XDG_CONFIG_DIRS=@PREFIX@/xdg:/etc/xdg
 RuntimeDirectory=desktop-bus
 RuntimeDirectoryMode=0700

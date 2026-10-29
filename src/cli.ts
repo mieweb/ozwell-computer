@@ -10,7 +10,7 @@ import { buildServer, VERSION } from './server.js';
 import { A11y } from './a11y/atspi.js';
 import { ptyAvailable } from './process/pty.js';
 import { Updater } from './update.js';
-import { startSettingsDaemon } from './theme.js';
+import { ensureSettingsDaemon } from './theme.js';
 
 /**
  * Mirror of our output onto a terminal named by OZWELL_COMPUTER_CONSOLE. The container's
@@ -159,7 +159,8 @@ async function main() {
   }
 
   const xvfb = offline ? null : await maybeSpawnXvfb(config, log);
-  if (xvfb) await startSettingsDaemon(config.display).catch((e) => log.warn({ err: (e as Error).message }, 'cannot serve the saved desktop theme'));
+  // A fresh Xvfb has no XSETTINGS provider: serve the saved (xfconf) theme on it.
+  if (xvfb) await ensureSettingsDaemon(config.display).catch((e) => log.warn({ err: (e as Error).message }, 'cannot serve the desktop theme'));
   const desktop = new Desktop(config.display, log);
   const a11y = config.a11y === 'off' ? null : new A11y(config.a11y, log, desktop);
   const updater = offline ? null

@@ -280,7 +280,8 @@ are in `contrib/`.
   - release: `apt-get install --only-upgrade ozwell-computer`. apt installs whatever
     version its configured sources offer.
   - main: fetch the branch into `/usr/src/ozwell-computer` (cloning it if missing),
-    then `make deps build` and, only if that succeeded, `make install`. A failed
+    then `make deps build`, `make system-deps` (`apt-get install` of the packages listed
+    in `.fpm`), and, only if those succeeded, `make install`. A failed
     build leaves the installed version in place. `make install` keeps existing
     config files (`/etc/default/ozwell-computer`, the xfconf defaults).
   - **Security:** a `:main` image runs `npm ci` and the build of whatever is on `main`
@@ -379,8 +380,9 @@ curl -N -H "$T" $B/events                                           # SSE: windo
 - **Agent presence:** send `X-Principal: {"id","name","kind":"agent"}` on input calls
   and the agent's cursor appears in the viewer.
 - **Light/dark theme:** `PUT /desktop/theme {"scheme":"dark"}` switches the desktop's
-  GTK theme (Adwaita / Adwaita-dark, served live by `xsettingsd` from
-  `~desktop/.xsettingsd`); `GET` returns `{scheme, set}`. The first viewer to connect
+  GTK, window and panel theme (Adwaita / Adwaita-dark apps and panel, Greybird /
+  Greybird-dark window borders, set live through xfconf); `GET`
+  returns `{scheme, set}`. The first viewer to connect
   sends its browser's `prefers-color-scheme` with `if_unset: true`, so later viewers
   don't change it. The toolbar's Light/Dark button switches the viewer and desktop.
 

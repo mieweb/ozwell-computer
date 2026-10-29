@@ -7,7 +7,7 @@ import { getTheme, setTheme, type ColorScheme } from '../theme.js';
 import { bounds, errors, feature, inputResult, media, obj, point, prop, record, updateStatus, windowRef } from './schemas.js';
 
 const themeState = record('The desktop color scheme', {
-  scheme: prop('string', 'GTK theme in use: Adwaita (light) or Adwaita-dark (dark)', { enum: ['light', 'dark'] }),
+  scheme: prop('string', 'GTK, window and panel theme in use: light (Adwaita, Greybird) or dark (Adwaita-dark, Greybird-dark)', { enum: ['light', 'dark'] }),
   set: prop('boolean', 'Whether a scheme has been chosen; until then the desktop is light and the first viewer may pick one'),
 });
 
@@ -176,8 +176,8 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
   app.put('/api/v1/desktop/theme', {
     schema: {
       tags: ['system'],
-      summary: 'Switch the desktop GTK theme to light or dark',
-      description: 'With if_unset, only applies when no scheme has been chosen yet (the viewer sends the browser\'s prefers-color-scheme this way on first connection). Fails with feature_unsupported when xsettingsd is not installed.',
+      summary: 'Switch the desktop GTK and window theme to light or dark',
+      description: 'With if_unset, only applies when no scheme has been chosen yet (the viewer sends the browser\'s prefers-color-scheme this way on first connection). Fails with feature_unsupported when xfconf-query is not installed.',
       body: {
         type: 'object', required: ['scheme'], additionalProperties: false,
         properties: {

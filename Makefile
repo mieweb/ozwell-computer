@@ -19,13 +19,14 @@ INSTALL_DATA := $(INSTALL) -m 0644
 # Config files (dpkg conffiles): keep an existing copy, like apt's --force-confold.
 conffile = [ -e $(2) ] || $(INSTALL_DATA) $(1) $(2)
 
-.PHONY: help deps build test install deb clean
+.PHONY: help deps system-deps build test install deb clean
 
 help:
 	@echo "ozwell-computer"
 	@echo ""
 	@echo "Targets:"
 	@echo "  deps     install dependencies (npm ci)"
+	@echo "  system-deps  apt-get install the runtime packages listed in .fpm (root)"
 	@echo "  build    compile the server and build the viewer (npm run build)"
 	@echo "  test     run the full test suite (npm test; uses the compose dev container)"
 	@echo "  install  stage the application, units and config into DESTDIR (default /)"
@@ -38,13 +39,20 @@ help:
 deps:
 	npm ci
 
+# The same list the image installs. A real install (DESTDIR=/) runs it too, so updaters
+# older than this target still get packages a new commit adds.
+system-deps:
+	DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 update || echo "apt-get update reported errors; continuing"
+	DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends \
+		$$(sed -n 's/^--depends "\{0,1\}\([^ "]*\).*/\1/p' .fpm | grep -vx nodejs)
+
 build:
 	npm run build
 
 test:
 	npm test
 
-install: build
+install: build $(if $(filter /,$(DESTDIR)),system-deps)
 	$(INSTALL) -d $(DESTAPP) $(DESTAPP)/bin
 	cp -a dist package.json package-lock.json node_modules $(DESTAPP)/
 	chmod 0755 $(DESTAPP)/dist/cli.js
@@ -65,7 +73,7 @@ install: build
 	$(call conffile,contrib/xfce/mimeapps.list,$(DESTDIR)/etc/xdg/mimeapps.list)
 	for f in contrib/xfce/xfconf/*.xml; do $(call conffile,$$f,$(XFCONF)/$${f##*/}) || exit 1; done
 	$(INSTALL) -d $(APP_XFCONF)
-	$(INSTALL_DATA) contrib/xfce/xfce4-session.xml $(APP_XFCONF)/
+	$(INSTALL_DATA) contrib/xfce/xfce4-session.xml contrib/xfce/xsettings.xml $(APP_XFCONF)/
 	$(INSTALL_DATA) contrib/xfce/applications/*.desktop $(DESTDIR)/usr/share/applications/
 	# Last: the source commit marks a complete install for in-app updates from git (contrib/upgrade.sh).
 	rev=$$(git rev-parse --verify -q HEAD 2>/dev/null); if [ -n "$$rev" ]; then echo "$$rev" > $(DESTAPP)/REVISION; else rm -f $(DESTAPP)/REVISION; fi

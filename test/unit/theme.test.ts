@@ -5,31 +5,94 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 describe('desktop theme', () => {
   const home = mkdtempSync(join(tmpdir(), 'oz-theme-'));
+  const bin = join(home, 'bin');
+  const calls = join(home, 'calls');
   const env = { HOME: process.env.HOME, PATH: process.env.PATH };
-  // Before any test imports src/theme.ts, which resolves ~/.xsettingsd at load.
-  beforeAll(() => { process.env.HOME = home; });
+  // A fake xfconf-query that records its arguments and exits with `code`.
+  const fake = (code: number) => writeFileSync(join(bin, 'xfconf-query'), `#!/bin/sh\necho "$*" >> '${calls}'\nexit ${code}\n`, { mode: 0o755 });
+  const recorded = () => readFileSync(calls, 'utf8').trim().split('\n').sort();
+  const theme = () => import('../../src/theme.js');
+  const display = ':4242';
+  // Before any test imports src/theme.ts, which resolves the marker under HOME at load.
+  beforeAll(() => {
+    process.env.HOME = home;
+    process.env.PATH = bin;
+    mkdirSync(bin);
+  });
   afterAll(() => {
     Object.assign(process.env, env);
     rmSync(home, { recursive: true, force: true });
   });
 
-  it('rolls back a choice that could not be applied, so if_unset can retry', async () => {
-    // No xsettingsd on PATH, and a display nothing serves.
-    process.env.PATH = home;
-    const { getTheme, setTheme } = await import('../../src/theme.js');
-    writeFileSync(join(home, '.xsettingsd'), 'Gtk/FontName "Sans 10"\n');
-    await expect(setTheme('dark', ':4242', true)).rejects.toMatchObject({ reason: 'feature_unsupported' });
-    expect(readFileSync(join(home, '.xsettingsd'), 'utf8')).toBe('Gtk/FontName "Sans 10"\n');
+  it('fails as unsupported without xfsettingsd or xfconf-query', async () => {
+    const { getTheme, setTheme } = await theme();
+    await expect(setTheme('dark', display, true)).rejects.toThrow(/xfsettingsd is not installed/);
+    writeFileSync(join(bin, 'xfsettingsd'), `#!/bin/sh\necho "$DISPLAY $*" >> '${join(home, 'daemon')}'\n`, { mode: 0o755 });
+    await expect(setTheme('dark', display, true)).rejects.toThrow(/xfconf-query is not installed/);
     expect(await getTheme()).toEqual({ scheme: 'light', set: false });
   });
 
-  it('treats an xsettingsd that exits right after launch as a failure and rolls back', async () => {
-    const bin = join(home, 'bin');
-    mkdirSync(bin, { recursive: true });
-    writeFileSync(join(bin, 'xsettingsd'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
-    process.env.PATH = `${bin}:${env.PATH}`;
-    const { getTheme, setTheme } = await import('../../src/theme.js');
-    await expect(setTheme('dark', ':4242', true)).rejects.toThrow(/exited during startup/);
+  it('starts xfsettingsd on the display when none serves it, replacing any other XSETTINGS daemon', () => {
+    expect(readFileSync(join(home, 'daemon'), 'utf8')).toMatch(/^:4242 --replace --daemon /m);
+  });
+
+  it('fails when xfsettingsd exits without forking', async () => {
+    const daemon = readFileSync(join(bin, 'xfsettingsd'), 'utf8');
+    writeFileSync(join(bin, 'xfsettingsd'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    const { setTheme } = await theme();
+    await expect(setTheme('dark', display, true)).rejects.toThrow(/xfsettingsd did not start \(exit code 1\)/);
+    writeFileSync(join(bin, 'xfsettingsd'), daemon, { mode: 0o755 });
+  });
+
+  it('records nothing when xfconf-query fails, so if_unset retries', async () => {
+    const { getTheme, setTheme } = await theme();
+    fake(1);
+    await expect(setTheme('dark', display, true)).rejects.toThrow(/xfconf-query/);
     expect(await getTheme()).toEqual({ scheme: 'light', set: false });
+    rmSync(calls);
+    fake(0);
+    expect(await setTheme('dark', display, true)).toEqual({ scheme: 'dark', set: true });
+    expect(await getTheme()).toEqual({ scheme: 'dark', set: true });
+  });
+
+  it('sets the GTK, xfwm4 and panel themes for each scheme', async () => {
+    expect(recorded()).toEqual([
+      '-c xfce4-panel -p /panels/dark-mode -n -t bool -s true',
+      '-c xfwm4 -p /general/theme -n -t string -s Greybird-dark',
+      '-c xsettings -p /Net/ThemeName -n -t string -s Adwaita-dark',
+    ]);
+    rmSync(calls);
+    const { getTheme, setTheme } = await theme();
+    expect(await setTheme('light', display)).toEqual({ scheme: 'light', set: true });
+    expect(recorded()).toEqual([
+      '-c xfce4-panel -p /panels/dark-mode -n -t bool -s false',
+      '-c xfwm4 -p /general/theme -n -t string -s Greybird',
+      '-c xsettings -p /Net/ThemeName -n -t string -s Adwaita',
+    ]);
+    expect(await getTheme()).toEqual({ scheme: 'light', set: true });
+  });
+
+  it('keeps an earlier choice with if_unset', async () => {
+    rmSync(calls);
+    const { setTheme } = await theme();
+    expect(await setTheme('dark', display, true)).toEqual({ scheme: 'light', set: true });
+    expect(() => readFileSync(calls)).toThrow(/ENOENT/);
+  });
+
+  it('a failed switch settles both writes before the next one starts', async () => {
+    const { setTheme } = await theme();
+    // Dark: the xsettings write fails at once while the xfwm4 write is still running.
+    writeFileSync(join(bin, 'xfconf-query'), `#!/bin/sh
+case "$*" in *xsettings*-dark) exit 1 ;; *xfwm4*-dark) /bin/sleep 0.3 ;; esac
+echo "$*" >> '${calls}'
+`, { mode: 0o755 });
+    const failed = setTheme('dark', display);
+    const retry = setTheme('light', display);
+    await expect(failed).rejects.toThrow();
+    await retry;
+    // The failed switch's slow xfwm4 write landed before the retry's writes, not after them.
+    const lines = readFileSync(calls, 'utf8').trim().split('\n');
+    expect(lines.findIndex((l) => l.endsWith('Greybird-dark'))).toBeLessThan(lines.findIndex((l) => l.endsWith(' Greybird')));
+    expect(lines.at(-1)).not.toMatch(/-dark$|true$/);
   });
 });

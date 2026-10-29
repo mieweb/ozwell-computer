@@ -111,10 +111,12 @@ describe('noVNC viewer', () => {
       method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ cmd, timeout_ms: 5000 }),
     });
     const theme = async () => (await fetch(`${URL_}/api/v1/desktop/theme`, { headers: auth })).json();
-    await exec('rm -f ~/.xsettingsd');
+    const gtkTheme = async () => (await (await exec('xfconf-query -c xsettings -p /Net/ThemeName')).json()).stdout.trim();
+    await exec('rm -f ~/.config/ozwell-computer/color-scheme');
     const isDark = (dark: boolean) => document.documentElement.classList.contains('dark') === dark;
     const dark = await openViewer('dark');
     await expect.poll(theme, { timeout: 5000 }).toEqual({ scheme: 'dark', set: true });
+    expect(await gtkTheme()).toBe('Adwaita-dark');
     expect(await dark.evaluate(isDark, true)).toBe(true);
     const light = await openViewer('light');
     await light.waitForFunction(isDark, true, { timeout: 5000 });
@@ -122,9 +124,10 @@ describe('noVNC viewer', () => {
     await light.click('#btn-theme');
     await dark.waitForFunction(isDark, false, { timeout: 5000 });
     expect(await theme()).toEqual({ scheme: 'light', set: true });
+    expect(await gtkTheme()).toBe('Adwaita');
     await dark.context().close();
     await light.context().close();
-    await exec('rm -f ~/.xsettingsd');
+    await exec('rm -f ~/.config/ozwell-computer/color-scheme');
   });
 
   it('the jobs panel streams a background command\'s output and cancels it', async () => {
