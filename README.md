@@ -326,6 +326,7 @@ When no token is configured, one is generated and stored in
 | `OZWELL_COMPUTER_UPDATE_URL` / `--update-url` | the latest GitHub release's `Packages` (`git+https://github.com/mieweb/ozwell-computer.git#main` in `:main` images) | APT `Packages` index checked for new releases (`https://` or `file://`), or `git+https://<repo>#<branch>` to build that branch from git; `off` disables update checks |
 | `OZWELL_COMPUTER_OPEN` / `--open` | `false` | Open the viewer in the default browser at startup |
 | `OZWELL_COMPUTER_FRAME_ANCESTORS` / `--frame-ancestors` | none | Origins, space or comma separated (`https://app.ozwell.ai https://*.example.com`), allowed to embed the viewer in an iframe, via CSP `frame-ancestors`. The viewer is always frameable by its own origin |
+| `OZWELL_COMPUTER_CPUS` / `--cpus` | detected | CPU capacity the toolbar's CPU % is relative to (`ozwell_cpus`). Detected from cgroup `cpu.max` and CPU affinity; set it when the limit sits outside the container's view, e.g. a Proxmox LXC `cpulimit` around a Docker host |
 | `OZWELL_COMPUTER_AUTH_DISABLED` / `--no-auth` | `false` | Logs loud warnings |
 | `DISPLAY` / `--display` | `:0` | |
 | `OZWELL_COMPUTER_SPAWN_XVFB` / `--spawn-xvfb` | `false` | Development only |

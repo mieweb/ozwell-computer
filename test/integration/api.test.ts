@@ -24,7 +24,7 @@ describe('metrics', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/plain');
     const text = await res.text();
-    for (const name of ['process_resident_memory_bytes', 'nodejs_heap_size_used_bytes', 'ozwell_cgroup_memory_bytes', 'ozwell_process_resident_bytes', 'ozwell_process_pss_bytes', 'ozwell_cgroup_memory_stat_bytes{type="anon"}', 'ozwell_vnc_sessions', 'ozwell_mcp_sessions', 'ozwell_http_request_duration_seconds_bucket', 'ozwell_x_connected 1', 'ozwell_cgroup_cpu_seconds_total']) {
+    for (const name of ['process_resident_memory_bytes', 'nodejs_heap_size_used_bytes', 'ozwell_cgroup_memory_bytes', 'ozwell_process_resident_bytes', 'ozwell_process_pss_bytes', 'ozwell_cgroup_memory_stat_bytes{type="anon"}', 'ozwell_vnc_sessions', 'ozwell_mcp_sessions', 'ozwell_http_request_duration_seconds_bucket', 'ozwell_x_connected 1', 'ozwell_cgroup_cpu_seconds_total', 'ozwell_cpus']) {
       expect(text).toContain(name);
     }
     expect(text).toMatch(/ozwell_process_resident_bytes\{command="node"\} \d+/);

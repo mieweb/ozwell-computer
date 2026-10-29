@@ -5,36 +5,18 @@ import { Button, type ButtonProps } from '@mieweb/ui/components/Button';
 import { api } from './api';
 import { useServerEvent } from './events';
 import { checkResult, versionTitle, type UpdateStatus } from './version';
+import { cpuPercent, perfTitle, readMetrics, type Sample } from './metrics';
 
-type Metrics = { cpu?: number; mem?: number; limit?: number; vnc?: number };
-type Sample = Metrics & { t: number };
 type Part = { text: string; hot?: boolean };
 
 const MiB = (b: number) => `${Math.round(b / 2 ** 20)} MiB`;
 
-/** The few series the toolbar shows, from Prometheus text format. */
-export function readMetrics(text: string): Metrics {
-  const out: Metrics = {};
-  for (const line of text.split('\n')) {
-    if (line.startsWith('#')) continue;
-    const m = /^(\w+)(\{[^}]*\})? (\S+)$/.exec(line);
-    if (!m) continue;
-    const [, name, labels = '', value] = m;
-    const v = Number(value);
-    if (name === 'ozwell_cgroup_cpu_seconds_total') out.cpu = v;
-    else if (name === 'ozwell_cgroup_memory_bytes' && labels.includes('scope="container"')) out.mem = v;
-    else if (name === 'ozwell_cgroup_memory_limit_bytes') out.limit = v;
-    else if (name === 'ozwell_vnc_sent_bytes_total') out.vnc = v;
-  }
-  return out;
-}
-
 function perfParts(prev: Sample | null, now: Sample): Part[] {
   const secs = prev ? (now.t - prev.t) / 1000 : 0;
-  const cpu = prev?.cpu !== undefined && now.cpu !== undefined ? ((now.cpu - prev.cpu) / secs) * 100 : undefined;
+  const cpu = prev?.cpu !== undefined && now.cpu !== undefined ? cpuPercent({ cpu: prev.cpu, t: prev.t }, { cpu: now.cpu, t: now.t, cpus: now.cpus }) : undefined;
   const kbs = prev?.vnc !== undefined && now.vnc !== undefined ? (now.vnc - prev.vnc) / secs / 1024 : undefined;
   return [
-    cpu !== undefined && { text: `CPU ${Math.max(0, cpu).toFixed(0)}%`, hot: cpu > 80 },
+    cpu !== undefined && { text: `CPU ${cpu.toFixed(0)}%`, hot: cpu > 80 },
     now.mem !== undefined && {
       text: `Mem ${MiB(now.mem)}${now.limit ? ` / ${MiB(now.limit)}` : ''}`,
       hot: !!now.limit && now.mem / now.limit > 0.85,
@@ -45,6 +27,7 @@ function perfParts(prev: Sample | null, now: Sample): Part[] {
 
 export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
   const [parts, setParts] = useState<Part[]>([]);
+  const [cpus, setCpus] = useState<number>();
   useEffect(() => {
     let prev: Sample | null = null;
     const tick = async () => {
@@ -53,6 +36,7 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
         if (!res.ok) throw new Error(res.statusText);
         const now = { ...readMetrics(await res.text()), t: performance.now() };
         setParts(perfParts(prev, now));
+        setCpus(now.cpus);
         prev = now;
       } catch {
         setParts([]);
@@ -64,7 +48,7 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
     return () => clearInterval(timer);
   }, [intervalMs]);
   return (
-    <span id="perf" className="font-mono text-[11px] whitespace-nowrap text-muted-foreground" title="Container resource use (from /api/v1/metrics)">
+    <span id="perf" className="font-mono text-[11px] whitespace-nowrap text-muted-foreground" title={perfTitle(cpus)}>
       {parts.map((p, i) => (
         <Fragment key={i}>
           {i > 0 && ' · '}

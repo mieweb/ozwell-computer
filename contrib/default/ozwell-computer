@@ -18,3 +18,7 @@
 
 # Other origins allowed to embed the viewer in an iframe (CSP frame-ancestors).
 #OZWELL_COMPUTER_FRAME_ANCESTORS=https://app.ozwell.ai
+
+# CPU capacity for the toolbar's CPU %, when a limit isn't visible inside the container
+# (e.g. a Proxmox LXC cpulimit around a Docker host).
+#OZWELL_COMPUTER_CPUS=2
