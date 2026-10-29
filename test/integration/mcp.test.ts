@@ -18,14 +18,18 @@ async function tool(name: string, args: Record<string, unknown> = {}): Promise<a
 }
 
 beforeAll(async () => {
-  client = new Client({ name: 'oz-mcp-tools', version: '1.0.0' });
-  transport = new StreamableHTTPClientTransport(new URL(URL_ + '/mcp'), { requestInit: { headers: auth } });
-  await client.connect(transport);
+  await connect();
 });
 afterAll(async () => {
   await transport?.terminateSession().catch(() => undefined);
   await client?.close();
 });
+
+async function connect() {
+  client = new Client({ name: 'oz-mcp-tools', version: '1.0.0' });
+  transport = new StreamableHTTPClientTransport(new URL(URL_ + '/mcp'), { requestInit: { headers: auth } });
+  await client.connect(transport);
+}
 
 const bounds = async (id: string) => (await api('GET', `/api/v1/windows/${id}`)).body.bounds;
 
@@ -35,9 +39,34 @@ describe('MCP tools', () => {
     expect(names).toEqual([
       'activate_window', 'click', 'command_output', 'double_click', 'drag', 'find_element', 'get_clipboard', 'get_ui_tree', 'hotkey',
       'launch_app', 'list_windows', 'move', 'press_key', 'read_file', 'run_command', 'screenshot', 'scroll',
-      'set_clipboard', 'type_text', 'ui_action', 'write_file',
+      'set_clipboard', 'type_text', 'ui_action', 'update_computer', 'write_file',
     ]);
   });
+
+  it('update_computer installs an announced update, or says why it cannot', async () => {
+    const s = (await api('GET', '/api/v1/update')).body;
+    const r: any = await client.callTool({ name: 'update_computer', arguments: {} });
+    const body = JSON.parse(r.content[0].text);
+    // compose turns update checks off unless OZWELL_COMPUTER_UPDATE_URL is set (CI sets it).
+    if (!s.supported) {
+      expect(r.isError).toBe(true);
+      expect(body.error.reason).toBe('feature_unsupported');
+      return;
+    }
+    expect(r.isError).toBeFalsy();
+    const requested = s.available || s.latest === null;
+    // The root unit may already have picked the request up by the time the tool replies.
+    expect(requested ? ['requested', 'running'] : ['none']).toContain(body.upgrade);
+    if (!requested) return;
+    // A real upgrade: wait for it like the REST test, then reconnect (a restart drops the session).
+    await waitFor(async () => {
+      const u = (await api('GET', '/api/v1/update').catch(() => null))?.body.upgrade;
+      return u && ['unchanged', 'succeeded', 'failed'].includes(u.state) ? u : null;
+    }, 600000);
+    await waitFor(async () => (await fetch(URL_ + '/health').catch(() => null))?.status === 204, 120000);
+    await client.close();
+    await connect();
+  }, 750000);
 
   it('move puts the pointer where asked', async () => {
     const r = await tool('move', { x: 321, y: 123 });
@@ -114,7 +143,8 @@ describe('MCP tools', () => {
     const id = await zenity(['--info', '--text=Ozwell MCP Probe'], '/tmp/oz-mcp-ocr.txt', 'oz-mcp-ocr');
     const r: any = await client.callTool({ name: 'screenshot', arguments: { window: id, ocr: true } });
     expect(r.isError).toBeFalsy();
-    expect(r.content.map((c: any) => c.type)).toEqual(['image', 'text', 'text']);
+    // An update notice may follow while an update is available.
+    expect(r.content.slice(0, 3).map((c: any) => c.type)).toEqual(['image', 'text', 'text']);
     expect(JSON.parse(r.content[1].text).screenshot_id).toBeTruthy();
     expect(r.content[2].text).toContain('Ozwell MCP Probe');
     await api('POST', `/api/v1/windows/${id}/close`);

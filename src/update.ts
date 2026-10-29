@@ -97,6 +97,9 @@ export interface UpdateStatus {
   upgrade: { state: UpgradeState; at: string | null; log: string };
 }
 
+/** An upgrade has been asked for or is installing. */
+export const upgrading = (s: UpdateStatus) => s.upgrade.state === 'requested' || s.upgrade.state === 'running';
+
 export class Updater {
   private source: UpdateSource | null;
   private current: string | null = null;
@@ -108,6 +111,9 @@ export class Updater {
   private error: string | null = null;
   private limitation: string | null = null;
   private timer: NodeJS.Timeout | null = null;
+  private last: UpdateStatus | null = null;
+  private watching: NodeJS.Timeout | null = null;
+  protected upgradePollMs = 5_000;
 
   constructor(
     private url: string | null,
@@ -115,6 +121,7 @@ export class Updater {
     private onChange: (s: UpdateStatus) => void = () => undefined,
     private stateDir = STATE_DIR,
     private appDir = APP_DIR,
+    private pathUnit = PATH_UNIT,
   ) {
     this.source = url ? parseUpdateSource(url) : null;
   }
@@ -127,14 +134,29 @@ export class Updater {
     if (!this.source) { this.limitation = 'update checks are disabled (OZWELL_COMPUTER_UPDATE_URL=off)'; return; }
     this.limitation = this.source.kind === 'git' ? await this.detectBuild() : await this.detectPackage();
     if (this.limitation) return;
-    if (!existsSync(PATH_UNIT)) this.limitation = 'the ozwell-computer-upgrade.path unit is not installed';
+    if (!existsSync(this.pathUnit)) this.limitation = 'the ozwell-computer-upgrade.path unit is not installed';
     await this.check().catch(() => undefined);
     const every = this.source.kind === 'git' ? GIT_CHECK_INTERVAL_MS : APT_CHECK_INTERVAL_MS;
     this.timer = setInterval(() => void this.check().catch(() => undefined), every);
     this.timer.unref();
   }
 
-  stop() { if (this.timer) clearInterval(this.timer); }
+  stop() {
+    if (this.timer) clearInterval(this.timer);
+    if (this.watching) clearInterval(this.watching);
+  }
+
+  /** While an upgrade is requested or running, re-read its state until it ends (a failed one doesn't restart the server). */
+  private watchUpgrade() {
+    if (this.watching) return;
+    this.watching = setInterval(() => void this.status().then((s) => {
+      if (upgrading(s) || !this.watching) return;
+      clearInterval(this.watching);
+      this.watching = null;
+      this.onChange(s);
+    }), this.upgradePollMs);
+    this.watching.unref();
+  }
 
   /** Installed package version; a limitation if not installed from the package. */
   private async detectPackage(): Promise<string | null> {
@@ -239,7 +261,7 @@ export class Updater {
     const available = this.currentRev
       ? this.latestRev !== null && this.latestRev !== this.currentRev
       : this.current !== null && this.latest !== null && await this.lt(this.current, this.latest);
-    return {
+    this.last = {
       supported,
       ...(this.limitation ? { limitation: this.limitation } : {}),
       url: this.url,
@@ -251,13 +273,20 @@ export class Updater {
       ...(this.currentRev ? { revision: { current: this.currentRev, latest: this.latestRev } } : {}),
       upgrade: supported ? await this.upgradeState() : { state: 'idle', at: null, log: '' },
     };
+    if (upgrading(this.last)) this.watchUpgrade();
+    return this.last;
+  }
+
+  /** The status last computed (by a check, an upgrade request or a read), without doing any work. */
+  cached(): UpdateStatus | null {
+    return this.last;
   }
 
   /** Ask the root upgrade unit to upgrade the package. */
   async apply(): Promise<UpdateStatus> {
     const s = await this.status();
     if (!s.supported) throw new ApiError('feature_unsupported', `upgrades are unavailable: ${s.limitation}`, { feature: 'update' });
-    if (s.upgrade.state === 'requested' || s.upgrade.state === 'running') return s;
+    if (upgrading(s)) return s;
     await writeFile(join(this.stateDir, 'upgrade-request'), `${new Date().toISOString()}\n`);
     this.log.info({ current: s.current, latest: s.latest }, 'upgrade requested');
     const next = await this.status();
