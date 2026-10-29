@@ -47,6 +47,7 @@ the environment take precedence.
 | `ORCHESTRATOR_HOST` / `ORCHESTRATOR_PORT` | `127.0.0.1` / `8090` | listen address |
 | `TOOL_CATALOG` | `../docs/mcp-tools.json` | proxied tool definitions |
 | `ORCHESTRATOR_MAX_INSTANCES` | unlimited | computers each user may have |
+| `COMPUTER_FRAME_ANCESTORS` | none | origins (e.g. `https://app.ozwell.ai`) allowed to embed the viewer in an iframe; passed to computers when they are created as `OZWELL_COMPUTER_FRAME_ANCESTORS`, so existing computers keep their value |
 | `LOG_LEVEL` | `info` | |
 
 Configure Ozwell's workspace MCP server as `http(s)://<orchestrator>/mcp` (Streamable

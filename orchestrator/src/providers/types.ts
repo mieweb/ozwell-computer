@@ -50,6 +50,11 @@ export interface Provider {
 /** A provider factory receives the parsed PROVIDER_URI and the environment. */
 export type ProviderFactory = (uri: URL, env: NodeJS.ProcessEnv) => Provider | Promise<Provider>;
 
+/** Settings from the orchestrator's environment that every new computer gets. */
+export function computerEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+  return env.COMPUTER_FRAME_ANCESTORS ? { OZWELL_COMPUTER_FRAME_ANCESTORS: env.COMPUTER_FRAME_ANCESTORS } : {};
+}
+
 /** DNS-label-safe id: prefix plus random lowercase base32 (no repeats needed per provider). */
 export function generateId(prefix = 'ozc'): string {
   const alphabet = 'abcdefghijklmnopqrstuvwxyz234567';
