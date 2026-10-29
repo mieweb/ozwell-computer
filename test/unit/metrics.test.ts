@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { availableCpus, parseCpuMax, render } from '../../src/metrics.js';
+import { availableCpus, parseCpuMax, render, setCpus } from '../../src/metrics.js';
 import { cpuPercent, perfTitle, readMetrics } from '../../web/src/metrics.js';
 
 describe('cpu count', () => {
@@ -27,9 +27,11 @@ describe('cpu count', () => {
     expect(availableCpus(null, 4)).toBe(4);
   });
 
-  it('exports ozwell_cpus', async () => {
-    const { body } = await render();
-    expect(readMetrics(body).cpus).toBeGreaterThan(0);
+  it('exports ozwell_cpus, or the configured override', async () => {
+    expect(readMetrics((await render()).body).cpus).toBeGreaterThan(0);
+    setCpus(2.5);
+    expect(readMetrics((await render()).body).cpus).toBe(2.5);
+    setCpus(undefined);
   });
 });
 

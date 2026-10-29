@@ -46,6 +46,8 @@ export const ConfigSchema = z.object({
   frameAncestors: origins,
   /** Fail replies that their response schema would change (tests and the dev container). */
   strictResponses: bool,
+  /** CPU capacity to report, for limits the container can't see (e.g. on an LXC around a Docker host). */
+  cpus: z.coerce.number().positive().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -72,6 +74,7 @@ export function defaults(): Config {
     open: false,
     frameAncestors: [],
     strictResponses: false,
+    cpus: undefined,
   };
 }
 
@@ -95,6 +98,7 @@ const ENV_MAP: Record<string, keyof Config> = {
   OZWELL_COMPUTER_OPEN: 'open',
   OZWELL_COMPUTER_FRAME_ANCESTORS: 'frameAncestors',
   OZWELL_COMPUTER_STRICT_RESPONSES: 'strictResponses',
+  OZWELL_COMPUTER_CPUS: 'cpus',
 };
 
 const FLAG_MAP: Record<string, keyof Config> = {
@@ -118,6 +122,7 @@ const FLAG_MAP: Record<string, keyof Config> = {
   'update-url': 'updateUrl',
   open: 'open',
   'frame-ancestors': 'frameAncestors',
+  cpus: 'cpus',
 };
 
 const BOOLEAN_FLAGS = new Set(['auth-disabled', 'no-auth', 'spawn-xvfb', 'view-only', 'exec', 'no-exec', 'open']);
@@ -191,5 +196,6 @@ Usage: ozwell-computer [flags]
   --update-url <url|off>  OZWELL_COMPUTER_UPDATE_URL: APT Packages index, or git+https://<repo>#<branch>, checked for updates
   --open                  OZWELL_COMPUTER_OPEN=true: open the viewer in the default browser
   --frame-ancestors <o>   OZWELL_COMPUTER_FRAME_ANCESTORS: origins (space/comma separated) allowed to embed the viewer
+  --cpus <n>              OZWELL_COMPUTER_CPUS: CPU capacity for the CPU % readout when a limit isn't visible in the container
   --print-mcp-tools       Print the MCP tool catalog (name, description, input schema) and exit
 `;

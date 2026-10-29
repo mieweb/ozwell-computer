@@ -149,12 +149,16 @@ export function availableCpus(cgroup: string | null, parallelism = availablePara
   return Math.min(parallelism, ...quotas.filter((q) => q !== null));
 }
 
+let cpusOverride: number | undefined;
+/** Use an admin-supplied CPU capacity instead of the detected one (config `cpus`). */
+export const setCpus = (n: number | undefined) => { cpusOverride = n; };
+
 new client.Gauge({
   name: 'ozwell_cpus',
-  help: 'CPUs available to the container (cgroup v2 cpu.max quota, else scheduler affinity); divide CPU rates by this for a 0-100% figure',
+  help: 'CPUs available to the container (OZWELL_COMPUTER_CPUS, else cgroup v2 cpu.max quota, else scheduler affinity); divide CPU rates by this for a 0-100% figure',
   registers: [registry],
   collect() {
-    this.set(availableCpus(cgroupRoot));
+    this.set(cpusOverride ?? availableCpus(cgroupRoot));
   },
 });
 

@@ -20,7 +20,7 @@ import vncRoutes from './vnc/routes.js';
 import mcpRoutes from './mcp/server.js';
 import type { A11y } from './a11y/atspi.js';
 import type { Updater } from './update.js';
-import { m, render as renderMetrics } from './metrics.js';
+import { m, render as renderMetrics, setCpus } from './metrics.js';
 import { errors, media } from './routes/schemas.js';
 
 const require = createRequire(import.meta.url);
@@ -71,6 +71,7 @@ export function strictResponses(app: FastifyInstance) {
 }
 
 export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
+  setCpus(ctx.config.cpus);
   const app: FastifyInstance = Fastify({
     loggerInstance: ctx.log as any,
     bodyLimit: 64 * 1024 * 1024,

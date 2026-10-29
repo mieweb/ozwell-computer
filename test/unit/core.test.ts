@@ -104,6 +104,9 @@ describe('config', () => {
     expect(parseArgs(['--no-exec']).overrides.exec).toBe(false);
     expect(() => loadConfig({}, ['--bogus'])).toThrow();
     expect(() => loadConfig({ OZWELL_COMPUTER_VNC_BACKEND: 'weird' })).toThrow();
+    expect(loadConfig({ OZWELL_COMPUTER_CPUS: '1.5' }).config.cpus).toBe(1.5);
+    expect(loadConfig({}, ['--cpus', '4']).config.cpus).toBe(4);
+    expect(() => loadConfig({ OZWELL_COMPUTER_CPUS: '0' })).toThrow();
   });
 });
 
