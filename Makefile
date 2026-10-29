@@ -43,6 +43,7 @@ test:
 install: build
 	$(INSTALL) -d $(DESTAPP) $(DESTAPP)/bin
 	cp -a dist package.json package-lock.json node_modules $(DESTAPP)/
+	chmod 0755 $(DESTAPP)/dist/cli.js
 	# Runtime dependencies only, and the release version (the installed app has no git checkout).
 	cd $(DESTAPP) && npm prune --omit=dev --no-audit --no-fund >/dev/null \
 		&& npm pkg set version="$$($(CURDIR)/package-version node)"

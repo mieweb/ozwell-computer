@@ -15,7 +15,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json && vite build -c web/vite.config.ts -l warn && node scripts/copy-assets.mjs",
+    "build": "tsc -p tsconfig.json && vite build -c web/vite.config.ts -l warn",
     "dev": "tsx src/cli.ts",
     "start": "node scripts/start.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.test.json && tsc -p web/tsconfig.json",
