@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { createCapsLockRemap, type KeyLike } from '../../web/src/keyboard.js';
 
 const NONE = { ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, repeat: false };
-const down = (key: string, mods: Partial<KeyLike> = {}): KeyLike => ({ ...NONE, type: 'keydown', key, ...mods });
-const up = (key: string, mods: Partial<KeyLike> = {}): KeyLike => ({ ...NONE, type: 'keyup', key, ...mods });
+const CODES: Record<string, string> = { Control: 'ControlLeft', Shift: 'ShiftLeft', Alt: 'AltLeft', AltGraph: 'AltRight', Meta: 'MetaLeft', CapsLock: 'CapsLock' };
+const ev = (type: string, key: string, mods: Partial<KeyLike>): KeyLike => ({ ...NONE, type, key, code: CODES[key] ?? `Key${key.toUpperCase()}`, ...mods });
+const down = (key: string, mods: Partial<KeyLike> = {}) => ev('keydown', key, mods);
+const up = (key: string, mods: Partial<KeyLike> = {}) => ev('keyup', key, mods);
 
 /** Feeds events; returns what was sent ourselves and which events were left for noVNC. */
 function run(events: KeyLike[]) {
@@ -65,6 +67,44 @@ describe('Caps Lock remaps', () => {
 
   it('ignores auto-repeat of the remapped key', () => {
     const { sent } = run([down('CapsLock', { ctrlKey: true }), down('CapsLock', { ctrlKey: true, repeat: true }), up('CapsLock')]);
+    expect(sent).toEqual(['ffe3 down', 'ffe3 up']);
+  });
+
+  it('keeps Control down remotely while either Caps Lock or the physical Left Ctrl is held', () => {
+    const C = { ctrlKey: true };
+    // Caps first, then physical Ctrl: Caps Lock's release leaves it to the physical key.
+    const a = run([down('CapsLock', C), down('Control', C), up('CapsLock', C), up('Control')]);
+    expect(a.sent).toEqual(['ffe3 down']);
+    expect(a.passed).toEqual(['keydown Control', 'keyup Control']);
+    // Physical Ctrl released while Caps Lock still holds Ctrl: that release is held back until Caps Lock's.
+    const b = run([down('CapsLock', C), down('Control', C), up('Control', C), down('c', C), up('CapsLock', C)]);
+    expect(b.sent).toEqual(['ffe3 down', 'ffe3 up']);
+    expect(b.passed).toEqual(['keydown Control', 'keydown c']);
+    // Right Ctrl is a different keysym, so both are sent as usual.
+    const c = run([down('CapsLock', C), down('Control', { ...C, code: 'ControlRight' }), up('Control', { ...C, code: 'ControlRight' }), up('CapsLock')]);
+    expect(c.sent).toEqual(['ffe3 down', 'ffe3 up']);
+    expect(c.passed).toEqual(['keydown Control', 'keyup Control']);
+  });
+
+  it('tracks left and right Shift separately', () => {
+    const S = { shiftKey: true };
+    const { sent } = run([
+      down('Shift', S), down('Shift', { ...S, code: 'ShiftRight' }), up('Shift', { ...S, code: 'ShiftRight' }),
+      down('CapsLock', S), up('CapsLock', S), up('Shift'),
+    ]);
+    expect(sent).toEqual(['ffe5 tap']);
+  });
+
+  it('does not mistake the Ctrl+Alt flags of a held AltGr for the remap', () => {
+    const G = { ctrlKey: true, altKey: true };
+    expect(run([down('AltGraph', G), down('CapsLock', G), up('CapsLock', G), up('AltGraph')]).sent).toEqual(['ffe5 tap']);
+  });
+
+  it('settles a pending Caps Lock from a pointer event before noVNC sends the click', () => {
+    const { sent, remap } = run([down('CapsLock')]);
+    remap.pointer({ ...NONE, ctrlKey: true });
+    expect(sent).toEqual(['ffe3 down']);
+    remap.handle(up('CapsLock', { ctrlKey: true }));
     expect(sent).toEqual(['ffe3 down', 'ffe3 up']);
   });
 });

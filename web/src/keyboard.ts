@@ -6,56 +6,83 @@
 // (Remaps that change the keysym, like ctrl:nocaps, already arrive as key "Control".)
 import { useEffect, type RefObject } from 'react';
 
-export type KeyLike = Pick<KeyboardEvent, 'type' | 'key' | 'repeat' | 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey'>;
+type Flag = 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey';
+export type Flags = Pick<KeyboardEvent, Flag>;
+export type KeyLike = Flags & Pick<KeyboardEvent, 'type' | 'key' | 'code' | 'repeat'>;
 type Send = (keysym: number, code: string, down?: boolean) => void;
-type Mod = readonly [flag: 'ctrlKey' | 'altKey' | 'shiftKey' | 'metaKey', key: string, keysym: number, code: string];
+type Mod = readonly [flag: Flag, keysym: number, code: string];
 
 const MODS: readonly Mod[] = [
-  ['ctrlKey', 'Control', 0xffe3, 'ControlLeft'],
-  ['altKey', 'Alt', 0xffe9, 'AltLeft'],
-  ['shiftKey', 'Shift', 0xffe1, 'ShiftLeft'],
-  ['metaKey', 'Meta', 0xffeb, 'MetaLeft'],
+  ['ctrlKey', 0xffe3, 'ControlLeft'],
+  ['altKey', 0xffe9, 'AltLeft'],
+  ['shiftKey', 0xffe1, 'ShiftLeft'],
+  ['metaKey', 0xffeb, 'MetaLeft'],
 ];
+// The flags each modifier key sets; some browsers report AltGr as Ctrl+Alt.
+const KEY_FLAGS: Record<string, Flag[]> = {
+  Control: ['ctrlKey'], Alt: ['altKey'], Shift: ['shiftKey'], Meta: ['metaKey'], AltGraph: ['ctrlKey', 'altKey'],
+};
 const XK_Caps_Lock = 0xffe5;
 
 /** `handle` returns true when it consumed the event, which must then be hidden from noVNC. */
 export function createCapsLockRemap(send: Send) {
-  const held = new Set<string>();
-  let caps: Mod | 'pending' | null = null;
+  // Physical modifier keys noVNC has forwarded, by code (so left and right are separate).
+  const held = new Map<string, Flag[]>();
+  // Caps Lock's role while held. `sent`: we pressed its keysym remotely and must release it; the
+  // server tracks keys by keysym, so a physical key with the same code shares that press.
+  let caps: { mod: Mod; sent: boolean } | 'pending' | null = null;
 
-  // A modifier flag that no held modifier key (nor this event's own key) accounts for.
-  const unexplained = (e: KeyLike) => MODS.find(([flag, key]) => e[flag] && key !== e.key && !held.has(key));
-  const tap = (mod: Mod | undefined) => (mod ? send(mod[2], mod[3]) : send(XK_Caps_Lock, 'CapsLock'));
+  // A modifier flag that neither the event's own key nor any held modifier key accounts for.
+  const unexplained = (e: Flags, own: Flag[]) =>
+    MODS.find(([flag]) => e[flag] && !own.includes(flag) && ![...held.values()].some((f) => f.includes(flag)));
+  const press = (mod: Mod) => {
+    caps = { mod, sent: !held.has(mod[2]) };
+    if (caps.sent) send(mod[1], mod[2], true);
+  };
+  const tap = (mod: Mod | undefined) => {
+    if (!mod) return send(XK_Caps_Lock, 'CapsLock');
+    if (!held.has(mod[2])) send(mod[1], mod[2]);
+  };
 
-  const resolve = (e: KeyLike) => {
+  const resolve = (e: Flags, own: Flag[]) => {
     if (caps !== 'pending') return;
-    const mod = unexplained(e);
-    caps = mod ?? null;
-    if (mod) send(mod[2], mod[3], true); else tap(undefined);
+    const mod = unexplained(e, own);
+    caps = null;
+    if (mod) press(mod); else tap(undefined);
   };
 
   const onCaps = (e: KeyLike) => {
     if (e.repeat) return;
     if (e.type === 'keydown') {
-      caps = unexplained(e) ?? 'pending';
-      if (caps !== 'pending') send(caps[2], caps[3], true);
+      const mod = unexplained(e, []);
+      if (mod) press(mod); else caps = 'pending';
       return;
     }
-    if (caps === 'pending') tap(unexplained(e));
-    else if (caps) send(caps[2], caps[3], false);
+    if (caps === 'pending') tap(unexplained(e, []));
+    // A physical key with the same keysym pressed meanwhile now owns the remote press.
+    else if (caps?.sent && !held.has(caps.mod[2])) send(caps.mod[1], caps.mod[2], false);
     caps = null;
   };
 
   return {
     handle(e: KeyLike): boolean {
       if (e.key === 'CapsLock') { onCaps(e); return true; }
-      if (e.type === 'keydown') resolve(e);
-      if (!MODS.some(([, key]) => key === e.key)) return false;
-      if (e.type === 'keydown') held.add(e.key); else held.delete(e.key);
-      return false;
+      const flags = KEY_FLAGS[e.key];
+      if (e.type === 'keydown') resolve(e, flags ?? []);
+      if (!flags) return false;
+      if (e.type === 'keydown') { held.set(e.code, flags); return false; }
+      held.delete(e.code);
+      if (caps === 'pending' || caps?.mod[2] !== e.code) return false;
+      // Caps Lock still holds this keysym: keep it pressed remotely until Caps Lock is released.
+      caps.sent = true;
+      return true;
+    },
+    /** Pointer and wheel events carry modifier flags too: settle Caps Lock before noVNC sends them. */
+    pointer(e: Flags) {
+      resolve(e, []);
     },
     reset() {
-      if (caps && caps !== 'pending') send(caps[2], caps[3], false);
+      if (caps !== 'pending' && caps?.sent) send(caps.mod[1], caps.mod[2], false);
       caps = null;
       held.clear();
     },
@@ -73,14 +100,20 @@ export function useCapsLockRemap(target: RefObject<HTMLElement | null>, getRfb: 
       e.preventDefault();
       e.stopImmediatePropagation();
     };
-    const onBlur = () => remap.reset();
-    el.addEventListener('keydown', onKey, true);
-    el.addEventListener('keyup', onKey, true);
-    window.addEventListener('blur', onBlur);
+    const onPointer = (e: MouseEvent) => {
+      if (!getRfb()?.viewOnly) remap.pointer(e);
+    };
+    const reset = () => remap.reset();
+    // Focus moving elsewhere in the page sends the key-up there, not to the desktop.
+    const onFocusOut = (e: FocusEvent) => {
+      if (!el.contains(e.relatedTarget as Node | null)) reset();
+    };
+    const listeners = [['keydown', onKey], ['keyup', onKey], ['pointerdown', onPointer], ['wheel', onPointer], ['focusout', onFocusOut]] as const;
+    for (const [type, fn] of listeners) el.addEventListener(type, fn as EventListener, true);
+    window.addEventListener('blur', reset);
     return () => {
-      el.removeEventListener('keydown', onKey, true);
-      el.removeEventListener('keyup', onKey, true);
-      window.removeEventListener('blur', onBlur);
+      for (const [type, fn] of listeners) el.removeEventListener(type, fn as EventListener, true);
+      window.removeEventListener('blur', reset);
     };
   }, []); // getRfb only reads a ref
 }
