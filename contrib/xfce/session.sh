@@ -16,6 +16,9 @@ case "${1-}" in
         ;;
 esac
 /usr/libexec/at-spi-bus-launcher --launch-immediately &
+# GTK theme (light/dark) from ~/.xsettingsd, written by the server's /api/v1/desktop/theme
+touch "$HOME/.xsettingsd"
+xsettingsd &
 # After xfwm4 starts, otherwise it clears the root to black. The checkpoints keep a
 # recent session for when the desktop is killed without a clean stop.
 ( sleep 3; xsetroot -solid '#2e3440'; while sleep 60; do "$0" save; done ) &

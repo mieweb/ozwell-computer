@@ -10,6 +10,7 @@ import { clipboardSupported, useClipboardSync } from './clipboard';
 import { openServerEvents, useServerEvent } from './events';
 import { JobsPanel, useJobs } from './jobs';
 import { Perf, UpdateControls } from './status';
+import { ThemeToggle } from './theme';
 
 type Participant = { participant_id: string; name: string; kind: string; color: string; cursor?: { x: number; y: number; visible: boolean } };
 type Cursor = Pick<Participant, 'participant_id' | 'name' | 'color'> & { x: number; y: number; visible: boolean };
@@ -158,6 +159,7 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
         </div>
         <Button id="btn-full" size="sm" variant="outline" title="Fullscreen"
           onClick={() => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen())}>Fullscreen</Button>
+        <ThemeToggle viewOnly={serverViewOnly} toast={showToast} />
         <span id="roster" className="flex gap-1">
           {[...roster.values()].map((p) => (
             <Badge key={p.participant_id} data-participant={p.participant_id} className="text-neutral-950" size="sm" title={p.kind} style={{ background: p.color }}>

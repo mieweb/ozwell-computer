@@ -16,8 +16,8 @@ describe('noVNC viewer', () => {
   beforeAll(async () => { browser = await chromium.launch({ executablePath: CHROME, args: ['--no-sandbox'] }); });
   afterAll(async () => { await browser?.close(); });
 
-  async function openViewer(): Promise<Page> {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, permissions: ['clipboard-read', 'clipboard-write'] });
+  async function openViewer(colorScheme: 'light' | 'dark' = 'light'): Promise<Page> {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 }, colorScheme, permissions: ['clipboard-read', 'clipboard-write'] });
     const page = await ctx.newPage();
     page.on('pageerror', (e) => { throw e; });
     await page.goto(`${URL_}/?token=${TOKEN}`);
@@ -28,10 +28,11 @@ describe('noVNC viewer', () => {
   }
 
   it('without a token shows the login view, which signs in and opens the viewer', async () => {
-    const ctx = await browser.newContext();
+    const ctx = await browser.newContext({ colorScheme: 'dark' });
     const page = await ctx.newPage();
     await page.goto(`${URL_}/?token=wrong`);
     await page.getByText('That token was not accepted.').waitFor();
+    expect(await page.evaluate(() => document.documentElement.classList.contains('dark'))).toBe(true); // follows the browser
     await page.fill('input[name=token]', TOKEN);
     await page.click('button[type=submit]');
     await page.waitForURL(`${URL_}/`);
@@ -103,6 +104,27 @@ describe('noVNC viewer', () => {
     expect(roster.some((r) => r.includes('test-bot'))).toBe(true);
     await a.context().close();
     await b.context().close();
+  });
+
+  it('the first viewer\'s prefers-color-scheme sets the desktop theme once; the toggle switches every viewer', async () => {
+    const exec = (cmd: string) => fetch(`${URL_}/api/v1/exec`, {
+      method: 'POST', headers: { ...auth, 'content-type': 'application/json' }, body: JSON.stringify({ cmd, timeout_ms: 5000 }),
+    });
+    const theme = async () => (await fetch(`${URL_}/api/v1/desktop/theme`, { headers: auth })).json();
+    await exec('rm -f ~/.xsettingsd');
+    const isDark = (dark: boolean) => document.documentElement.classList.contains('dark') === dark;
+    const dark = await openViewer('dark');
+    await expect.poll(theme, { timeout: 5000 }).toEqual({ scheme: 'dark', set: true });
+    expect(await dark.evaluate(isDark, true)).toBe(true);
+    const light = await openViewer('light');
+    await light.waitForFunction(isDark, true, { timeout: 5000 });
+    expect(await theme()).toEqual({ scheme: 'dark', set: true });
+    await light.click('#btn-theme');
+    await dark.waitForFunction(isDark, false, { timeout: 5000 });
+    expect(await theme()).toEqual({ scheme: 'light', set: true });
+    await dark.context().close();
+    await light.context().close();
+    await exec('rm -f ~/.xsettingsd');
   });
 
   it('the jobs panel streams a background command\'s output and cancels it', async () => {

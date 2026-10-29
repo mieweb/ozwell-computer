@@ -378,6 +378,11 @@ curl -N -H "$T" $B/events                                           # SSE: windo
   actions (`/a11y/act`) don't move the pointer.
 - **Agent presence:** send `X-Principal: {"id","name","kind":"agent"}` on input calls
   and the agent's cursor appears in the viewer.
+- **Light/dark theme:** `PUT /desktop/theme {"scheme":"dark"}` switches the desktop's
+  GTK theme (Adwaita / Adwaita-dark, served live by `xsettingsd` from
+  `~desktop/.xsettingsd`); `GET` returns `{scheme, set}`. The first viewer to connect
+  sends its browser's `prefers-color-scheme` with `if_unset: true`, so later viewers
+  don't change it. The toolbar's Light/Dark button switches the viewer and desktop.
 
 ## MCP
 
