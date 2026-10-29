@@ -22,6 +22,18 @@ fail() {
     exit 1
 }
 
+# The server's /health answers once it is up (its unit is Type=simple, so start returns at once).
+healthy() {
+    host=${OZWELL_COMPUTER_HOST:-127.0.0.1}
+    case "$host" in 0.0.0.0|::) host=127.0.0.1 ;; *:*) host="[$host]" ;; esac
+    url="http://$host:${OZWELL_COMPUTER_PORT:-8080}/health"
+    for _ in $(seq 60); do
+        node -e 'fetch(process.argv[1]).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))' "$url" && return 0
+        sleep 1
+    done
+    return 1
+}
+
 from_git() {
     url=${OZWELL_COMPUTER_UPDATE_URL#git+}
     repo=${url%%#*}
@@ -40,12 +52,18 @@ from_git() {
 
     # Build completely before installing, so a failed build leaves the install alone.
     git -C "$SRC" reset -q --hard "$after" && git -C "$SRC" clean -qffdx \
-        && make -C "$SRC" deps build && make -C "$SRC" install PREFIX="$PREFIX" || fail
-    systemctl daemon-reload
-    # Like the package's postinst: restart only the server, so Xvfb and the session
-    # (and every app open on the desktop) keep running, and pick up a changed watcher.
-    systemctl try-restart ozwell-computer.service
-    systemctl try-restart ozwell-computer-upgrade.path
+        && make -C "$SRC" deps build || fail
+    # Stop only the server (Xvfb and apps open on the desktop keep running): replacing
+    # its node_modules, native addons included, under the running process can crash it.
+    systemctl stop ozwell-computer.service || fail
+    if ! { make -C "$SRC" install PREFIX="$PREFIX" && systemctl daemon-reload \
+        && systemctl start ozwell-computer.service && healthy \
+        && systemctl try-restart ozwell-computer-upgrade.path; }; then
+        # No REVISION, so the next run installs again instead of reporting "unchanged".
+        rm -f "$PREFIX/REVISION"
+        systemctl start ozwell-computer.service
+        fail
+    fi
     echo "installed now: $after"
     status succeeded
 }
