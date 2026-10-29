@@ -1,16 +1,53 @@
 #!/bin/sh
-# Upgrade the ozwell-computer package. Run as root by ozwell-computer-upgrade.service
-# when the server (unprivileged) drops /var/lib/ozwell-computer/upgrade-request.
+# Upgrade ozwell-computer. Run as root by ozwell-computer-upgrade.service when the
+# server (unprivileged) drops /var/lib/ozwell-computer/upgrade-request.
 # Progress goes to upgrade.status ("<state> <epoch>") and upgrade.log in the same
 # directory, which the server reports through GET /api/v1/update.
+# OZWELL_COMPUTER_UPDATE_URL comes from this unit's own environment (never from the
+# request file): git+https://<repo>#<branch> builds that branch, anything else uses apt.
 set -u
 
 STATE=/var/lib/ozwell-computer
+PREFIX=@PREFIX@
+SRC=/usr/src/ozwell-computer
 
 status() {
     printf '%s %s\n' "$1" "$(date +%s)" > "$STATE/upgrade.status.tmp"
     chmod 0644 "$STATE/upgrade.status.tmp"
     mv -f "$STATE/upgrade.status.tmp" "$STATE/upgrade.status"
+}
+
+fail() {
+    status failed
+    exit 1
+}
+
+from_git() {
+    url=${OZWELL_COMPUTER_UPDATE_URL#git+}
+    repo=${url%%#*}
+    branch=${url##*#}
+    export HOME=${HOME:-/root} GIT_TERMINAL_PROMPT=0
+
+    before=$(cat "$PREFIX/REVISION" 2>/dev/null || true)
+    echo "installed: ${before:-none}"
+    [ -d "$SRC/.git" ] || git clone --branch "$branch" "$repo" "$SRC" || fail
+    # Full history and tags: ./package-version derives the version from them.
+    git -C "$SRC" remote set-url origin "$repo" \
+        && git -C "$SRC" fetch --tags --force origin "+refs/heads/$branch:refs/remotes/origin/$branch" || fail
+    after=$(git -C "$SRC" rev-parse "origin/$branch") || fail
+    echo "$branch is at $after"
+    if [ "$after" = "$before" ]; then status unchanged; exit 0; fi
+
+    # Build completely before installing, so a failed build leaves the install alone.
+    git -C "$SRC" reset -q --hard "$after" && git -C "$SRC" clean -qffdx \
+        && make -C "$SRC" deps build && make -C "$SRC" install PREFIX="$PREFIX" || fail
+    systemctl daemon-reload
+    # Like the package's postinst: restart only the server, so Xvfb and the session
+    # (and every app open on the desktop) keep running, and pick up a changed watcher.
+    systemctl try-restart ozwell-computer.service
+    systemctl try-restart ozwell-computer-upgrade.path
+    echo "installed now: $after"
+    status succeeded
 }
 
 # Mark running before taking the request, so the server never sees "no request,
@@ -20,6 +57,10 @@ rm -f "$STATE/upgrade-request"
 : > "$STATE/upgrade.log"
 chmod 0644 "$STATE/upgrade.log"
 exec >>"$STATE/upgrade.log" 2>&1
+
+case "${OZWELL_COMPUTER_UPDATE_URL:-}" in
+    git+https://*\#*) from_git; exit 0 ;;
+esac
 
 before=$(dpkg-query -W -f='${Version}' ozwell-computer 2>/dev/null || true)
 echo "installed: ${before:-none}"

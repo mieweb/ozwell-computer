@@ -14,6 +14,8 @@ UNITS    := ozwell-computer.service ozwell-computer-dbus.service ozwell-computer
 
 INSTALL      := install
 INSTALL_DATA := $(INSTALL) -m 0644
+# Config files (dpkg conffiles): keep an existing copy, like apt's --force-confold.
+conffile = [ -e $(2) ] || $(INSTALL_DATA) $(1) $(2)
 
 .PHONY: help deps build test install deb clean
 
@@ -46,8 +48,11 @@ install: build
 	# Runtime dependencies only, and the release version (the installed app has no git checkout).
 	cd $(DESTAPP) && npm prune --omit=dev --no-audit --no-fund >/dev/null \
 		&& npm pkg set version="$$($(CURDIR)/package-version node)"
+	# The source commit, for in-app updates from git (contrib/upgrade.sh).
+	git rev-parse --verify -q HEAD > $(DESTAPP)/REVISION 2>/dev/null || rm -f $(DESTAPP)/REVISION
 	$(INSTALL) -m 0755 contrib/xfce/session.sh $(DESTAPP)/bin/ozwell-computer-session
-	$(INSTALL) -m 0755 contrib/upgrade.sh $(DESTAPP)/bin/ozwell-computer-upgrade
+	sed 's|@PREFIX@|$(PREFIX)|g' contrib/upgrade.sh > $(DESTAPP)/bin/ozwell-computer-upgrade
+	chmod 0755 $(DESTAPP)/bin/ozwell-computer-upgrade
 	$(INSTALL) -d $(DESTDIR)/usr/bin
 	ln -sf $(PREFIX)/dist/cli.js $(DESTDIR)/usr/bin/ozwell-computer
 	$(INSTALL) -d $(UNIT_DIR)
@@ -55,9 +60,9 @@ install: build
 		sed 's|@PREFIX@|$(PREFIX)|g' contrib/systemd/$$u > $(UNIT_DIR)/$$u && chmod 0644 $(UNIT_DIR)/$$u || exit 1; \
 	done
 	$(INSTALL) -d $(DESTDIR)/etc/default $(XFCONF) $(DESTDIR)/usr/share/applications
-	$(INSTALL_DATA) contrib/default/ozwell-computer $(DESTDIR)/etc/default/ozwell-computer
-	$(INSTALL_DATA) contrib/xfce/mimeapps.list $(DESTDIR)/etc/xdg/mimeapps.list
-	$(INSTALL_DATA) contrib/xfce/xfconf/*.xml $(XFCONF)/
+	$(call conffile,contrib/default/ozwell-computer,$(DESTDIR)/etc/default/ozwell-computer)
+	$(call conffile,contrib/xfce/mimeapps.list,$(DESTDIR)/etc/xdg/mimeapps.list)
+	for f in contrib/xfce/xfconf/*.xml; do $(call conffile,$$f,$(XFCONF)/$${f##*/}) || exit 1; done
 	$(INSTALL_DATA) contrib/xfce/applications/*.desktop $(DESTDIR)/usr/share/applications/
 
 deb:

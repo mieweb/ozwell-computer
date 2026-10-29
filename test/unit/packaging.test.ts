@@ -24,3 +24,33 @@ describe('maintainer scripts', () => {
     expect(sh).toContain('DPkg::Lock::Timeout');
   });
 });
+
+describe('git update channel', () => {
+  const sh = read('contrib/upgrade.sh');
+  const git = /^from_git\(\) \{\n([\s\S]*?)\n\}$/m.exec(sh)?.[1] ?? '';
+
+  it('upgrade.sh builds before installing and restarts only the server', () => {
+    expect(git.indexOf('make -C "$SRC" deps build')).toBeGreaterThan(-1);
+    expect(git.indexOf('make -C "$SRC" deps build')).toBeLessThan(git.indexOf('install PREFIX='));
+    const restarted = [...git.matchAll(/systemctl\s+(?:try-)?restart\s+(\S+)/g)].map((m) => m[1]);
+    expect(restarted).toEqual(['ozwell-computer.service', 'ozwell-computer-upgrade.path']);
+    expect(git.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n')).not.toMatch(/xvfb|session|dbus/);
+  });
+
+  it('upgrade.sh compares against the installed REVISION and skips unchanged builds', () => {
+    expect(git).toContain('before=$(cat "$PREFIX/REVISION"');
+    expect(git).toMatch(/if \[ "\$after" = "\$before" \]; then status unchanged; exit 0; fi/);
+  });
+
+  it('the upgrade unit takes its channel from root-owned config, not the request file', () => {
+    expect(read('contrib/systemd/ozwell-computer-upgrade.service')).toMatch(/^EnvironmentFile=-\/etc\/default\/ozwell-computer$/m);
+    expect(sh).not.toMatch(/(cat|\.|source)\s+"?\$STATE\/upgrade-request/);
+  });
+
+  it('make install records the source commit and keeps existing config files', () => {
+    const mk = read('Makefile');
+    expect(mk).toMatch(/git rev-parse --verify -q HEAD > \$\(DESTAPP\)\/REVISION/);
+    expect(mk).toContain('$(call conffile,contrib/default/ozwell-computer,');
+    expect(mk).toMatch(/sed 's\|@PREFIX@\|\$\(PREFIX\)\|g' contrib\/upgrade\.sh/);
+  });
+});
