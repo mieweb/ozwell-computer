@@ -153,6 +153,40 @@ describe('tools', () => {
   });
 });
 
+describe('quota', () => {
+  it('refuses create_computer at the per-user limit and lists the existing computers', async () => {
+    const provider = memoryProvider(instance.url, 'inst-token');
+    const q = await buildServer({ provider, catalog, client: new InstanceClient(), version: 't', psk: PSK, readyTimeoutMs: 5000, maxInstances: 1 });
+    await q.listen({ port: 0, host: '127.0.0.1' });
+    const prev = base;
+    base = `http://127.0.0.1:${(q.server.address() as any).port}`;
+    try {
+      const tools = (await rpc('carol', 'tools/list')).body.result.tools;
+      expect(tools.find((t: any) => t.name === 'create_computer').description).toMatch(/at most 1 computer/);
+      const a = (await tool('carol', 'create_computer', { display_name: 'first' })).data;
+      const r = await tool('carol', 'create_computer');
+      expect(r.isError).toBe(true);
+      expect(r.data.error.reason).toBe('quota_exceeded');
+      expect(r.data.error.message).toMatch(/destroy_computer/);
+      expect(r.data.computers.map((c: any) => [c.instance_id, c.display_name])).toEqual([[a.instance_id, 'first']]);
+      expect((await provider.list('carol')).length).toBe(1);
+      // Quota is per user.
+      expect((await tool('dave', 'create_computer')).isError).toBe(false);
+      // Destroying frees it up.
+      await tool('carol', 'destroy_computer', { instance_id: a.instance_id });
+      expect((await tool('carol', 'create_computer')).isError).toBe(false);
+    } finally {
+      base = prev;
+      await q.close();
+    }
+  });
+
+  it('is unlimited and unmentioned by default', async () => {
+    const tools = (await rpc('alice', 'tools/list')).body.result.tools;
+    expect(tools.find((t: any) => t.name === 'create_computer').description).not.toMatch(/at most/);
+  });
+});
+
 describe('providers', () => {
   it('dispatches on the URI scheme', async () => {
     registerProvider('memtest', (uri) => ({ ...memoryProvider('x', 'y'), scheme: `memtest:${uri.hostname}` }));
