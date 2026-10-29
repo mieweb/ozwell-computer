@@ -39,7 +39,10 @@ describe('noVNC viewer', () => {
     }, null, { timeout: 15000 });
     // Toolbar resource readout from /api/v1/metrics (CPU appears after the second sample).
     await page.waitForFunction(() => /CPU \d+%.*Mem \d+ MiB/.test(document.getElementById('perf')?.textContent ?? ''), null, { timeout: 15000 });
-    expect(await page.locator('#btn-update').isHidden()).toBe(true); // nothing newer published
+    // Shown iff the server reports something to act on (on the git channel main may have moved).
+    const u = await (await fetch(`${URL_}/api/v1/update`, { headers: auth })).json();
+    const shown = u.supported && (u.available || ['requested', 'running', 'failed'].includes(u.upgrade.state));
+    await page.waitForFunction((v) => (document.getElementById('btn-update') as HTMLButtonElement).hidden === !v, shown, { timeout: 5000 });
     const box = (await page.locator('#screen canvas').boundingBox())!;
     // Move the mouse over the canvas; the server pointer follows (scaled).
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
