@@ -56,6 +56,9 @@ export async function readInstalled(appDir: string): Promise<{ version: string; 
 
 export interface PackageEntry { version: string; architecture: string }
 
+/** A build from a checkout without release tags: package-version reports 0.0.0, optionally with a ~/+ suffix. */
+export const isDevelopmentVersion = (version: string) => /^0\.0\.0([~+]|$)/.test(version);
+
 /** Versions of `name` listed in an APT `Packages` index. */
 export function parsePackages(text: string, name = PACKAGE): PackageEntry[] {
   const out: PackageEntry[] = [];
@@ -139,7 +142,7 @@ export class Updater {
       this.current = (await run('dpkg-query', ['-W', '-f=${Version}', PACKAGE])).stdout.trim() || null;
       this.arch = (await run('dpkg', ['--print-architecture'])).stdout.trim();
       // package-version falls back to 0.0.0 when built without git tags.
-      if (this.current && /^0\.0\.0([~+]|$)/.test(this.current)) return `development build (${this.current}): its version can't be compared with releases`;
+      if (this.current && isDevelopmentVersion(this.current)) return `development build (${this.current}): its version can't be compared with releases`;
       return null;
     } catch {
       return `not installed from the ${PACKAGE} Debian package`;
