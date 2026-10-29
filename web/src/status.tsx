@@ -15,7 +15,8 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
     let prev: Sample | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
-    const tick = async (next: number) => {
+    const tick = async () => {
+      const hadSample = prev !== null;
       try {
         const res = await fetch('/api/v1/metrics', { credentials: 'same-origin' });
         if (!res.ok) throw new Error(res.statusText);
@@ -28,10 +29,10 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
         prev = null;
       }
       if (stopped) return;
-      timer = setTimeout(() => tick(intervalMs), next);
+      // A first sample (also after a failure): take the second quickly so the rates fill in within ~1s.
+      timer = setTimeout(tick, !hadSample && prev !== null ? 1000 : intervalMs);
     };
-    // A quick second sample so the values replace the placeholders within ~1s.
-    void tick(1000);
+    void tick();
     return () => { stopped = true; clearTimeout(timer); };
   }, [intervalMs]);
   return (
