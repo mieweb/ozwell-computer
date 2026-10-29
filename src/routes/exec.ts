@@ -243,8 +243,17 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
     preHandler: gate, bodyLimit: MAX_UPLOAD,
     schema: {
       tags: ['fs'], summary: 'Upload a file', querystring: pathQuery,
-      description: 'The raw request body (any content type, up to 2 GiB) is written atomically to path, creating parent directories. Optionally verified against sha256.',
+      description: 'The request body (up to 2 GiB) is written atomically to path, creating parent directories. Optionally verified against sha256. ' +
+        'Send application/octet-stream (or any type without a built-in parser) to write the bytes unchanged; ' +
+        'application/json bodies are parsed and re-serialized, and text/plain is decoded as UTF-8.',
       response: { 200: upload, ...errors },
+    },
+    // Documentation only: a body schema would make Fastify validate the upload stream.
+    config: {
+      swaggerTransform: ({ schema, url }) => ({
+        schema: { ...schema, body: { content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary', description: 'File contents' } } } } },
+        url,
+      }),
     },
   }, async (req) => {
     const q = req.query as any;

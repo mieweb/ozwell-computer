@@ -38,9 +38,10 @@ describe('OpenAPI document', () => {
     expect(missing).toEqual([]);
   });
 
-  it('documents binary responses with their media types', () => {
+  it('documents binary responses and uploads with their media types', () => {
     expect(Object.keys(paths['/api/v1/screenshot'].get.responses['200'].content)).toEqual(['image/png', 'image/jpeg', 'image/webp', 'application/json']);
     expect(paths['/api/v1/fs/content'].get.responses['206'].content['application/octet-stream'].schema.format).toBe('binary');
+    expect(paths['/api/v1/fs/content'].put.requestBody.content['application/octet-stream'].schema.format).toBe('binary');
   });
 
   it('serializes replies through the response schema without losing fields', async () => {
