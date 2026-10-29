@@ -15,6 +15,7 @@
 --depends xfce4-session
 --depends xfce4-panel
 --depends xfconf
+--depends xsettingsd
 --depends xfce4-terminal
 --depends thunar
 --depends adwaita-icon-theme

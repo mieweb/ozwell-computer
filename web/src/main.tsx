@@ -2,7 +2,11 @@ import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Login } from './Login';
 import { Viewer } from './Viewer';
+import { applyScheme, prefersScheme } from './theme';
 import './index.css';
+
+// Until the viewer loads the desktop's theme (and on the login view), follow the browser.
+applyScheme(prefersScheme());
 
 type Capabilities = { display: { name: string }; features: { vnc: { view_only: boolean } } };
 

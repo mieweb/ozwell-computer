@@ -107,6 +107,57 @@
         }
       }
     },
+    "/api/v1/desktop/theme": {
+      "get": {
+        "summary": "Desktop color scheme; set is false until a client has chosen one",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      },
+      "put": {
+        "summary": "Switch the desktop GTK theme to light or dark",
+        "tags": [
+          "system"
+        ],
+        "description": "With if_unset, only applies when no scheme has been chosen yet (the viewer sends the browser's prefers-color-scheme this way on first connection).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "scheme"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "scheme": {
+                    "type": "string",
+                    "enum": [
+                      "light",
+                      "dark"
+                    ]
+                  },
+                  "if_unset": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Default Response"
+          }
+        }
+      }
+    },
     "/api/v1/screenshot": {
       "get": {
         "summary": "Capture the screen",

@@ -3,6 +3,7 @@ import { ApiError } from '../errors.js';
 import type { AppContext } from '../server.js';
 import { parsePrincipal } from '../presence/index.js';
 import type { ImageFormat } from '../image.js';
+import { getTheme, setTheme, type ColorScheme } from '../theme.js';
 
 export function principalOf(req: FastifyRequest) {
   return parsePrincipal(req.headers['x-principal']);
@@ -58,6 +59,27 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
     async (_req, reply) => reply.code(202).send(await updater().apply()));
 
   app.get('/api/v1/displays', { schema: { tags: ['system'] } }, async () => ({ displays: await desktop.displays() }));
+
+  // ---- desktop theme
+  app.get('/api/v1/desktop/theme', {
+    schema: { tags: ['system'], summary: 'Desktop color scheme; set is false until a client has chosen one' },
+  }, async () => getTheme());
+  app.put('/api/v1/desktop/theme', {
+    schema: {
+      tags: ['system'],
+      summary: 'Switch the desktop GTK theme to light or dark',
+      description: 'With if_unset, only applies when no scheme has been chosen yet (the viewer sends the browser\'s prefers-color-scheme this way on first connection).',
+      body: {
+        type: 'object', required: ['scheme'], additionalProperties: false,
+        properties: { scheme: { type: 'string', enum: ['light', 'dark'] }, if_unset: { type: 'boolean' } },
+      },
+    },
+  }, async (req) => {
+    const b = req.body as { scheme: ColorScheme; if_unset?: boolean };
+    const state = await setTheme(b.scheme, config.display, b.if_unset);
+    desktop.bus.publish('desktop.theme', state);
+    return state;
+  });
 
   app.get<{ Querystring: Record<string, string> }>('/api/v1/screenshot', {
     schema: {
