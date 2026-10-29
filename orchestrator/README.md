@@ -47,6 +47,7 @@ stateDiagram-v2
     Starting --> Stopped: status failed, exited, dead, missing or offline
     Ready --> Ready: proxied tool calls
     Ready --> Stopped: container stops
+    Stopped --> Starting: start_computer
     Starting --> [*]: destroy_computer
     Ready --> [*]: destroy_computer
     Stopped --> [*]: destroy_computer
