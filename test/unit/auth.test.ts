@@ -86,8 +86,8 @@ describe('auth matrix', () => {
     expect((await app.inject({ url: '/novnc/core/rfb.js' })).statusCode).toBe(200);
   });
   it('openapi requires auth and documents routes', async () => {
-    expect((await app.inject({ url: '/api/v1/openapi.json' })).statusCode).toBe(401);
-    const r = await app.inject({ url: '/api/v1/openapi.json', headers: { authorization: 'Bearer ' + TOKEN } });
+    expect((await app.inject({ url: '/api/docs/json' })).statusCode).toBe(401);
+    const r = await app.inject({ url: '/api/docs/json', headers: { authorization: 'Bearer ' + TOKEN } });
     expect(r.statusCode).toBe(200);
     expect(Object.keys(r.json().paths)).toContain('/api/v1/screenshot');
   });

@@ -12,6 +12,7 @@ import { MAX_WAIT_MS, jobsFor } from '../process/jobs.js';
 import { loadPty } from '../process/pty.js';
 import { parseRange, safePath, signedUrl, verifySignature, type SignMethod } from '../fs/index.js';
 import { deriveKey, generateToken } from '../auth/token.js';
+import { errors, execResult, fsPath, fsStat, jobView, media, ok, prop, record, upload } from './schemas.js';
 
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 
@@ -79,16 +80,34 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
   app.post('/api/v1/exec', {
     preHandler: gate,
     schema: {
-      tags: ['exec'],
-      querystring: { type: 'object', properties: { stream: { type: 'string' } } },
+      tags: ['exec'], summary: 'Run a command',
+      description: 'Runs a non-interactive command and returns its output. With wait_ms it runs as a background job: 200 with the job if it ' +
+        'finished in time, else 202 with a running job to poll via /exec/jobs/{id}. With ?stream=1 the response is NDJSON: ' +
+        '{stream, data} chunks then {exit: result}. Disabled when OZWELL_COMPUTER_EXEC=false.',
+      querystring: { type: 'object', properties: { stream: prop('string', 'Stream output as NDJSON when 1 or true') } },
       body: {
         type: 'object', required: ['cmd'], additionalProperties: false,
         properties: {
-          cmd: { type: 'string', minLength: 1 }, args: { type: 'array', items: { type: 'string' } }, cwd: { type: 'string' },
-          env: { type: 'object', additionalProperties: { type: 'string' } }, timeout_ms: { type: 'integer', minimum: 1 },
-          stdin: { type: 'string' }, shell: { type: 'boolean' },
-          wait_ms: { type: 'integer', minimum: 0, maximum: MAX_WAIT_MS },
+          cmd: prop('string', 'Executable, or a shell command line when args is empty (run through /bin/sh if it contains shell syntax)', { minLength: 1 }),
+          args: prop('array', 'Arguments; when given, cmd runs directly without a shell', { items: { type: 'string' } }),
+          cwd: prop('string', 'Working directory'),
+          env: prop('object', 'Extra environment variables', { additionalProperties: { type: 'string' } }),
+          timeout_ms: prop('integer', 'Kill the process group after this long (default 60 s; 1 h for jobs)', { minimum: 1 }),
+          stdin: prop('string', 'Text fed to standard input'),
+          shell: prop('boolean', 'Force (true) or prevent (false) running through /bin/sh'),
+          wait_ms: prop('integer', `Run as a background job and wait up to this long for it (max ${MAX_WAIT_MS})`, { minimum: 0, maximum: MAX_WAIT_MS }),
         },
+      },
+      response: {
+        200: {
+          description: 'The command finished: its result, the job view when wait_ms was given, or an NDJSON stream with ?stream=1',
+          content: {
+            'application/json': { schema: { oneOf: [execResult, jobView] } },
+            'application/x-ndjson': { schema: { type: 'string' } },
+          },
+        },
+        202: { ...jobView, description: 'Still running after wait_ms; poll /exec/jobs/{job_id}' },
+        ...errors,
       },
     },
   }, async (req, reply) => {
@@ -115,19 +134,34 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
     reply.raw.end();
   });
 
-  const jobParams = { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] };
+  const jobParams = { type: 'object', properties: { id: prop('string', 'Job id (j-xxxxxxxxxxxx)') }, required: ['id'] };
   app.get('/api/v1/exec/jobs/:id', {
     preHandler: gate,
     schema: {
       tags: ['exec'], summary: 'Wait for a background command and read its output', params: jobParams,
-      querystring: { type: 'object', properties: { wait_ms: { type: 'integer', minimum: 0, maximum: MAX_WAIT_MS }, stdout_offset: { type: 'integer', minimum: 0 }, stderr_offset: { type: 'integer', minimum: 0 } } },
+      description: 'Returns as soon as the job finishes or wait_ms elapses. Jobs survive server restarts and are kept for 24 h after finishing.',
+      querystring: {
+        type: 'object',
+        properties: {
+          wait_ms: prop('integer', 'How long to wait for the job to finish (default 0)', { minimum: 0, maximum: MAX_WAIT_MS }),
+          stdout_offset: prop('integer', 'Return stdout from this byte offset (from a previous view)', { minimum: 0 }),
+          stderr_offset: prop('integer', 'Return stderr from this byte offset (from a previous view)', { minimum: 0 }),
+        },
+      },
+      response: { 200: jobView, ...errors },
     },
   }, async (req) => {
     const q = req.query as { wait_ms?: number; stdout_offset?: number; stderr_offset?: number };
     return jobs.wait((req.params as any).id, q.wait_ms ?? 0, { stdout: q.stdout_offset, stderr: q.stderr_offset });
   });
-  app.delete('/api/v1/exec/jobs/:id', { preHandler: gate, schema: { tags: ['exec'], summary: 'Cancel a background command', params: jobParams } },
-    async (req) => jobs.cancel((req.params as any).id));
+  app.delete('/api/v1/exec/jobs/:id', {
+    preHandler: gate,
+    schema: {
+      tags: ['exec'], summary: 'Cancel a background command', params: jobParams,
+      description: 'Kills the job\'s process group if it is running, then returns its view (waiting up to 2 s for it to end).',
+      response: { 200: jobView, ...errors },
+    },
+  }, async (req) => jobs.cancel((req.params as any).id));
 
   app.get('/api/v1/pty', { websocket: true, preHandler: gate, schema: { hide: true } }, async (socket, req) => {
     const pty = await loadPty();
@@ -160,9 +194,26 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
     socket.on('close', () => { try { term.kill(); } catch { /* gone */ } });
   });
 
-  const pathQuery = { type: 'object', required: ['path'], properties: { path: { type: 'string' }, sha256: { type: 'string' }, recursive: { type: 'string' } } };
+  const pathQuery = {
+    type: 'object', required: ['path'],
+    properties: {
+      path: fsPath,
+      sha256: prop('string', 'Expected SHA-256 (hex) of the upload; a mismatch fails with checksum_mismatch and nothing is written'),
+      recursive: prop('string', 'Delete a directory and its contents when 1 or true'),
+    },
+  };
+  const fileContent = (description: string) => media(description, ['application/octet-stream'], undefined, {
+    headers: { 'accept-ranges': prop('string', 'Always bytes'), 'last-modified': prop('string', 'File modification time') },
+  });
 
-  app.get('/api/v1/fs', { preHandler: gate, schema: { tags: ['fs'], querystring: pathQuery } }, async (req) => {
+  app.get('/api/v1/fs', {
+    preHandler: gate,
+    schema: {
+      tags: ['fs'], summary: 'Stat a path or list a directory', querystring: pathQuery,
+      description: 'Returns the entry; directories also include their sorted entries. Only path is used.',
+      response: { 200: fsStat, ...errors },
+    },
+  }, async (req) => {
     const path = safePath(root, (req.query as any).path);
     const info = await statEntry(path);
     if (info.type !== 'directory') return info;
@@ -174,15 +225,49 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
     return { ...info, entries };
   });
 
-  app.get('/api/v1/fs/content', { preHandler: gate, schema: { tags: ['fs'], querystring: pathQuery } }, async (req, reply) =>
+  app.get('/api/v1/fs/content', {
+    preHandler: gate,
+    schema: {
+      tags: ['fs'], summary: 'Download a file', querystring: pathQuery,
+      description: 'Streams a regular file. Supports a single Range: bytes=start-end header. Only path is used.',
+      response: {
+        200: fileContent('The whole file'),
+        206: fileContent('The requested byte range (see Content-Range)'),
+        ...errors,
+      },
+    },
+  }, async (req, reply) =>
     sendFile(req, reply, safePath(root, (req.query as any).path)));
 
-  app.put('/api/v1/fs/content', { preHandler: gate, bodyLimit: MAX_UPLOAD, schema: { tags: ['fs'], querystring: pathQuery } }, async (req) => {
+  app.put('/api/v1/fs/content', {
+    preHandler: gate, bodyLimit: MAX_UPLOAD,
+    schema: {
+      tags: ['fs'], summary: 'Upload a file', querystring: pathQuery,
+      description: 'The request body (up to 2 GiB) is written atomically to path, creating parent directories. Optionally verified against sha256. ' +
+        'Send application/octet-stream (or any type without a built-in parser) to write the bytes unchanged; ' +
+        'application/json bodies are parsed and re-serialized, and text/plain is decoded as UTF-8.',
+      response: { 200: upload, ...errors },
+    },
+    // Documentation only: a body schema would make Fastify validate the upload stream.
+    config: {
+      swaggerTransform: ({ schema, url }) => ({
+        schema: { ...schema, body: { content: { 'application/octet-stream': { schema: { type: 'string', format: 'binary', description: 'File contents' } } } } },
+        url,
+      }),
+    },
+  }, async (req) => {
     const q = req.query as any;
     return receiveFile(req.body, req.raw, safePath(root, q.path), q.sha256);
   });
 
-  app.delete('/api/v1/fs', { preHandler: gate, schema: { tags: ['fs'], querystring: pathQuery } }, async (req) => {
+  app.delete('/api/v1/fs', {
+    preHandler: gate,
+    schema: {
+      tags: ['fs'], summary: 'Delete a file or directory', querystring: pathQuery,
+      description: 'Directories require recursive=1.',
+      response: { 200: ok, ...errors },
+    },
+  }, async (req) => {
     const q = req.query as any;
     const path = safePath(root, q.path);
     const recursive = q.recursive === '1' || q.recursive === 'true';
@@ -193,7 +278,11 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
 
   app.post('/api/v1/fs/move', {
     preHandler: gate,
-    schema: { tags: ['fs'], body: { type: 'object', required: ['from', 'to'], properties: { from: { type: 'string' }, to: { type: 'string' } } } },
+    schema: {
+      tags: ['fs'], summary: 'Move or rename a path', description: 'Creates the destination\'s parent directories.',
+      body: { type: 'object', required: ['from', 'to'], properties: { from: { ...fsPath, description: 'Existing path' }, to: { ...fsPath, description: 'New path' } } },
+      response: { 200: ok, ...errors },
+    },
   }, async (req) => {
     const b = req.body as { from: string; to: string };
     const to = safePath(root, b.to);
@@ -204,7 +293,11 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
 
   app.post('/api/v1/fs/mkdir', {
     preHandler: gate,
-    schema: { tags: ['fs'], body: { type: 'object', required: ['path'], properties: { path: { type: 'string' } } } },
+    schema: {
+      tags: ['fs'], summary: 'Create a directory', description: 'Creates parents as needed; succeeds if it already exists.',
+      body: { type: 'object', required: ['path'], properties: { path: fsPath } },
+      response: { 200: ok, ...errors },
+    },
   }, async (req) => {
     await mkdir(safePath(root, (req.body as any).path), { recursive: true });
     return { ok: true };
@@ -213,10 +306,23 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
   app.post('/api/v1/fs/sign', {
     preHandler: gate,
     schema: {
-      tags: ['fs'],
+      tags: ['fs'], summary: 'Create a signed URL for a file',
+      description: 'The URL downloads (GET) or uploads (PUT, raw body, optional ?sha256=) the file without any other credentials until it expires.',
       body: {
         type: 'object', required: ['path'],
-        properties: { path: { type: 'string' }, method: { type: 'string', enum: ['GET', 'PUT'] }, ttl_s: { type: 'integer', minimum: 1, maximum: 7 * 86400 } },
+        properties: {
+          path: fsPath,
+          method: prop('string', 'What the URL allows (default GET)', { enum: ['GET', 'PUT'] }),
+          ttl_s: prop('integer', 'Lifetime in seconds (default 3600)', { minimum: 1, maximum: 7 * 86400 }),
+        },
+      },
+      response: {
+        200: record('A signed URL', {
+          url: prop('string', 'Server-relative URL (/files/...?exp=...&sig=...)'),
+          expires_at: prop('integer', 'Expiry (seconds since epoch)'),
+          method: prop('string', 'The method the URL is valid for', { enum: ['GET', 'PUT'] }),
+        }),
+        ...errors,
       },
     },
   }, async (req) => {

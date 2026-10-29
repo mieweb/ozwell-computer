@@ -44,6 +44,8 @@ export const ConfigSchema = z.object({
   open: bool,
   /** Extra origins allowed to embed the viewer in a frame (CSP frame-ancestors). */
   frameAncestors: origins,
+  /** Fail replies that their response schema would change (tests and the dev container). */
+  strictResponses: bool,
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -69,6 +71,7 @@ export function defaults(): Config {
     updateUrl: 'https://github.com/mieweb/ozwell-computer/releases/latest/download/Packages',
     open: false,
     frameAncestors: [],
+    strictResponses: false,
   };
 }
 
@@ -91,6 +94,7 @@ const ENV_MAP: Record<string, keyof Config> = {
   OZWELL_COMPUTER_UPDATE_URL: 'updateUrl',
   OZWELL_COMPUTER_OPEN: 'open',
   OZWELL_COMPUTER_FRAME_ANCESTORS: 'frameAncestors',
+  OZWELL_COMPUTER_STRICT_RESPONSES: 'strictResponses',
 };
 
 const FLAG_MAP: Record<string, keyof Config> = {
@@ -120,7 +124,6 @@ const BOOLEAN_FLAGS = new Set(['auth-disabled', 'no-auth', 'spawn-xvfb', 'view-o
 
 export interface ParsedArgs {
   overrides: Partial<Record<keyof Config, unknown>>;
-  printOpenapi: boolean;
   printMcpTools: boolean;
   help: boolean;
   version: boolean;
@@ -128,13 +131,11 @@ export interface ParsedArgs {
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const overrides: Partial<Record<keyof Config, unknown>> = {};
-  let printOpenapi = false;
   let printMcpTools = false;
   let help = false;
   let version = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--print-openapi') { printOpenapi = true; continue; }
     if (a === '--print-mcp-tools') { printMcpTools = true; continue; }
     if (a === '-h' || a === '--help') { help = true; continue; }
     if (a === '-v' || a === '--version') { version = true; continue; }
@@ -153,7 +154,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
     overrides[key] = value;
   }
-  return { overrides, printOpenapi, printMcpTools, help, version };
+  return { overrides, printMcpTools, help, version };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] = []): { config: Config; args: ParsedArgs } {
@@ -190,6 +191,5 @@ Usage: ozwell-computer [flags]
   --update-url <url|off>  OZWELL_COMPUTER_UPDATE_URL: APT Packages index, or git+https://<repo>#<branch>, checked for updates
   --open                  OZWELL_COMPUTER_OPEN=true: open the viewer in the default browser
   --frame-ancestors <o>   OZWELL_COMPUTER_FRAME_ANCESTORS: origins (space/comma separated) allowed to embed the viewer
-  --print-openapi         Print the OpenAPI document and exit
   --print-mcp-tools       Print the MCP tool catalog (name, description, input schema) and exit
 `;
