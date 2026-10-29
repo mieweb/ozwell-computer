@@ -76,8 +76,9 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
 
   const novncDir = dirname(dirname(require.resolve('@novnc/novnc'))); // exports → core/rfb.js
   await app.register(fastifyStatic, { root: novncDir, prefix: '/novnc/', decorateReply: false, index: false });
-  const here = dirname(fileURLToPath(import.meta.url));
-  await app.register(fastifyStatic, { root: join(here, 'web', 'static'), prefix: '/static/', decorateReply: false, index: false });
+  // Vite builds the viewer into dist/web/static; resolved from dist/ or src/ (npm run dev).
+  const staticDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'web', 'static');
+  await app.register(fastifyStatic, { root: staticDir, prefix: '/static/', decorateReply: false, index: false });
 
   app.get('/api/v1/openapi.json', { schema: { hide: true } }, async () => app.swagger());
 

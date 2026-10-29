@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["es2023", "dom"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowJs": true,
+    "types": ["node", "vite/client"],
+    "paths": { "/novnc/core/rfb.js": ["./src/rfb.d.ts"] }
+  },
+  "include": ["src", "vite.config.ts"]
+}

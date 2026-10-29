@@ -12,8 +12,8 @@ export function loginPage(_req: FastifyRequest, reply: FastifyReply, failed: boo
     .header('cache-control', 'no-store')
     .header('content-security-policy', CSP)
     .send(`<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ozwell-computer: sign in</title><link rel="stylesheet" href="/static/viewer.css"></head>
+<html lang="en" class="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ozwell-computer: sign in</title><link rel="stylesheet" href="/static/login.css"></head>
 <body class="login">
 <form method="get" action="/" class="login-box">
   <h1>ozwell-computer</h1>
@@ -24,32 +24,13 @@ export function loginPage(_req: FastifyRequest, reply: FastifyReply, failed: boo
   return reply;
 }
 
+// The React viewer (web/) mounts on #root; Vite builds it to /static/viewer.{js,css}.
 export function viewerHtml(title: string, viewOnly: boolean) {
   return `<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en" class="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><link rel="stylesheet" href="/static/viewer.css"></head>
 <body data-view-only="${viewOnly ? '1' : '0'}">
-<div id="toolbar">
-  <span id="status">connecting…</span>
-  <span id="perf" title="Container resource use (from /api/v1/metrics)"></span>
-  <button id="btn-update" hidden></button>
-  <span class="spacer"></span>
-  <button id="btn-cad" title="Send Ctrl+Alt+Del">Ctrl+Alt+Del</button>
-  <button id="btn-super" title="Send Super">Super</button>
-  <button id="btn-alttab" title="Send Alt+Tab">Alt+Tab</button>
-  <button id="btn-clip" title="Clipboard">Clipboard</button>
-  <label title="Ignore my input"><input type="checkbox" id="chk-viewonly"> view only</label>
-  <select id="sel-scale" title="Scaling">
-    <option value="fit">fit</option><option value="remote">1:1</option>
-  </select>
-  <button id="btn-full" title="Fullscreen">Fullscreen</button>
-  <span id="roster"></span>
-</div>
-<div id="clip-panel" hidden>
-  <textarea id="clip-text" rows="4" placeholder="Remote clipboard (edit and press Send)"></textarea>
-  <button id="clip-send">Send</button><button id="clip-refresh">Refresh</button>
-</div>
-<div id="screen-wrap"><div id="screen"></div><div id="overlay"></div><div id="toast" hidden></div></div>
+<div id="root"></div>
 <script type="module" src="/static/viewer.js"></script>
 </body></html>`;
 }

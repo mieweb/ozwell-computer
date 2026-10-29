@@ -14,8 +14,10 @@ const XK = { Control_L: 0xffe3, Shift_L: 0xffe1, Super_L: 0xffeb, Super_R: 0xffe
 const TERMINALS = /^(xterm|uxterm|xfce4-terminal|gnome-terminal|konsole|kitty|alacritty|terminator|tilix|urxvt|st)/i;
 const COPY_WAIT_MS = 1500;
 
+export const clipboardSupported = window.isSecureContext && !!navigator.clipboard;
+
 export function initClipboard({ getRfb, events, toast }) {
-  const supported = window.isSecureContext && !!navigator.clipboard;
+  const supported = clipboardSupported;
   const api = (path, opts = {}) =>
     fetch(path, { credentials: 'same-origin', ...opts, headers: { 'content-type': 'application/json', ...(opts.headers || {}) } })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.statusText))));

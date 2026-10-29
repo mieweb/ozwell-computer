@@ -22,7 +22,7 @@ help:
 	@echo ""
 	@echo "Targets:"
 	@echo "  deps     install dependencies (npm ci)"
-	@echo "  build    compile the server and copy viewer assets (npm run build)"
+	@echo "  build    compile the server and build the viewer (npm run build)"
 	@echo "  test     run the full test suite (npm test; uses the compose dev container)"
 	@echo "  install  stage the application, units and config into DESTDIR (default /)"
 	@echo "  deb      build ozwell-computer_<version>_amd64.deb with fpm"
