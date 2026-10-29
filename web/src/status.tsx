@@ -1,6 +1,7 @@
 // Toolbar: container resource use (from the Prometheus endpoint) and update notices.
 import { Fragment, useEffect, useState } from 'react';
 import { Button, type ButtonProps } from '@mieweb/ui/components/Button';
+import { useServerEvent } from './events';
 
 type Metrics = { cpu?: number; mem?: number; limit?: number; vnc?: number };
 type Sample = Metrics & { t: number };
@@ -96,21 +97,13 @@ function updateView(s: UpdateStatus | null): { label: string; title: string; var
   };
 }
 
-export function UpdateButton({ events }: { events: EventSource }) {
+export function UpdateButton() {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
   const busy = isBusy(status);
 
-  useEffect(() => {
-    const onStatus = (e: MessageEvent) => setStatus(JSON.parse(e.data));
-    // After an upgrade the server restarts: refresh on reconnect.
-    const onHello = () => updateApi('/api/v1/update').then(setStatus, () => setStatus(null));
-    events.addEventListener('update.status', onStatus);
-    events.addEventListener('hello', onHello);
-    return () => {
-      events.removeEventListener('update.status', onStatus);
-      events.removeEventListener('hello', onHello);
-    };
-  }, [events]);
+  useServerEvent<UpdateStatus>('update.status', setStatus);
+  // After an upgrade the server restarts: refresh on reconnect.
+  useServerEvent('hello', () => updateApi('/api/v1/update').then(setStatus, () => setStatus(null)));
 
   useEffect(() => {
     if (!busy) return;

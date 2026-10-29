@@ -5,7 +5,9 @@ import { Button } from '@mieweb/ui/components/Button';
 import { Checkbox } from '@mieweb/ui/components/Checkbox';
 import { Select } from '@mieweb/ui/components/Select';
 import { Textarea } from '@mieweb/ui/components/Textarea';
-import { clipboardSupported, initClipboard } from './clipboard.js';
+import { api } from './api';
+import { clipboardSupported, useClipboardSync } from './clipboard';
+import { openServerEvents, useServerEvent } from './events';
 import { Perf, UpdateButton } from './status';
 
 type Participant = { participant_id: string; name: string; kind: string; color: string; cursor?: { x: number; y: number; visible: boolean } };
@@ -14,10 +16,6 @@ type Cursor = Pick<Participant, 'participant_id' | 'name' | 'color'> & { x: numb
 const serverViewOnly = document.body.dataset.viewOnly === '1';
 const myName = localStorage.getItem('ozwell-computer-name') || `viewer-${Math.random().toString(36).slice(2, 6)}`;
 localStorage.setItem('ozwell-computer-name', myName);
-
-const api = <T,>(path: string, opts: RequestInit = {}): Promise<T> =>
-  fetch(path, { credentials: 'same-origin', ...opts, headers: { 'content-type': 'application/json', ...opts.headers } })
-    .then(async (r) => { if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error?.message || r.statusText); return r.json(); });
 
 const withEntry = <V,>(m: Map<string, V>, key: string, value?: V) => {
   const next = new Map(m);
@@ -33,7 +31,6 @@ function canvasBox(screen: HTMLElement | null, overlay: HTMLElement | null) {
 }
 
 export function Viewer() {
-  const [events] = useState(() => new EventSource('/api/v1/events'));
   const screenRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
@@ -80,8 +77,8 @@ export function Viewer() {
       rfbRef.current = rfb;
     };
     void connect();
-    initClipboard({ getRfb: () => rfbRef.current, events, toast: showToast });
-  }, [events]);
+  }, []);
+  useClipboardSync(screenRef, () => rfbRef.current, showToast);
 
   useEffect(() => {
     prefs.current = { viewOnly, fit: scale === 'fit' };
@@ -92,32 +89,29 @@ export function Viewer() {
   }, [viewOnly, scale]);
 
   // ---- presence: roster chips and other participants' cursors
+  const drawCursor = (p: Cursor) => {
+    if (p.participant_id === meRef.current?.participant_id) return;
+    setCursors((m) => withEntry(m, p.participant_id, p.visible ? p : undefined));
+  };
+  useServerEvent<{ roster: Participant[] }>('hello', ({ roster: list }) => {
+    setRoster(new Map(list.map((p) => [p.participant_id, p])));
+    for (const p of list) if (p.cursor) drawCursor({ ...p, ...p.cursor });
+  });
+  useServerEvent<Participant>('presence.joined', (p) => setRoster((m) => withEntry(m, p.participant_id, p)));
+  useServerEvent<{ participant_id: string }>('presence.left', ({ participant_id }) => {
+    setRoster((m) => withEntry(m, participant_id));
+    setCursors((m) => withEntry(m, participant_id));
+  });
+  useServerEvent<Cursor>('presence.cursor', drawCursor);
   useEffect(() => {
-    const drawCursor = (p: Cursor) => {
-      if (p.participant_id === meRef.current?.participant_id) return;
-      setCursors((m) => withEntry(m, p.participant_id, p.visible ? p : undefined));
-    };
-    events.addEventListener('hello', (e) => {
-      const list: Participant[] = JSON.parse(e.data).roster;
-      setRoster(new Map(list.map((p) => [p.participant_id, p])));
-      for (const p of list) if (p.cursor) drawCursor({ ...p, ...p.cursor });
-    });
-    events.addEventListener('presence.joined', (e) => {
-      const p: Participant = JSON.parse(e.data);
-      setRoster((m) => withEntry(m, p.participant_id, p));
-    });
-    events.addEventListener('presence.left', (e) => {
-      const { participant_id } = JSON.parse(e.data);
-      setRoster((m) => withEntry(m, participant_id));
-      setCursors((m) => withEntry(m, participant_id));
-    });
-    events.addEventListener('presence.cursor', (e) => drawCursor(JSON.parse(e.data)));
     new ResizeObserver(relayout).observe(overlayRef.current!);
     window.addEventListener('pagehide', () => {
       if (!meRef.current) return;
       navigator.sendBeacon('/api/v1/presence/leave', new Blob([JSON.stringify({ participant_id: meRef.current.participant_id })], { type: 'application/json' }));
     });
-  }, [events]);
+  }, []);
+  // Last: every useServerEvent above and in the children is subscribed by now.
+  useEffect(openServerEvents, []);
 
   const refreshClip = () =>
     api<{ text?: string }>('/api/v1/clipboard').then((c) => { if (c.text !== undefined) setClipText(c.text); }, () => undefined);
@@ -139,7 +133,7 @@ export function Viewer() {
       <div id="toolbar">
         <span id="status" className={status.cls}>{status.text}</span>
         <Perf />
-        <UpdateButton events={events} />
+        <UpdateButton />
         <span className="spacer" />
         <Button id="btn-cad" size="sm" variant="outline" title="Send Ctrl+Alt+Del" onClick={() => rfbRef.current?.sendCtrlAltDel()}>Ctrl+Alt+Del</Button>
         <Button id="btn-super" size="sm" variant="outline" title="Send Super" onClick={() => rfbRef.current?.sendKey(0xffeb, 'MetaLeft')}>Super</Button>
