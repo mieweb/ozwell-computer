@@ -181,6 +181,36 @@ describe('noVNC viewer', () => {
     await page.context().close();
   });
 
+  it('keyboard users enter the desktop with Enter and leave it with Shift+Esc, also from fullscreen', async () => {
+    const page = await openViewer();
+    const where = () => page.evaluate(() => {
+      const a = document.activeElement!;
+      const panel = document.getElementById('screen-wrap')!.parentElement!;
+      return a === panel ? 'panel' : document.getElementById('screen')!.contains(a) ? 'desktop' : 'elsewhere';
+    });
+    await page.evaluate(() => document.getElementById('screen-wrap')!.parentElement!.focus());
+    expect(await where()).toBe('panel');
+    expect(await page.locator('#desktop-keys').isVisible()).toBe(true);
+    await page.keyboard.press('Enter');
+    expect(await where()).toBe('desktop');
+    // Escape with other modifiers is a desktop shortcut, not the way out.
+    await page.keyboard.press('Control+Shift+Escape');
+    expect(await where()).toBe('desktop');
+    await page.keyboard.press('Shift+Escape');
+    expect(await where()).toBe('panel');
+    await page.keyboard.press('Shift+Tab');
+    expect(await where()).toBe('elsewhere');
+    // From fullscreen, Shift+Esc leaves fullscreen and lands on the (visible) panel, not back in the canvas.
+    await page.click('#btn-full');
+    await page.waitForFunction(() => document.fullscreenElement?.id === 'screen-wrap', null, { timeout: 5000 });
+    expect(await where()).toBe('desktop');
+    await page.keyboard.press('Shift+Escape');
+    await page.waitForFunction(() => !document.fullscreenElement, null, { timeout: 5000 });
+    await sleep(200); // let any late fullscreenchange focus run
+    expect(await where()).toBe('panel');
+    await page.context().close();
+  });
+
   it('shares the local clipboard: Ctrl+V pastes local text, Ctrl+C copies desktop text locally', async () => {
     const page = await openViewer();
     expect(await page.locator('#btn-clip').isHidden()).toBe(true); // localhost is a secure context

@@ -35,6 +35,7 @@ function canvasBox(screen: HTMLElement | null, overlay: HTMLElement | null) {
 
 export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec: boolean }) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const releaseTo = useRef<HTMLElement | null>(null);
   const screenRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
@@ -128,7 +129,10 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
       // Send Esc, Alt+Tab etc. to the desktop while fullscreen (Chromium only; hold Esc to exit).
       // If the lock is refused (e.g. permission denied), fullscreen still works without it.
       if (full) keyboard?.lock().catch(() => undefined); else keyboard?.unlock();
-      rfbRef.current?.focus();
+      // Shift+Esc in fullscreen asked for focus to go back to the desktop panel, not the canvas.
+      const panel = releaseTo.current;
+      releaseTo.current = null;
+      if (!full && panel) panel.focus(); else rfbRef.current?.focus();
     });
   }, []);
   // Last: every useServerEvent above and in the children is subscribed by now.
@@ -171,8 +175,10 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
         e.preventDefault();
         e.stopPropagation();
         const panel = e.currentTarget.parentElement!;
-        // In fullscreen the panel is outside the visible subtree, so leave fullscreen first.
-        void (document.fullscreenElement ? document.exitFullscreen() : Promise.resolve()).catch(() => undefined).then(() => panel.focus());
+        if (!document.fullscreenElement) return panel.focus();
+        // In fullscreen the panel is outside the visible subtree; the fullscreenchange handler focuses it once we're out.
+        releaseTo.current = panel;
+        void document.exitFullscreen().catch(() => { releaseTo.current = null; });
       }}>
       <div id="desktop-keys" className="pointer-events-none absolute top-1 right-1 z-10 hidden rounded-sm bg-neutral-900/80 px-1.5 py-0.5 text-[11px] text-neutral-50 group-focus-within:block">
         Enter: type into the desktop · Shift+Esc: leave it
