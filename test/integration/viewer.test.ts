@@ -52,10 +52,12 @@ describe('noVNC viewer', () => {
     }, null, { timeout: 15000 });
     // Toolbar resource readout from /api/v1/metrics (CPU appears after the second sample).
     await page.waitForFunction(() => /CPU \d+%.*Mem \d+ MiB/.test(document.getElementById('perf')?.textContent ?? ''), null, { timeout: 15000 });
-    expect(await page.locator('#btn-update').isHidden()).toBe(true); // nothing newer published
-    // The installed version is always shown; clicking it checks for a release now.
-    const current = (await (await fetch(`${URL_}/api/v1/update`, { headers: auth })).json()).current;
-    await page.waitForFunction((v) => document.getElementById('btn-version')?.textContent === `v${v}`, current, { timeout: 10000 });
+    // Shown iff the server reports something to act on (on the git channel main may have moved).
+    const u = await (await fetch(`${URL_}/api/v1/update`, { headers: auth })).json();
+    const shown = u.supported && (u.available || ['requested', 'running', 'failed'].includes(u.upgrade.state));
+    await page.waitForFunction((v) => !!document.getElementById('btn-update') === v, shown, { timeout: 5000 });
+    // The installed version is always shown; clicking it checks for an update now.
+    await page.waitForFunction((v) => document.getElementById('btn-version')?.textContent === `v${v}`, u.current, { timeout: 10000 });
     await page.locator('#btn-version').click();
     await page.waitForFunction(() => /Up to date|is available|Update check failed/.test(document.getElementById('toast')?.textContent ?? ''), null, { timeout: 20000 });
     expect(await page.locator('#btn-version').getAttribute('title')).toContain('Last checked');
@@ -101,6 +103,29 @@ describe('noVNC viewer', () => {
     expect(roster.some((r) => r.includes('test-bot'))).toBe(true);
     await a.context().close();
     await b.context().close();
+  });
+
+  it('the jobs panel streams a background command\'s output and cancels it', async () => {
+    const start = await (await fetch(`${URL_}/api/v1/exec`, {
+      method: 'POST', headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ cmd: 'echo first; sleep 1; echo second >&2; sleep 60', wait_ms: 0 }),
+    })).json();
+    const page = await openViewer();
+    await page.locator('#btn-jobs').waitFor({ state: 'visible', timeout: 10000 });
+    await page.click('#btn-jobs');
+    await page.waitForFunction(() => document.getElementById('jobs-cmd')?.textContent?.includes('sleep 60'), null, { timeout: 10000 });
+    expect(await page.locator('#jobs-list li.sel button').getAttribute('aria-pressed')).toBe('true');
+    await page.waitForFunction(() => {
+      const out = document.getElementById('jobs-out')!;
+      return out.textContent!.includes('first') && out.querySelector('.err')?.textContent === 'second\n';
+    }, null, { timeout: 10000 });
+    page.once('dialog', (d) => d.accept());
+    await page.click('#jobs-cancel');
+    await page.waitForFunction(() => document.getElementById('jobs-state')?.textContent === 'cancelled', null, { timeout: 10000 });
+    expect(await page.locator('#jobs-cancel').isHidden()).toBe(true);
+    const v = await (await fetch(`${URL_}/api/v1/exec/jobs/${start.job_id}`, { headers: auth })).json();
+    expect(v.state).toBe('cancelled');
+    await page.context().close();
   });
 
   it('shares the local clipboard: Ctrl+V pastes local text, Ctrl+C copies desktop text locally', async () => {

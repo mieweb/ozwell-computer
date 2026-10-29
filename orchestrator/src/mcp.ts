@@ -23,6 +23,7 @@ export function describe(c: Computer) {
     instance_id: c.id,
     display_name: c.displayName ?? null,
     status: c.status,
+    stopped: c.stopped,
     created_at: c.createdAt ?? null,
     viewer_url: base && c.token ? `${base.replace(/\/+$/, '')}/?token=${encodeURIComponent(c.token)}` : base ?? null,
   };
@@ -31,7 +32,7 @@ export function describe(c: Computer) {
 const managementTools = (maxInstances: number | undefined): ToolDef[] => [
   {
     name: 'list_computers',
-    description: 'List your ozwell-computers (virtual Linux desktops). Use an instance_id with the other tools.',
+    description: 'List your ozwell-computers (virtual Linux desktops) with their current status. Use an instance_id with the other tools; a computer with stopped: true must be started with start_computer first.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -42,7 +43,12 @@ const managementTools = (maxInstances: number | undefined): ToolDef[] => [
   },
   {
     name: 'get_computer',
-    description: 'Status, readiness and viewer_url of one of your computers. If it is still starting, waits up to ~40 s for it.',
+    description: 'Status, readiness and viewer_url of one of your computers. If it is still starting, waits up to ~40 s for it. If it is stopped, call start_computer.',
+    inputSchema: { type: 'object', properties: { instance_id: { type: 'string' } }, required: ['instance_id'] },
+  },
+  {
+    name: 'start_computer',
+    description: 'Start one of your computers that is stopped (computers may be stopped when idle; nothing on them is lost). Waits up to ~40 s for it like create_computer; if ready is false, call get_computer until ready is true.',
     inputSchema: { type: 'object', properties: { instance_id: { type: 'string' } }, required: ['instance_id'] },
   },
   {
@@ -87,20 +93,26 @@ export async function isReady(provider: Provider, id: string): Promise<{ c: Comp
   }
 }
 
-/** Wait until ready or the budget runs out (wait, then hand off; see create_computer). */
-async function waitReady(provider: Provider, c: Computer, timeoutMs: number) {
+/** Wait until ready or the budget runs out (wait, then hand off; see create_computer). While
+ * `starting`, a stopped status is expected (the platform hasn't caught up) and not final. */
+async function waitReady(provider: Provider, c: Computer, timeoutMs: number, starting = false) {
   const end = Date.now() + timeoutMs;
   let last = { c: c as Computer | null, ready: false };
   for (;;) {
     last = await isReady(provider, c.id);
-    const dead = ['failed', 'missing', 'exited', 'dead', 'offline'].includes(last.c?.status ?? '');
-    if (last.ready || dead || Date.now() >= end) return { c: last.c ?? c, ready: last.ready };
+    // /health can answer before the provider stops reporting the computer as stopped.
+    const ready = last.ready && !last.c?.stopped;
+    const dead = last.c?.stopped ? !starting : ['failed', 'missing', 'dead'].includes(last.c?.status ?? '');
+    if (ready || dead || Date.now() >= end) return { c: last.c ?? c, ready };
     await new Promise((r) => setTimeout(r, 1500));
   }
 }
 
 /** Under common 60 s MCP client request timeouts. */
 export const CREATE_WAIT_MS = 40_000;
+
+const stoppedError = (c: Computer) =>
+  fail('computer_stopped', `computer ${c.id} is stopped (status: ${c.status}); call start_computer with instance_id "${c.id}", then retry`);
 
 export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server {
   const { provider, client } = deps;
@@ -110,7 +122,8 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
     capabilities: { tools: {} },
     instructions:
       'Manages per-user virtual Linux desktops (ozwell-computers). Call list_computers, or create_computer if you have none, ' +
-      'then pass its instance_id to the desktop tools (screenshot, click, type_text, ...). Share viewer_url with the user so they can watch.',
+      'then pass its instance_id to the desktop tools (screenshot, click, type_text, ...). Share viewer_url with the user so they can watch. ' +
+      'Idle computers may be stopped: start them with start_computer.',
   });
 
   /** A computer the requester owns, or a not-found error (others' computers are invisible). */
@@ -165,6 +178,13 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
           const { c, ready } = await waitReady(provider, c0, deps.readyTimeoutMs ?? CREATE_WAIT_MS);
           return text({ ...describe(c), ready });
         }
+        case 'start_computer': {
+          const c0 = await mine(args.instance_id);
+          // Only stopped ones: a provider's start may restart a running computer.
+          const started = c0.stopped ? await provider.start(c0.id) : c0;
+          const { c, ready } = await waitReady(provider, started, deps.readyTimeoutMs ?? CREATE_WAIT_MS, c0.stopped);
+          return text({ ...describe(c), ready });
+        }
         case 'destroy_computer': {
           const c = await mine(args.instance_id);
           await provider.destroy(c.id);
@@ -173,9 +193,17 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
         default: {
           if (!proxiedNames.has(name)) return fail('invalid_request', `unknown tool ${name}`);
           const c = await mine(args.instance_id);
+          if (c.stopped) return stoppedError(c);
           if (!c.internalUrl || !c.token) return fail('target_unavailable', `computer ${c.id} is ${c.status} and not reachable`);
           const { instance_id: _drop, ...rest } = args;
-          return await client.callTool(`${c.id}\u0000${user.id}`, c.internalUrl, c.token, user.name || user.email || user.id, name, rest);
+          return await client.callTool(`${c.id}\u0000${user.id}`, c.internalUrl, c.token, user.name || user.email || user.id, name, rest)
+            .catch(async (e) => {
+              if (!(e instanceof InstanceError && e.unreachable)) throw e;
+              // Best effort: a failed lookup keeps the original error.
+              const now = await provider.get(c.id).catch(() => null);
+              if (now?.stopped) return stoppedError(now);
+              throw e;
+            });
         }
       }
     } catch (e) {

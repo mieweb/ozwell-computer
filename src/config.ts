@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { isGitUpdateUrl } from './update.js';
 
 export function inContainer(): boolean {
   return existsSync('/.dockerenv') || existsSync('/run/.containerenv') || process.env.container !== undefined;
@@ -37,12 +38,16 @@ export const ConfigSchema = z.object({
   fsRoot: z.string(),
   /** Externally visible base URL for the startup link (e.g. the host port behind Docker). */
   publicUrl: z.string().url().optional(),
-  /** APT `Packages` index to check for new releases; "off" disables update checks. */
-  updateUrl: z.string().refine((v) => v === 'off' || /^(https?|file):\/\//.test(v), 'must be a URL or "off"'),
+  /** APT `Packages` index, or git+https://<repo>#<branch> to build a branch, to check for updates; "off" disables. */
+  updateUrl: z.string().refine((v) => v === 'off' || /^(https?|file):\/\//.test(v) || isGitUpdateUrl(v), 'must be a URL, git+https://<repo>#<branch>, or "off"'),
   /** Open the viewer in the default browser once listening. */
   open: bool,
   /** Extra origins allowed to embed the viewer in a frame (CSP frame-ancestors). */
   frameAncestors: origins,
+  /** Fail replies that their response schema would change (tests and the dev container). */
+  strictResponses: bool,
+  /** CPU capacity to report, for limits the container can't see (e.g. on an LXC around a Docker host). */
+  cpus: z.coerce.number().positive().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -68,6 +73,8 @@ export function defaults(): Config {
     updateUrl: 'https://github.com/mieweb/ozwell-computer/releases/latest/download/Packages',
     open: false,
     frameAncestors: [],
+    strictResponses: false,
+    cpus: undefined,
   };
 }
 
@@ -90,6 +97,8 @@ const ENV_MAP: Record<string, keyof Config> = {
   OZWELL_COMPUTER_UPDATE_URL: 'updateUrl',
   OZWELL_COMPUTER_OPEN: 'open',
   OZWELL_COMPUTER_FRAME_ANCESTORS: 'frameAncestors',
+  OZWELL_COMPUTER_STRICT_RESPONSES: 'strictResponses',
+  OZWELL_COMPUTER_CPUS: 'cpus',
 };
 
 const FLAG_MAP: Record<string, keyof Config> = {
@@ -113,13 +122,13 @@ const FLAG_MAP: Record<string, keyof Config> = {
   'update-url': 'updateUrl',
   open: 'open',
   'frame-ancestors': 'frameAncestors',
+  cpus: 'cpus',
 };
 
 const BOOLEAN_FLAGS = new Set(['auth-disabled', 'no-auth', 'spawn-xvfb', 'view-only', 'exec', 'no-exec', 'open']);
 
 export interface ParsedArgs {
   overrides: Partial<Record<keyof Config, unknown>>;
-  printOpenapi: boolean;
   printMcpTools: boolean;
   help: boolean;
   version: boolean;
@@ -127,13 +136,11 @@ export interface ParsedArgs {
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const overrides: Partial<Record<keyof Config, unknown>> = {};
-  let printOpenapi = false;
   let printMcpTools = false;
   let help = false;
   let version = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--print-openapi') { printOpenapi = true; continue; }
     if (a === '--print-mcp-tools') { printMcpTools = true; continue; }
     if (a === '-h' || a === '--help') { help = true; continue; }
     if (a === '-v' || a === '--version') { version = true; continue; }
@@ -152,7 +159,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
     overrides[key] = value;
   }
-  return { overrides, printOpenapi, printMcpTools, help, version };
+  return { overrides, printMcpTools, help, version };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] = []): { config: Config; args: ParsedArgs } {
@@ -186,9 +193,9 @@ Usage: ozwell-computer [flags]
   --log-level <lvl>       OZWELL_COMPUTER_LOG_LEVEL (info)
   --fs-root <dir>         OZWELL_COMPUTER_FS_ROOT (/)
   --public-url <url>      OZWELL_COMPUTER_PUBLIC_URL: base URL shown in the startup link
-  --update-url <url|off>  OZWELL_COMPUTER_UPDATE_URL: APT Packages index checked for new releases
+  --update-url <url|off>  OZWELL_COMPUTER_UPDATE_URL: APT Packages index, or git+https://<repo>#<branch>, checked for updates
   --open                  OZWELL_COMPUTER_OPEN=true: open the viewer in the default browser
   --frame-ancestors <o>   OZWELL_COMPUTER_FRAME_ANCESTORS: origins (space/comma separated) allowed to embed the viewer
-  --print-openapi         Print the OpenAPI document and exit
+  --cpus <n>              OZWELL_COMPUTER_CPUS: CPU capacity for the CPU % readout when a limit isn't visible in the container
   --print-mcp-tools       Print the MCP tool catalog (name, description, input schema) and exit
 `;

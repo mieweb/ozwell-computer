@@ -32,6 +32,12 @@ RUN --mount=type=bind,source=.fpm,target=/tmp/.fpm \
        # sample apps for agents to drive (zenity doubles as the AT-SPI test app):
        xterm zenity firefox-esr \
     && rm -rf /var/lib/apt/lists/*
+# release: update from GitHub releases with apt. main: update by building the main
+# branch from git (see the README), which needs the build stage's toolchain.
+ARG UPDATE_CHANNEL=release
+RUN [ "$UPDATE_CHANNEL" != main ] || { apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates git make python3 g++ \
+    && rm -rf /var/lib/apt/lists/*; }
 RUN --mount=type=bind,from=build,source=/usr/src/ozwell-computer,target=/mnt/pkg \
     cp /mnt/pkg/ozwell-computer_*.deb /tmp/ \
     && apt-get install -y --no-install-recommends /tmp/ozwell-computer_*.deb \
@@ -39,6 +45,15 @@ RUN --mount=type=bind,from=build,source=/usr/src/ozwell-computer,target=/mnt/pkg
 # Track future releases from the GitHub release flat repo (added after the install
 # above, so building the image doesn't depend on a published release).
 COPY docker/ozwell-computer.sources /etc/apt/sources.list.d/ozwell-computer.sources
+# main: a clean checkout of exactly this image's commit (a fresh clone: no build output,
+# and no credentials from the CI checkout's .git/config), the git channel for both the
+# server and the root upgrade unit, and no apt source that could replace that build.
+RUN --mount=type=bind,from=build,source=/usr/src/ozwell-computer,target=/mnt/src \
+    [ "$UPDATE_CHANNEL" != main ] || { git clone -q --no-hardlinks /mnt/src /usr/src/ozwell-computer \
+    && git -C /usr/src/ozwell-computer checkout -q --detach "$(git -C /mnt/src rev-parse HEAD)" \
+    && git -C /usr/src/ozwell-computer remote set-url origin https://github.com/mieweb/ozwell-computer.git \
+    && echo 'OZWELL_COMPUTER_UPDATE_URL=git+https://github.com/mieweb/ozwell-computer.git#main' >> /etc/default/ozwell-computer \
+    && rm /etc/apt/sources.list.d/ozwell-computer.sources; }
 
 # ---- container-only adjustments (not part of the package)
 # Firefox without first-run pages, password-save prompts or telemetry (agent-friendly).
@@ -48,6 +63,7 @@ COPY docker/firefox/policies.json /etc/firefox/policies/policies.json
 COPY docker/systemd/system.conf.d/ /etc/systemd/system.conf.d/
 COPY docker/systemd/ozwell-computer.service.d/ /etc/systemd/system/ozwell-computer.service.d/
 COPY docker/systemd/ozwell-computer-xvfb.service.d/ /etc/systemd/system/ozwell-computer-xvfb.service.d/
+COPY docker/systemd/ozwell-computer-upgrade.service.d/ /etc/systemd/system/ozwell-computer-upgrade.service.d/
 # Passwordless sudo for the desktop user (see docker/sudoers.d/ozwell-computer and the README).
 COPY --chmod=0440 docker/sudoers.d/ozwell-computer /etc/sudoers.d/ozwell-computer
 RUN visudo -cf /etc/sudoers.d/ozwell-computer \

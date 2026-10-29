@@ -40,22 +40,51 @@ async function fakeInstance(token: string) {
 }
 
 /** In-memory provider; every computer points at the fake instance. */
-function memoryProvider(url: string, token: string): Provider {
+function memoryProvider(url: string, token: string): Provider & { all: Map<string, Computer> } {
   const all = new Map<string, Computer>();
   return {
     scheme: 'memory',
+    all,
     async list(owner) { return [...all.values()].filter((c) => c.owner === owner); },
     async get(id) { return all.get(id) ?? null; },
     async create({ owner, displayName }) {
-      const c: Computer = { id: generateId(), owner: owner.id, ownerName: owner.name, displayName, status: 'running', internalUrl: url, externalUrl: 'https://view.example', token };
+      const c: Computer = { id: generateId(), owner: owner.id, ownerName: owner.name, displayName, status: 'running', stopped: false, internalUrl: url, externalUrl: 'https://view.example', token };
       all.set(c.id, c);
+      return c;
+    },
+    async start(id) {
+      const c = { ...all.get(id)!, status: 'running', stopped: false, internalUrl: url };
+      all.set(id, c);
       return c;
     },
     async destroy(id) { all.delete(id); },
   };
 }
 
+/** A stand-in for the site proxy answering 503; `onHit` runs on each request. */
+async function unavailable(onHit: () => void) {
+  const app = Fastify();
+  app.all('/*', async (_r, reply) => { onHit(); return reply.code(503).type('text/html').send('<h1>503</h1>'); });
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  return { app, url: `http://127.0.0.1:${(app.server.address() as any).port}` };
+}
+
+/** Opens MCP sessions, then answers tools/call with a 503 carrying a JSON-RPC error body. */
+async function rpcUnavailable(onHit: () => void) {
+  const app = Fastify();
+  app.post('/mcp', async (req, reply) => {
+    const m = req.body as any;
+    if (m.method === 'initialize') return reply.header('mcp-session-id', 's1').send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-06-18' } });
+    if (!m.id) return reply.code(202).send();
+    onHit();
+    return reply.code(503).send({ jsonrpc: '2.0', id: m.id, error: { code: -32000, message: 'Service Unavailable' } });
+  });
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  return { app, url: `http://127.0.0.1:${(app.server.address() as any).port}` };
+}
+
 let instance: Awaited<ReturnType<typeof fakeInstance>>;
+let provider: ReturnType<typeof memoryProvider>;
 let app: FastifyInstance;
 let base: string;
 
@@ -84,7 +113,8 @@ const tool = async (user: string, name: string, args: object = {}) => {
 
 beforeAll(async () => {
   instance = await fakeInstance('inst-token');
-  app = await buildServer({ provider: memoryProvider(instance.url, 'inst-token'), catalog, client: new InstanceClient(), version: 't', psk: PSK, readyTimeoutMs: 5000 });
+  provider = memoryProvider(instance.url, 'inst-token');
+  app = await buildServer({ provider, catalog, client: new InstanceClient(), version: 't', psk: PSK, readyTimeoutMs: 5000 });
   await app.listen({ port: 0, host: '127.0.0.1' });
   base = `http://127.0.0.1:${(app.server.address() as any).port}`;
 });
@@ -102,7 +132,7 @@ describe('auth and headers', () => {
 describe('tools', () => {
   it('lists management tools and every computer tool with a required instance_id', async () => {
     const tools = (await rpc('alice', 'tools/list')).body.result.tools;
-    expect(tools.map((t: any) => t.name)).toEqual(['list_computers', 'create_computer', 'get_computer', 'destroy_computer', 'screenshot', 'slow', 'click']);
+    expect(tools.map((t: any) => t.name)).toEqual(['list_computers', 'create_computer', 'get_computer', 'start_computer', 'destroy_computer', 'screenshot', 'slow', 'click']);
     const click = tools.find((t: any) => t.name === 'click');
     expect(click.inputSchema.required).toEqual(['instance_id', 'x', 'y']);
     expect(click.inputSchema.properties).toHaveProperty('instance_id');
@@ -115,7 +145,7 @@ describe('tools', () => {
     expect(a.ready).toBe(true);
     expect((await tool('alice', 'list_computers')).data.computers.map((c: any) => c.instance_id)).toEqual([a.instance_id]);
     expect((await tool('bob', 'list_computers')).data.computers).toEqual([]);
-    for (const name of ['get_computer', 'destroy_computer', 'screenshot']) {
+    for (const name of ['get_computer', 'start_computer', 'destroy_computer', 'screenshot']) {
       const r = await tool('bob', name, { instance_id: a.instance_id });
       expect(r.isError).toBe(true);
       expect(r.data.error.reason).toBe('target_unavailable');
@@ -144,6 +174,101 @@ describe('tools', () => {
     expect(headersAfter).toBeLessThan(1000);
     expect(await r.text()).toContain('did slow');
     expect(Date.now() - t0).toBeGreaterThanOrEqual(1400);
+  });
+
+  it('reports stopped computers and starts them', async () => {
+    const a = (await tool('alice', 'list_computers')).data.computers[0];
+    expect(a).toMatchObject({ status: 'running', stopped: false });
+    provider.all.set(a.instance_id, { ...provider.all.get(a.instance_id)!, status: 'exited', stopped: true, internalUrl: undefined });
+    expect((await tool('alice', 'list_computers')).data.computers[0]).toMatchObject({ status: 'exited', stopped: true });
+    const r = await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 2 });
+    expect(r.isError).toBe(true);
+    expect(r.data.error.reason).toBe('computer_stopped');
+    expect(r.data.error.message).toContain(`call start_computer with instance_id "${a.instance_id}"`);
+    expect((await tool('alice', 'start_computer', { instance_id: a.instance_id })).data).toMatchObject({ stopped: false, ready: true });
+    expect(await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 2 })).toEqual({ isError: false, data: 'did click' });
+  });
+
+  it('checks the provider when a computer answers 503 or refuses connections', async () => {
+    const a = (await tool('alice', 'list_computers')).data.computers[0];
+    const set = (patch: Partial<Computer>) => provider.all.set(a.instance_id, { ...provider.all.get(a.instance_id)!, ...patch });
+    // the platform stopped it after the orchestrator looked it up
+    const proxy = await unavailable(() => set({ status: 'offline', stopped: true }));
+    set({ internalUrl: proxy.url });
+    const stopped = await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 2 });
+    expect(stopped.data.error.reason).toBe('computer_stopped');
+    // still running per the provider: the original error, no start_computer advice
+    const busy = await unavailable(() => undefined);
+    set({ status: 'running', stopped: false, internalUrl: busy.url });
+    const running = await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 2 });
+    expect(running.data.error.reason).toBe('target_unavailable');
+    expect(running.data.error.message).toContain('HTTP 503');
+    expect(running.data.error.message).not.toContain('start_computer');
+    await proxy.app.close();
+    await busy.app.close();
+    // connection refused (nothing listens there any more)
+    set({ internalUrl: proxy.url });
+    const refused = await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 2 });
+    expect(refused.data.error.reason).toBe('target_unavailable');
+    expect(refused.data.error.message).not.toContain('start_computer');
+    const get = provider.get;
+    let gets = 0;
+    provider.get = async (id) => { const c = await get(id); return ++gets > 1 ? { ...c!, status: 'offline', stopped: true } : c; };
+    expect((await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 2 })).data.error.reason).toBe('computer_stopped');
+    provider.get = get;
+    set({ stopped: true, status: 'offline' });
+    expect((await tool('alice', 'start_computer', { instance_id: a.instance_id })).data.ready).toBe(true);
+  });
+
+  it('treats a 503 with a JSON-RPC error body like any 503, and keeps the error if the status check fails', async () => {
+    const a = (await tool('alice', 'list_computers')).data.computers[0];
+    const set = (patch: Partial<Computer>) => provider.all.set(a.instance_id, { ...provider.all.get(a.instance_id)!, ...patch });
+    const proxy = await rpcUnavailable(() => set({ status: 'offline', stopped: true }));
+    set({ internalUrl: proxy.url });
+    expect((await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 2 })).data.error.reason).toBe('computer_stopped');
+    set({ status: 'running', stopped: false });
+    const get = provider.get;
+    let gets = 0;
+    provider.get = async (id) => { if (++gets > 1) throw new Error('provider API timed out'); return get(id); };
+    const r = await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 2 });
+    provider.get = get;
+    await proxy.app.close();
+    expect(r.data.error).toMatchObject({ reason: 'target_unavailable', message: expect.stringContaining('HTTP 503') });
+    set({ status: 'running', stopped: false, internalUrl: instance.url });
+  });
+
+  it('releases the connection of a 503 that keeps streaming its body', async () => {
+    const a = (await tool('alice', 'list_computers')).data.computers[0];
+    const set = (patch: Partial<Computer>) => provider.all.set(a.instance_id, { ...provider.all.get(a.instance_id)!, ...patch });
+    let closed = false;
+    const proxy = Fastify();
+    proxy.post('/mcp', async (req, reply) => {
+      req.raw.socket.once('close', () => { closed = true; });
+      reply.hijack();
+      reply.raw.writeHead(503, { 'content-type': 'text/html' });
+      const tick = setInterval(() => reply.raw.write('x'.repeat(16_384)), 10);
+      reply.raw.once('close', () => clearInterval(tick));
+    });
+    await proxy.listen({ port: 0, host: '127.0.0.1' });
+    set({ status: 'running', stopped: false, internalUrl: `http://127.0.0.1:${(proxy.server.address() as any).port}` });
+    expect((await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 2 })).data.error.message).toContain('HTTP 503');
+    for (let i = 0; i < 50 && !closed; i++) await new Promise((r) => setTimeout(r, 20));
+    expect(closed).toBe(true);
+    set({ internalUrl: instance.url });
+    await proxy.close();
+  });
+
+  it('is not ready while the provider still reports it stopped', async () => {
+    const a = (await tool('alice', 'list_computers')).data.computers[0];
+    const c = provider.all.get(a.instance_id)!;
+    const start = provider.start;
+    // /health already answers, but the platform's status lags behind
+    provider.start = async (id) => { const s = { ...c, status: 'offline', stopped: true, internalUrl: instance.url }; provider.all.set(id, s); return s; };
+    provider.all.set(a.instance_id, { ...c, status: 'offline', stopped: true });
+    setTimeout(() => provider.all.set(a.instance_id, { ...c, status: 'running', stopped: false }), 2000);
+    const r = (await tool('alice', 'start_computer', { instance_id: a.instance_id })).data;
+    provider.start = start;
+    expect(r).toMatchObject({ stopped: false, ready: true });
   });
 
   it('destroys', async () => {
@@ -193,6 +318,29 @@ describe('providers', () => {
     expect((await providerFromUri('memtest://abc')).scheme).toBe('memtest:abc');
     expect((await providerFromUri('docker:///var/run/docker.sock')).scheme).toBe('docker');
     await expect(providerFromUri('nope://x')).rejects.toThrow(/no provider for scheme "nope"/);
+  });
+  it('docker reports exited containers as stopped and starts them', async () => {
+    const state = { Status: 'exited' };
+    const started: string[] = [];
+    const docker = Fastify();
+    docker.get('/containers/:id/json', async (req) => ({
+      Name: `/${(req.params as any).id}`, State: state,
+      Config: { Labels: { 'org.mieweb.ozwell-computer.managed': 'true', 'org.mieweb.ozwell-computer.owner': 'u-1' }, Env: ['OZWELL_COMPUTER_TOKEN=t'] },
+      NetworkSettings: { Networks: state.Status === 'running' ? { bridge: { IPAddress: '172.17.0.9' } } : {} },
+    }));
+    docker.post('/containers/:id/start', async (req, reply) => {
+      started.push((req.params as any).id);
+      const already = state.Status === 'running';
+      state.Status = 'running';
+      return reply.code(already ? 304 : 204).send();
+    });
+    await docker.listen({ port: 0, host: '127.0.0.1' });
+    const p = await providerFromUri(`docker://127.0.0.1:${(docker.server.address() as any).port}`);
+    expect(await p.get('ozc-x')).toMatchObject({ status: 'exited', stopped: true, internalUrl: undefined });
+    expect(await p.start('ozc-x')).toMatchObject({ status: 'running', stopped: false, internalUrl: 'http://172.17.0.9:8080' });
+    await p.start('ozc-x'); // 304
+    expect(started).toEqual(['ozc-x', 'ozc-x']);
+    await docker.close();
   });
   it('generates DNS-label ids', () => {
     for (let i = 0; i < 50; i++) expect(generateId()).toMatch(/^[a-z][a-z0-9-]{0,62}$/);

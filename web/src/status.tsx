@@ -5,13 +5,15 @@ import { Button, type ButtonProps } from '@mieweb/ui/components/Button';
 import { api } from './api';
 import { useServerEvent } from './events';
 import { checkResult, versionTitle, type UpdateStatus } from './version';
-import { PLACEHOLDER, perfParts, readMetrics, type Sample } from './perf';
+import { perfTitle, readMetrics, type Sample } from './metrics';
+import { PLACEHOLDER, perfParts } from './perf';
 
 // Literal class names so Tailwind generates them; fixed widths keep the toolbar from shifting.
 const WIDTH: Record<number, string> = { 3: 'w-[3ch]', 4: 'w-[4ch]', 5: 'w-[5ch]' };
 
 export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
   const [parts, setParts] = useState(() => perfParts(null, null, undefined));
+  const [cpus, setCpus] = useState<number>();
   useEffect(() => {
     let prev: Sample | null = null;
     // Static per container, so it survives failed fetches and keeps its slot.
@@ -25,6 +27,7 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
         const now = { ...readMetrics(await res.text()), t: performance.now() };
         limit = now.limit || null;
         setParts(perfParts(prev, now, limit));
+        setCpus(now.cpus);
         prev = now;
       } catch {
         setParts(perfParts(null, null, limit));
@@ -38,7 +41,7 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
     return () => { stopped = true; clearTimeout(timer); };
   }, [intervalMs]);
   return (
-    <span id="perf" className="font-mono text-[11px] whitespace-nowrap text-muted-foreground" title="Container resource use (from /api/v1/metrics)">
+    <span id="perf" className="font-mono text-[11px] whitespace-nowrap text-muted-foreground" title={perfTitle(cpus)}>
       {parts.map((p, i) => (
         <Fragment key={p.label}>
           {i > 0 && ' · '}

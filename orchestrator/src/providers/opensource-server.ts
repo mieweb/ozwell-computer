@@ -21,9 +21,11 @@ import { computerEnv, generateId } from './types.ts';
 const T = 'OZWELL_ORCHESTRATOR_';
 const TAG = {
   managed: `${T}MANAGED`, owner: `${T}OWNER`, ownerEmail: `${T}OWNER_EMAIL`, ownerName: `${T}OWNER_NAME`,
-  displayName: `${T}DISPLAY_NAME`, created: `${T}CREATED`,
+  displayName: `${T}DISPLAY_NAME`, created: `${T}CREATED`, startRequested: `${T}START_REQUESTED`,
 };
 const PORT = 8080;
+/** Longer than a restart job takes; within it, another start doesn't enqueue a second job. */
+const START_GRACE_MS = 3 * 60_000;
 
 export class OpensourceServerError extends Error {
   readonly status: number;
@@ -47,6 +49,7 @@ export class OpensourceServerProvider implements Provider {
   readonly env: Record<string, string>;
   private readonly key: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly starting = new Map<string, Promise<Computer>>();
 
   constructor(uri: URL, env: NodeJS.ProcessEnv, fetchImpl: typeof fetch = fetch) {
     const q = uri.searchParams;
@@ -95,6 +98,7 @@ export class OpensourceServerProvider implements Provider {
       ownerEmail: env[TAG.ownerEmail] || undefined,
       ownerName: env[TAG.ownerName] || undefined,
       status: c.status ?? 'unknown',
+      stopped: c.status === 'offline',
       createdAt: env[TAG.created],
       internalUrl: this.internal === 'ip' ? ip : external,
       externalUrl: external,
@@ -156,6 +160,32 @@ export class OpensourceServerProvider implements Provider {
     const c = await this.get(hostname);
     if (!c) throw new Error(`container ${hostname} was not found after creation`);
     return c;
+  }
+
+  /** There is no start route: a restart job (reconfigure) starts a stopped container. Concurrent
+   * calls share one request, and a start stamped on the container within START_GRACE_MS (by any
+   * orchestrator) isn't repeated, so a later job can't restart a computer that just came up. */
+  start(id: string): Promise<Computer> {
+    const pending = this.starting.get(id);
+    if (pending) return pending;
+    const p = this.requestStart(id).finally(() => this.starting.delete(id));
+    this.starting.set(id, p);
+    return p;
+  }
+
+  private async requestStart(id: string): Promise<Computer> {
+    const c = await this.find(id);
+    if (!c) throw new Error(`container ${id} not found`);
+    const env = c.environmentVars ?? {};
+    const recent = Date.now() - Date.parse(env[TAG.startRequested] ?? '') < START_GRACE_MS;
+    if (c.status === 'offline' && !recent) {
+      const stamped = { ...env, [TAG.startRequested]: new Date().toISOString() };
+      const environmentVars = Object.entries(stamped).map(([key, value]) => ({ key, value }));
+      await this.api('PUT', `/sites/${this.site}/containers/${c.id}`, { restart: true, environmentVars });
+    }
+    const after = await this.get(id);
+    if (!after) throw new Error(`container ${id} vanished after start`);
+    return after;
   }
 
   async destroy(id: string): Promise<void> {

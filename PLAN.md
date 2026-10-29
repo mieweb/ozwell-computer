@@ -84,7 +84,6 @@ ozwell-computer/
 │  ├─ Dockerfile
 │  ├─ systemd/             # *.service units
 │  └─ openbox/             # minimal WM config / autostart
-└─ docs/openapi.json       # generated
 ```
 
 ---
@@ -155,8 +154,8 @@ only.
 
 ## 5. HTTP surface
 
-Every API route is under `/api/v1`, JSON in and out. An OpenAPI document is served at
-`/api/v1/openapi.json`, and a Swagger UI at `/api/docs`, which requires auth.
+Every API route is under `/api/v1`, JSON in and out. A Swagger UI is served at `/api/docs`
+(the OpenAPI document at `/api/docs/json`), which requires auth.
 
 ### 5.1 System
 

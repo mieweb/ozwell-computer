@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifySwagger from '@fastify/swagger';
@@ -20,7 +20,8 @@ import vncRoutes from './vnc/routes.js';
 import mcpRoutes from './mcp/server.js';
 import type { A11y } from './a11y/atspi.js';
 import type { Updater } from './update.js';
-import { m, render as renderMetrics } from './metrics.js';
+import { m, render as renderMetrics, setCpus } from './metrics.js';
+import { errors, media } from './routes/schemas.js';
 
 const require = createRequire(import.meta.url);
 export const VERSION: string = require('../package.json').version;
@@ -36,13 +37,48 @@ export interface AppContext {
   log: Logger;
 }
 
+const show = (v: unknown) => (v === undefined ? 'nothing' : JSON.stringify(v).slice(0, 80));
+
+/** Path and values of the first difference between two JSON values, or null when equal. */
+function difference(sent: unknown, returned: unknown, path = ''): string | null {
+  if (sent === returned) return null;
+  const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+  if (!isObj(sent) || !isObj(returned) || Array.isArray(sent) !== Array.isArray(returned)) {
+    return `${path || '(root)'}: sent ${show(sent)}, handler returned ${show(returned)}`;
+  }
+  for (const k of new Set([...Object.keys(sent), ...Object.keys(returned)])) {
+    const d = difference(sent[k], returned[k], `${path}.${k}`);
+    if (d) return d;
+  }
+  return null;
+}
+
+/** Fail (500) any JSON reply that its response schema serialized differently from what the handler returned. */
+export function strictResponses(app: FastifyInstance) {
+  const returned = new WeakMap<FastifyRequest, unknown>();
+  app.addHook('preSerialization', async (req, _reply, payload) => {
+    returned.set(req, JSON.parse(JSON.stringify(payload)));
+    return payload;
+  });
+  app.addHook('onSend', async (req, _reply, payload) => {
+    if (!returned.has(req) || typeof payload !== 'string') return payload;
+    const want = returned.get(req);
+    returned.delete(req);
+    const d = difference(JSON.parse(payload), want);
+    if (d) throw new Error(`${req.method} ${req.routeOptions.url}: the response schema changed the reply at ${d}`);
+    return payload;
+  });
+}
+
 export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
+  setCpus(ctx.config.cpus);
   const app: FastifyInstance = Fastify({
     loggerInstance: ctx.log as any,
     bodyLimit: 64 * 1024 * 1024,
     trustProxy: true,
     ajv: { customOptions: { coerceTypes: 'array', removeAdditional: false, allErrors: false } },
   });
+  if (ctx.config.strictResponses) strictResponses(app);
 
   app.setErrorHandler((err, req, reply) => {
     const e = toApiError(err);
@@ -80,15 +116,17 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   const staticDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'web', 'static');
   await app.register(fastifyStatic, { root: staticDir, prefix: '/static/', index: false });
 
-  app.get('/api/v1/openapi.json', { schema: { hide: true } }, async () => app.swagger());
-
   app.addHook('onResponse', async (req, reply) => {
     const route = req.routeOptions?.url ?? 'unmatched';
     if (route === '/health') return;
     m.httpSeconds.observe({ method: req.method, route, status: String(reply.statusCode) }, reply.elapsedTime / 1000);
   });
   app.get('/api/v1/metrics', {
-    schema: { tags: ['system'], summary: 'Prometheus metrics (text exposition format)' },
+    schema: {
+      tags: ['system'], summary: 'Prometheus metrics (text exposition format)',
+      description: 'Node process metrics, container and per-command memory, HTTP request durations, VNC/MCP/SSE sessions, MCP tool calls, screenshot timings and X connection state.',
+      response: { 200: media('Metrics in the Prometheus text format', ['text/plain'], { type: 'string' }), ...errors },
+    },
     logLevel: 'warn', // scraped every few seconds
   }, async (_req, reply) => {
     const { body, contentType } = await renderMetrics();

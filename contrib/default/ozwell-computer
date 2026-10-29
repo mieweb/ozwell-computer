@@ -1,5 +1,6 @@
-# Settings for the ozwell-computer services (read by ozwell-computer.service and
-# ozwell-computer-xvfb.service). See `ozwell-computer --help` for every option.
+# Settings for the ozwell-computer services (read by ozwell-computer.service,
+# ozwell-computer-xvfb.service and ozwell-computer-upgrade.service). See
+# `ozwell-computer --help` for every option.
 # Restart after editing: systemctl restart ozwell-computer-xvfb ozwell-computer
 
 # Access token. If unset, one is generated and kept in /var/lib/ozwell-computer/token.
@@ -17,3 +18,7 @@
 
 # Other origins allowed to embed the viewer in an iframe (CSP frame-ancestors).
 #OZWELL_COMPUTER_FRAME_ANCESTORS=https://app.ozwell.ai
+
+# CPU capacity for the toolbar's CPU %, when a limit isn't visible inside the container
+# (e.g. a Proxmox LXC cpulimit around a Docker host).
+#OZWELL_COMPUTER_CPUS=2
