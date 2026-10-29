@@ -147,7 +147,7 @@ async function main() {
   if (args.help) { process.stdout.write(HELP); return; }
   if (args.version) { process.stdout.write(VERSION + '\n'); return; }
 
-  const offline = args.printOpenapi || args.printMcpTools;
+  const offline = args.printMcpTools;
   const log = createLogger(offline ? 'silent' : config.logLevel);
   let token: string | null = null;
   let tokenSource: 'config' | 'file' | 'generated' | null = null;
@@ -164,12 +164,6 @@ async function main() {
     : new Updater(config.updateUrl === 'off' ? null : config.updateUrl, log, (s) => desktop.bus.publish('update.status', s));
   const app = await buildServer({ config, desktop, token, version: VERSION, a11y, ptyAvailable: await ptyAvailable(), updater, log });
 
-  if (args.printOpenapi) {
-    await app.ready();
-    process.stdout.write(JSON.stringify(app.swagger(), null, 2) + '\n');
-    await app.close();
-    return;
-  }
   if (args.printMcpTools) {
     // The catalog the orchestrator proxies (orchestrator/ reads docs/mcp-tools.json).
     await app.listen({ port: 0, host: '127.0.0.1' });
