@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { z } from 'zod';
+import { isGitUpdateUrl } from './update.js';
 
 export function inContainer(): boolean {
   return existsSync('/.dockerenv') || existsSync('/run/.containerenv') || process.env.container !== undefined;
@@ -37,8 +38,8 @@ export const ConfigSchema = z.object({
   fsRoot: z.string(),
   /** Externally visible base URL for the startup link (e.g. the host port behind Docker). */
   publicUrl: z.string().url().optional(),
-  /** APT `Packages` index to check for new releases; "off" disables update checks. */
-  updateUrl: z.string().refine((v) => v === 'off' || /^(https?|file):\/\//.test(v), 'must be a URL or "off"'),
+  /** APT `Packages` index, or git+https://<repo>#<branch> to build a branch, to check for updates; "off" disables. */
+  updateUrl: z.string().refine((v) => v === 'off' || /^(https?|file):\/\//.test(v) || isGitUpdateUrl(v), 'must be a URL, git+https://<repo>#<branch>, or "off"'),
   /** Open the viewer in the default browser once listening. */
   open: bool,
   /** Extra origins allowed to embed the viewer in a frame (CSP frame-ancestors). */
@@ -186,7 +187,7 @@ Usage: ozwell-computer [flags]
   --log-level <lvl>       OZWELL_COMPUTER_LOG_LEVEL (info)
   --fs-root <dir>         OZWELL_COMPUTER_FS_ROOT (/)
   --public-url <url>      OZWELL_COMPUTER_PUBLIC_URL: base URL shown in the startup link
-  --update-url <url|off>  OZWELL_COMPUTER_UPDATE_URL: APT Packages index checked for new releases
+  --update-url <url|off>  OZWELL_COMPUTER_UPDATE_URL: APT Packages index, or git+https://<repo>#<branch>, checked for updates
   --open                  OZWELL_COMPUTER_OPEN=true: open the viewer in the default browser
   --frame-ancestors <o>   OZWELL_COMPUTER_FRAME_ANCESTORS: origins (space/comma separated) allowed to embed the viewer
   --print-openapi         Print the OpenAPI document and exit

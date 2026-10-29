@@ -59,6 +59,9 @@ jobs:
   image:
     env:
       OZWELL_COMPUTER_HOST_PORT: '18080'
+      # Release images update from releases with apt; :main images (nightly / manual
+      # runs) build each new commit on main from git.
+      UPDATE_CHANNEL: ${{ github.event_name == 'release' && 'release' || 'main' }}
     # Self-hosted (more reliable for the desktop/VNC/browser suite). Only trusted events
     # reach this job; see the README before allowing PRs from forks to run workflows.
     runs-on: [self-hosted, Linux, X64]
@@ -90,13 +93,17 @@ jobs:
       - name: Build image for tests
         run: |
           docker build --target build -t ozwell-computer:build .   # the .deb, for the release
-          docker build -t ozwell-computer:dev .                    # reuses that stage from cache
+          docker build --build-arg UPDATE_CHANNEL -t ozwell-computer:dev .  # reuses that stage from cache
       - name: Start the compose dev container
         run: |
           docker compose down -v --remove-orphans || true   # leftovers from an earlier run
           docker compose up -d --wait --wait-timeout 180
         env:
           OZWELL_COMPUTER_TOKEN: testtoken
+          # Not the image's git channel: main moving mid-run would make the upgrade test
+          # restart the server and lose the coverage counters. The image is never older
+          # than the latest release, so this always reports nothing to install.
+          OZWELL_COMPUTER_UPDATE_URL: https://github.com/mieweb/ozwell-computer/releases/latest/download/Packages
       - name: Install Playwright browsers
         run: npx playwright-core install ${{ runner.environment == 'github-hosted' && '--with-deps' || '' }} chromium firefox
       - name: Full regression suite (unit + integration, Chromium + Firefox)

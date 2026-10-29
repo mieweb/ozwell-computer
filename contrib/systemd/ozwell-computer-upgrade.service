@@ -5,6 +5,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
+# OZWELL_COMPUTER_UPDATE_URL picks apt or git (see the script).
+EnvironmentFile=-/etc/default/ozwell-computer
 ExecStart=@PREFIX@/bin/ozwell-computer-upgrade
 # No timeout: being killed mid-dpkg is worse than a slow download. apt itself waits
 # a bounded time for the dpkg lock (see the script).
