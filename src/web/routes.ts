@@ -1,14 +1,19 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { AppContext } from '../server.js';
 
-const CSP = "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:; frame-ancestors 'self'";
+export function contentSecurityPolicy(frameAncestors: string[]) {
+  return "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:; "
+    + ['frame-ancestors', "'self'", ...frameAncestors].join(' ');
+}
 
 // The React app (web/, built by Vite into dist/web/static) loads its data from the API, so
 // the shell holds nothing secret and is served with or without credentials.
-export default async function webRoutes(app: FastifyInstance) {
+export default async function webRoutes(app: FastifyInstance, ctx: AppContext) {
+  const csp = contentSecurityPolicy(ctx.config.frameAncestors);
   const page = async (_req: FastifyRequest, reply: FastifyReply) =>
     reply
       .header('cache-control', 'no-store')
-      .header('content-security-policy', CSP)
+      .header('content-security-policy', csp)
       .sendFile('index.html', { cacheControl: false });
   app.get('/', { schema: { hide: true } }, page);
   app.get('/index.html', { schema: { hide: true } }, page);

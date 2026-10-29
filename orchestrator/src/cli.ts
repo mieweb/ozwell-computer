@@ -7,6 +7,8 @@
 //   ORCHESTRATOR_PORT    listen port (default 8090)
 //   TOOL_CATALOG         path to the ozwell-computer tool catalog (default ../docs/mcp-tools.json)
 //   ORCHESTRATOR_MAX_INSTANCES  computers each user may have (default unlimited)
+//   COMPUTER_FRAME_ANCESTORS  origins allowed to embed new computers' viewers in an iframe
+//                        (passed to them as OZWELL_COMPUTER_FRAME_ANCESTORS)
 import { readFileSync } from 'node:fs';
 import { providerFromUri } from './providers/index.ts';
 import { InstanceClient } from './instance-client.ts';

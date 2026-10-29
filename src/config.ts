@@ -12,6 +12,14 @@ const bool = z
   .union([z.boolean(), z.string()])
   .transform((v) => (typeof v === 'boolean' ? v : ['1', 'true', 'yes', 'on'].includes(v.toLowerCase())));
 
+// A CSP host-source origin: scheme://host[:port], host may start with a "*." wildcard.
+const ORIGIN = /^https?:\/\/(\*\.)?[a-z0-9-]+(\.[a-z0-9-]+)*(:(\d{1,5}|\*))?$/i;
+
+const origins = z
+  .union([z.array(z.string()), z.string()])
+  .transform((v) => (typeof v === 'string' ? v.split(/[\s,]+/).filter(Boolean) : v))
+  .pipe(z.array(z.string().regex(ORIGIN, 'must be an origin such as https://app.example.com')));
+
 export const ConfigSchema = z.object({
   port: z.coerce.number().int().min(0).max(65535),
   host: z.string(),
@@ -34,6 +42,8 @@ export const ConfigSchema = z.object({
   updateUrl: z.string().refine((v) => v === 'off' || /^(https?|file):\/\//.test(v) || isGitUpdateUrl(v), 'must be a URL, git+https://<repo>#<branch>, or "off"'),
   /** Open the viewer in the default browser once listening. */
   open: bool,
+  /** Extra origins allowed to embed the viewer in a frame (CSP frame-ancestors). */
+  frameAncestors: origins,
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -58,6 +68,7 @@ export function defaults(): Config {
     publicUrl: undefined,
     updateUrl: 'https://github.com/mieweb/ozwell-computer/releases/latest/download/Packages',
     open: false,
+    frameAncestors: [],
   };
 }
 
@@ -79,6 +90,7 @@ const ENV_MAP: Record<string, keyof Config> = {
   OZWELL_COMPUTER_PUBLIC_URL: 'publicUrl',
   OZWELL_COMPUTER_UPDATE_URL: 'updateUrl',
   OZWELL_COMPUTER_OPEN: 'open',
+  OZWELL_COMPUTER_FRAME_ANCESTORS: 'frameAncestors',
 };
 
 const FLAG_MAP: Record<string, keyof Config> = {
@@ -101,6 +113,7 @@ const FLAG_MAP: Record<string, keyof Config> = {
   'public-url': 'publicUrl',
   'update-url': 'updateUrl',
   open: 'open',
+  'frame-ancestors': 'frameAncestors',
 };
 
 const BOOLEAN_FLAGS = new Set(['auth-disabled', 'no-auth', 'spawn-xvfb', 'view-only', 'exec', 'no-exec', 'open']);
@@ -176,6 +189,7 @@ Usage: ozwell-computer [flags]
   --public-url <url>      OZWELL_COMPUTER_PUBLIC_URL: base URL shown in the startup link
   --update-url <url|off>  OZWELL_COMPUTER_UPDATE_URL: APT Packages index, or git+https://<repo>#<branch>, checked for updates
   --open                  OZWELL_COMPUTER_OPEN=true: open the viewer in the default browser
+  --frame-ancestors <o>   OZWELL_COMPUTER_FRAME_ANCESTORS: origins (space/comma separated) allowed to embed the viewer
   --print-openapi         Print the OpenAPI document and exit
   --print-mcp-tools       Print the MCP tool catalog (name, description, input schema) and exit
 `;

@@ -15,3 +15,6 @@
 
 # Disable the process, file and app-launch APIs.
 #OZWELL_COMPUTER_EXEC=false
+
+# Other origins allowed to embed the viewer in an iframe (CSP frame-ancestors).
+#OZWELL_COMPUTER_FRAME_ANCESTORS=https://app.ozwell.ai
