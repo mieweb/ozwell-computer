@@ -100,8 +100,10 @@ async function waitReady(provider: Provider, c: Computer, timeoutMs: number, sta
   let last = { c: c as Computer | null, ready: false };
   for (;;) {
     last = await isReady(provider, c.id);
+    // /health can answer before the provider stops reporting the computer as stopped.
+    const ready = last.ready && !last.c?.stopped;
     const dead = last.c?.stopped ? !starting : ['failed', 'missing', 'dead'].includes(last.c?.status ?? '');
-    if (last.ready || dead || Date.now() >= end) return { c: last.c ?? c, ready: last.ready };
+    if (ready || dead || Date.now() >= end) return { c: last.c ?? c, ready };
     await new Promise((r) => setTimeout(r, 1500));
   }
 }
@@ -197,7 +199,8 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
           return await client.callTool(`${c.id}\u0000${user.id}`, c.internalUrl, c.token, user.name || user.email || user.id, name, rest)
             .catch(async (e) => {
               if (!(e instanceof InstanceError && e.unreachable)) throw e;
-              const now = await provider.get(c.id);
+              // Best effort: a failed lookup keeps the original error.
+              const now = await provider.get(c.id).catch(() => null);
               if (now?.stopped) return stoppedError(now);
               throw e;
             });

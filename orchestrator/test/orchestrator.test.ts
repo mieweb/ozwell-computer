@@ -69,6 +69,20 @@ async function unavailable(onHit: () => void) {
   return { app, url: `http://127.0.0.1:${(app.server.address() as any).port}` };
 }
 
+/** Opens MCP sessions, then answers tools/call with a 503 carrying a JSON-RPC error body. */
+async function rpcUnavailable(onHit: () => void) {
+  const app = Fastify();
+  app.post('/mcp', async (req, reply) => {
+    const m = req.body as any;
+    if (m.method === 'initialize') return reply.header('mcp-session-id', 's1').send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-06-18' } });
+    if (!m.id) return reply.code(202).send();
+    onHit();
+    return reply.code(503).send({ jsonrpc: '2.0', id: m.id, error: { code: -32000, message: 'Service Unavailable' } });
+  });
+  await app.listen({ port: 0, host: '127.0.0.1' });
+  return { app, url: `http://127.0.0.1:${(app.server.address() as any).port}` };
+}
+
 let instance: Awaited<ReturnType<typeof fakeInstance>>;
 let provider: ReturnType<typeof memoryProvider>;
 let app: FastifyInstance;
@@ -204,6 +218,36 @@ describe('tools', () => {
     provider.get = get;
     set({ stopped: true, status: 'offline' });
     expect((await tool('alice', 'start_computer', { instance_id: a.instance_id })).data.ready).toBe(true);
+  });
+
+  it('treats a 503 with a JSON-RPC error body like any 503, and keeps the error if the status check fails', async () => {
+    const a = (await tool('alice', 'list_computers')).data.computers[0];
+    const set = (patch: Partial<Computer>) => provider.all.set(a.instance_id, { ...provider.all.get(a.instance_id)!, ...patch });
+    const proxy = await rpcUnavailable(() => set({ status: 'offline', stopped: true }));
+    set({ internalUrl: proxy.url });
+    expect((await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 2 })).data.error.reason).toBe('computer_stopped');
+    set({ status: 'running', stopped: false });
+    const get = provider.get;
+    let gets = 0;
+    provider.get = async (id) => { if (++gets > 1) throw new Error('provider API timed out'); return get(id); };
+    const r = await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 2 });
+    provider.get = get;
+    await proxy.app.close();
+    expect(r.data.error).toMatchObject({ reason: 'target_unavailable', message: expect.stringContaining('HTTP 503') });
+    set({ internalUrl: instance.url });
+  });
+
+  it('is not ready while the provider still reports it stopped', async () => {
+    const a = (await tool('alice', 'list_computers')).data.computers[0];
+    const c = provider.all.get(a.instance_id)!;
+    const start = provider.start;
+    // /health already answers, but the platform's status lags behind
+    provider.start = async (id) => { const s = { ...c, status: 'offline', stopped: true, internalUrl: instance.url }; provider.all.set(id, s); return s; };
+    provider.all.set(a.instance_id, { ...c, status: 'offline', stopped: true });
+    setTimeout(() => provider.all.set(a.instance_id, { ...c, status: 'running', stopped: false }), 2000);
+    const r = (await tool('alice', 'start_computer', { instance_id: a.instance_id })).data;
+    provider.start = start;
+    expect(r).toMatchObject({ stopped: false, ready: true });
   });
 
   it('destroys', async () => {

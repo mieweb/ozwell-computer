@@ -288,7 +288,10 @@ The API key comes from `OPENSOURCE_SERVER_API_KEY`.
   site's network.
 - **Starting:** the API has no start route. `start` asks for a restart job
   (`PUT /sites/<id>/containers/<id>` with `restart: true`), which starts an `offline`
-  container.
+  container. Only `offline` containers are restarted, concurrent starts share one
+  request, and the request is stamped in `OZWELL_ORCHESTRATOR_START_REQUESTED`: for
+  3 minutes no orchestrator enqueues another job, so a late job can't restart a
+  computer that just came up.
 - **Note:** an admin key lists every container on the site; non-orchestrator containers
   are ignored.
 
