@@ -9,7 +9,8 @@ on:
     paths-ignore: ['**.md', 'docs/**', 'LICENSE', '.gitignore']
   # The slow job (image, full integration suite, .deb, publish) runs only for these.
   # Publishing a GitHub release (tag vX.Y.Z) builds ozwell-computer_X.Y.Z_<arch>.deb
-  # and the X.Y.Z image; the nightly run refreshes :latest.
+  # and the X.Y.Z and :latest images. The nightly run on main refreshes :main and the
+  # rolling `nightly` prerelease that :main images update from.
   release:
     types: [published]
   schedule:
@@ -59,6 +60,10 @@ jobs:
   image:
     env:
       OZWELL_COMPUTER_HOST_PORT: '18080'
+      # The apt repo (and update check) baked into the image: release images track
+      # stable releases, :main images track the rolling nightly prerelease.
+      APT_REPO: ${{ github.event_name == 'release' && 'https://github.com/mieweb/ozwell-computer/releases/latest/download/' || 'https://github.com/mieweb/ozwell-computer/releases/download/nightly/' }}
+      NIGHTLY: ${{ github.event_name != 'release' && github.ref == 'refs/heads/main' }}
     # Self-hosted (more reliable for the desktop/VNC/browser suite). Only trusted events
     # reach this job; see the README before allowing PRs from forks to run workflows.
     runs-on: [self-hosted, Linux, X64]
@@ -90,7 +95,7 @@ jobs:
       - name: Build image for tests
         run: |
           docker build --target build -t ozwell-computer:build .   # the .deb, for the release
-          docker build -t ozwell-computer:dev .                    # reuses that stage from cache
+          docker build --build-arg APT_REPO -t ozwell-computer:dev .  # reuses that stage from cache
       - name: Start the compose dev container
         run: |
           docker compose down -v --remove-orphans || true   # leftovers from an earlier run
@@ -131,6 +136,8 @@ jobs:
         run: |
           command -v dpkg-scanpackages >/dev/null || { sudo apt-get update && sudo apt-get install -y dpkg-dev; }
           cd pkg
+          # The nightly release overwrites one fixed asset name (no '+' and no pile-up of old builds).
+          if [ "$NIGHTLY" = true ]; then mv ozwell-computer_*_amd64.deb ozwell-computer_nightly_amd64.deb; fi
           dpkg-scanpackages --multiversion . > Packages
           gzip -k9f Packages
           ls -l
@@ -146,6 +153,24 @@ jobs:
         # An action rather than `gh release upload`: the self-hosted runner has no gh CLI.
         uses: softprops/action-gh-release@v2
         with:
+          files: |
+            pkg/*.deb
+            pkg/Packages
+            pkg/Packages.gz
+      # A prerelease, so releases/latest (the stable channel) never points at it.
+      - name: Move the nightly tag to this commit
+        if: env.NIGHTLY == 'true'
+        run: git push -f origin HEAD:refs/tags/nightly
+      - name: Update the rolling nightly prerelease
+        if: env.NIGHTLY == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: Nightly (main)
+          body: Rolling build of the main branch, updated by CI. `ghcr.io/mieweb/ozwell-computer:main` images update from this release; stable images use the latest release.
+          prerelease: true
+          make_latest: false
+          overwrite_files: true
           files: |
             pkg/*.deb
             pkg/Packages

@@ -29,7 +29,8 @@ case "$packager" in
 esac
 
 # parse version parts from git
-describe=$(git describe --tags --long --dirty 2>/dev/null || true)
+# `nightly` is the rolling prerelease tag CI moves to main, not a version.
+describe=$(git describe --tags --long --dirty --exclude nightly 2>/dev/null || true)
 
 dirty=0
 case "$describe" in
