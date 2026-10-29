@@ -8,16 +8,25 @@ type Capabilities = { display: { name: string }; features: { vnc: { view_only: b
 
 function App() {
   const [caps, setCaps] = useState<Capabilities | 'login' | null>(null);
+  const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    void fetch('/api/v1/capabilities', { credentials: 'same-origin' }).then(async (r) => {
-      if (r.status === 401) return setCaps('login');
-      const c: Capabilities = await r.json();
-      document.title = `desktop ${c.display.name}`;
-      setCaps(c);
-    });
+    const load = (): Promise<void> => fetch('/api/v1/capabilities', { credentials: 'same-origin' })
+      .then(async (r) => {
+        if (r.status === 401) return setCaps('login');
+        if (!r.ok) throw new Error(`${r.status} ${r.statusText}`);
+        const c: Capabilities = await r.json();
+        document.title = `desktop ${c.display.name}`;
+        setCaps(c);
+      })
+      .catch((e: Error) => {
+        setError(e.message);
+        setTimeout(load, 3000);
+      });
+    void load();
   }, []);
   if (caps === 'login') return <Login />;
-  return caps && <Viewer serverViewOnly={caps.features.vnc.view_only} />;
+  if (caps) return <Viewer serverViewOnly={caps.features.vnc.view_only} />;
+  return error && <p className="m-auto text-muted-foreground">Server unavailable ({error}), retrying…</p>;
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

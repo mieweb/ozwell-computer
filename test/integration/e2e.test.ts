@@ -28,7 +28,9 @@ describe('container smoke', () => {
     expect(page.status).toBe(200);
     expect(page.headers.get('content-security-policy')).toContain("script-src 'self'");
     expect(page.headers.get('cache-control')).toBe('no-store');
-    expect(await page.text()).toMatch(/<div id="root"[^>]*>[\s\S]*\/static\/assets\/.*\.js/);
+    const html = await page.text();
+    expect(html).toMatch(/<div id="root"/);
+    expect(html).toMatch(/src="\/static\/assets\/[^"]+\.js"/);
   });
 
   it('capabilities report a working display', async () => {
