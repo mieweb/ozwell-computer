@@ -74,13 +74,17 @@ async function checkCoverage(url: string, token: string) {
     }
   }
 
-  const spec = await (await fetch(`${url}/api/docs/json`, { headers: { authorization: `Bearer ${token}` } })).json();
+  const headers = { authorization: `Bearer ${token}` };
+  const spec = await (await fetch(`${url}/api/docs/json`, { headers })).json();
+  // With update checks off (the compose default), apply can only answer 501.
+  const update = await (await fetch(`${url}/api/v1/update`, { headers })).json();
+  const unsupported = new Set(update.supported ? [] : ['POST /api/v1/update/apply']);
   const missingRoutes: string[] = [];
   for (const [path, ops] of Object.entries<Record<string, unknown>>(spec.paths)) {
     for (const method of Object.keys(ops)) {
       if (!['get', 'post', 'put', 'delete', 'patch'].includes(method)) continue;
       const key = `${method.toUpperCase()} ${path.replace(/\{(\w+)\}/g, ':$1')}`;
-      if (!hits.has(key)) missingRoutes.push(key);
+      if (!hits.has(key) && !unsupported.has(key)) missingRoutes.push(key);
     }
   }
   const allTools = await listMcpTools(url, token);
