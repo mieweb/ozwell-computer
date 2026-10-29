@@ -189,6 +189,18 @@ describe('startup link config', () => {
   });
 });
 
+describe('frame ancestors config', () => {
+  it('parses and validates origins', () => {
+    expect(loadConfig({}).config.frameAncestors).toEqual([]);
+    const env = { OZWELL_COMPUTER_FRAME_ANCESTORS: 'https://app.ozwell.ai, https://*.example.com:8443  http://localhost:*' };
+    expect(loadConfig(env).config.frameAncestors).toEqual(['https://app.ozwell.ai', 'https://*.example.com:8443', 'http://localhost:*']);
+    expect(loadConfig({}, ['--frame-ancestors', 'https://a.test']).config.frameAncestors).toEqual(['https://a.test']);
+    for (const bad of ['*', "'none'", 'app.ozwell.ai', 'https://a.test/path', 'https://a.test; script-src *', 'javascript:x']) {
+      expect(() => loadConfig({ OZWELL_COMPUTER_FRAME_ANCESTORS: bad }), bad).toThrow();
+    }
+  });
+});
+
 import { parsePackages, newest } from '../../src/update.js';
 describe('update check', () => {
   const index = `Package: ozwell-computer
