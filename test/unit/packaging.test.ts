@@ -100,7 +100,7 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
     });
 
     it.each(['make*install*', 'systemctl daemon-reload', 'systemctl start*', 'node*', 'systemctl try-restart*'])(
-      'when %s fails it reports failed, starts the server again, and a retry reinstalls',
+      'when %s fails it reports failed, restarts the server onto the marker, and a retry reinstalls',
       async (failOn) => {
         const dir = fresh();
         const r = run(dir, failOn);
@@ -108,7 +108,7 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
         expect(r.revision).toBe('0'.repeat(40));
         // Still a valid install to the server, so it keeps offering the update.
         expect(await readInstalled(join(dir, 'prefix'))).toEqual({ version: '1.0.0', revision: '0'.repeat(40) });
-        expect(r.calls.at(-1)).toBe('systemctl start ozwell-computer.service');
+        expect(r.calls.at(-1)).toBe('systemctl restart ozwell-computer.service');
         const retry = run(dir);
         expect(retry).toMatchObject({ status: 'succeeded', revision: 'new' });
         expect(retry.calls).toContain('systemctl stop ozwell-computer.service');

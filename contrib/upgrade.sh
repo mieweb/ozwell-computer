@@ -64,7 +64,8 @@ from_git() {
         # A commit no branch head has: the server keeps offering the update and a retry reinstalls
         # (removing REVISION would make it report updates as unsupported).
         echo 0000000000000000000000000000000000000000 > "$PREFIX/REVISION"
-        systemctl start ozwell-computer.service
+        # Restart, not start: a server that already came up has the new revision cached.
+        systemctl restart ozwell-computer.service
         fail
     fi
     echo "installed now: $after"
