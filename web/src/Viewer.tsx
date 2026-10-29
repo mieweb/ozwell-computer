@@ -1,5 +1,5 @@
 import RFB from '/novnc/core/rfb.js';
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useReducer, useRef, useState, type KeyboardEvent } from 'react';
 import { Badge } from '@mieweb/ui/components/Badge';
 import { Button } from '@mieweb/ui/components/Button';
 import { Checkbox } from '@mieweb/ui/components/Checkbox';
@@ -153,8 +153,25 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
       hidden={!toast.shown}>{toast.text}</div>
   );
 
+  // A normal focus stop: Enter or Space hands the keyboard to the remote desktop, Shift+Esc takes it back.
+  const desktopFocus = {
+    tabIndex: 0,
+    title: 'Remote desktop: press Enter to type into it, Shift+Esc to leave',
+    onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+      if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+      e.preventDefault();
+      rfbRef.current?.focus();
+    },
+  };
+
   const desktop = (
-    <div id="screen-wrap" className="relative flex-1 overflow-hidden [&:fullscreen]:size-full [&:fullscreen]:bg-background" ref={wrapRef}>
+    <div id="screen-wrap" className="relative flex-1 overflow-hidden [&:fullscreen]:size-full [&:fullscreen]:bg-background" ref={wrapRef}
+      onKeyDownCapture={(e) => {
+        if (e.key !== 'Escape' || !e.shiftKey) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.currentTarget.parentElement!.focus();
+      }}>
       <div id="screen" className="absolute inset-0" ref={screenRef} />
       <div id="overlay" className="pointer-events-none absolute inset-0" ref={overlayRef}>
         {[...cursors.values()].map((p) => (
@@ -223,10 +240,10 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
         </div>
       )}
       {/* Without exec there is only the desktop, so no tab semantics. */}
-      {!exec && <div className="flex min-h-0 flex-1 flex-col">{desktop}</div>}
+      {!exec && <div className="flex min-h-0 flex-1 flex-col" {...desktopFocus}>{desktop}</div>}
       {/* Kept mounted while hidden so the VNC session stays connected; noVNC rescales when it is shown again. */}
       {exec && (
-        <TabsContent value="desktop" forceMount tabIndex={0} onFocus={(e) => { if (e.target === e.currentTarget) rfbRef.current?.focus(); }}
+        <TabsContent value="desktop" forceMount {...desktopFocus}
           className={`mt-0 min-h-0 flex-1 flex-col rounded-none ${tab === 'desktop' ? 'flex' : 'hidden'}`}>
           {desktop}
         </TabsContent>
