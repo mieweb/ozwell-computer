@@ -18,14 +18,18 @@ async function tool(name: string, args: Record<string, unknown> = {}): Promise<a
 }
 
 beforeAll(async () => {
-  client = new Client({ name: 'oz-mcp-tools', version: '1.0.0' });
-  transport = new StreamableHTTPClientTransport(new URL(URL_ + '/mcp'), { requestInit: { headers: auth } });
-  await client.connect(transport);
+  await connect();
 });
 afterAll(async () => {
   await transport?.terminateSession().catch(() => undefined);
   await client?.close();
 });
+
+async function connect() {
+  client = new Client({ name: 'oz-mcp-tools', version: '1.0.0' });
+  transport = new StreamableHTTPClientTransport(new URL(URL_ + '/mcp'), { requestInit: { headers: auth } });
+  await client.connect(transport);
+}
 
 const bounds = async (id: string) => (await api('GET', `/api/v1/windows/${id}`)).body.bounds;
 
@@ -50,8 +54,17 @@ describe('MCP tools', () => {
       return;
     }
     expect(r.isError).toBeFalsy();
-    expect(body.upgrade).toBe(s.available ? 'requested' : 'none');
-  });
+    expect(body.upgrade).toBe(s.available || s.latest === null ? 'requested' : 'none');
+    if (body.upgrade === 'none') return;
+    // A real upgrade: wait for it like the REST test, then reconnect (a restart drops the session).
+    await waitFor(async () => {
+      const u = (await api('GET', '/api/v1/update').catch(() => null))?.body.upgrade;
+      return u && ['unchanged', 'succeeded', 'failed'].includes(u.state) ? u : null;
+    }, 600000);
+    await waitFor(async () => (await fetch(URL_ + '/health').catch(() => null))?.status === 204, 120000);
+    await client.close();
+    await connect();
+  }, 750000);
 
   it('move puts the pointer where asked', async () => {
     const r = await tool('move', { x: 321, y: 123 });

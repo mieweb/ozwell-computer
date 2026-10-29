@@ -317,6 +317,25 @@ describe('git update channel', () => {
     u.head = 'd'.repeat(40);
     expect(await u.check()).toMatchObject({ latest: 'main@ddddddd', available: true, revision: { current: installed, latest: u.head } });
   });
+
+  it('keeps re-reading a requested upgrade until it ends, so the cached status recovers from a failed install', async () => {
+    const state = mkdtempSync(join(tmpdir(), 'oz-update-state-'));
+    writeFileSync(join(dir, 'upgrade.path'), '');
+    const changes: string[] = [];
+    class Watched extends FakeRemote { protected override upgradePollMs = 20; }
+    const u = new Watched('git+https://github.com/mieweb/ozwell-computer.git#main', pino({ level: 'silent' }), (s) => changes.push(s.upgrade.state), state, dir, join(dir, 'upgrade.path'));
+    await u.start();
+    writeFileSync(join(state, 'upgrade-request'), '');
+    expect((await u.status()).upgrade.state).toBe('requested');
+    // the root unit takes the request, then fails without restarting the server
+    rmSync(join(state, 'upgrade-request'));
+    writeFileSync(join(state, 'upgrade.status'), `failed ${Math.floor(Date.now() / 1000)}\n`);
+    for (let i = 0; i < 50 && u.cached()?.upgrade.state !== 'failed'; i++) await new Promise((r) => setTimeout(r, 20));
+    u.stop();
+    rmSync(state, { recursive: true, force: true });
+    expect(u.cached()?.upgrade.state).toBe('failed');
+    expect(changes.at(-1)).toBe('failed');
+  });
 });
 
 describe('ocr', () => {

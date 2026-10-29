@@ -12,7 +12,7 @@ import { DEFAULT_WAIT_MS, MAX_WAIT_MS, jobsFor, present } from '../process/jobs.
 import { safePath } from '../fs/index.js';
 import { launchDetached } from '../routes/windows.js';
 import { m } from '../metrics.js';
-import type { UpdateStatus } from '../update.js';
+import { upgrading, type UpdateStatus } from '../update.js';
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 interface ToolResult { content: Content[]; isError?: boolean; [k: string]: unknown }
@@ -44,7 +44,7 @@ const Mods = z.array(z.string()).optional().describe('Modifiers held during the 
 
 /** Added to every tool result while the last check found an update that isn't being installed yet. */
 export function updateNotice(s: UpdateStatus | null): string | null {
-  if (!s?.supported || !s.available || s.upgrade.state === 'requested' || s.upgrade.state === 'running') return null;
+  if (!s?.supported || !s.available || upgrading(s)) return null;
   return `Update available: ozwell-computer ${s.latest} (installed: ${s.current}). Call update_computer to install it. ` +
     'You may finish your current task first, but install it before you start your next turn that uses this computer.';
 }
@@ -66,7 +66,7 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
       ctx.log.info({ tool: name, agent: p.name, session: p.id }, 'mcp tool call');
       const r = await cb(...a);
       m.mcpToolCalls.inc({ tool: name, outcome: r.isError ? 'error' : 'ok' });
-      const notice = name === 'update_computer' ? null : updateNotice(ctx.updater?.cached() ?? null);
+      const notice = updateNotice(ctx.updater?.cached() ?? null);
       return notice ? { ...r, content: [...r.content, { type: 'text', text: notice }] } : r;
     });
 
@@ -172,7 +172,8 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
   }, async () => wrap(async () => {
     if (!ctx.updater) throw new ApiError('feature_unsupported', 'update checks are not running', { feature: 'update' });
     const before = await ctx.updater.status();
-    if (before.supported && !before.available) return text({ upgrade: 'none', current: before.current, message: 'Already up to date.' });
+    // latest is null until a check succeeds; then let the upgrade find out.
+    if (before.supported && before.latest !== null && !before.available) return text({ upgrade: 'none', current: before.current, message: 'Already up to date.' });
     const s = await ctx.updater.apply();
     return text({ upgrade: s.upgrade.state, current: s.current, latest: s.latest, message: 'Update requested; the server restarts once it is installed. If a tool call fails meanwhile, wait and retry.' });
   }));

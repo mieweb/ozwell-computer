@@ -69,4 +69,11 @@ describe('MCP update notice and update_computer', () => {
     expect(JSON.parse(texts(r)[0])).toMatchObject({ upgrade: 'none', message: 'Already up to date.' });
     expect(applied).toBe(1);
   });
+
+  it('update_computer lets the upgrade decide when no check has succeeded yet', async () => {
+    current = status({ available: false, latest: null, error: 'offline' });
+    const r = await client.callTool({ name: 'update_computer', arguments: {} });
+    expect(JSON.parse(texts(r)[0])).toMatchObject({ upgrade: 'requested' });
+    expect(applied).toBe(2);
+  });
 });
