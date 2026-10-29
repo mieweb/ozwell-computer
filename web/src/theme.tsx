@@ -15,7 +15,7 @@ const putTheme = (body: { scheme: Scheme; if_unset?: boolean }) =>
   api<ThemeState>('/api/v1/desktop/theme', { method: 'PUT', body: JSON.stringify(body) });
 
 /** With viewOnly, the toggle only changes this viewer and never sets the desktop's theme. */
-export function ThemeToggle({ viewOnly }: { viewOnly: boolean }) {
+export function ThemeToggle({ viewOnly, toast }: { viewOnly: boolean; toast: (text: string) => void }) {
   const [scheme, setScheme] = useState(prefersScheme);
   useEffect(() => applyScheme(scheme), [scheme]);
   // Bumped by every event and request; a response that arrives after a newer one is dropped.
@@ -27,20 +27,24 @@ export function ThemeToggle({ viewOnly }: { viewOnly: boolean }) {
   };
   useServerEvent<ThemeState>('desktop.theme', (t) => { gen.current++; setScheme(t.scheme); });
   // On every (re)connect: the stream doesn't replay changes missed while it was down.
+  // A failure keeps the current scheme; the next reconnect tries again.
   useServerEvent('hello', () => {
     const g = ++gen.current;
     void api<ThemeState>('/api/v1/desktop/theme').then((t) => {
       if (g !== gen.current) return;
       if (t.set) return setScheme(t.scheme);
-      if (!viewOnly) void latest(putTheme({ scheme: prefersScheme(), if_unset: true }));
-    });
+      if (!viewOnly) return latest(putTheme({ scheme: prefersScheme(), if_unset: true }));
+    }).catch(() => undefined);
   });
 
   const next: Scheme = scheme === 'dark' ? 'light' : 'dark';
+  const local = () => { gen.current++; setScheme(next); };
   const toggle = () => {
-    if (!viewOnly) return void latest(putTheme({ scheme: next }));
-    gen.current++;
-    setScheme(next);
+    if (viewOnly) return local();
+    void latest(putTheme({ scheme: next })).catch((e: Error) => {
+      local();
+      toast(`Switched this viewer only; the desktop theme could not be changed: ${e.message}`);
+    });
   };
   return (
     <Button id="btn-theme" size="sm" variant="outline" onClick={toggle}

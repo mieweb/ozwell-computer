@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { unsupported } from './errors.js';
@@ -43,6 +44,9 @@ async function startDaemon(display: string) {
   await once(child, 'spawn').catch((e: NodeJS.ErrnoException) => {
     throw e.code === 'ENOENT' ? unsupported('theme', 'xsettingsd is not installed') : e;
   });
+  // It exits at once when it can't open the display or take the XSETTINGS selection.
+  const exited = await Promise.race([once(child, 'exit').then(([code, sig]) => sig ?? `code ${code}`), sleep(500, null)]);
+  if (exited) throw new Error(`xsettingsd exited during startup (${exited})`);
   child.unref();
 }
 
