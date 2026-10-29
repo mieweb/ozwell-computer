@@ -54,8 +54,10 @@ describe('MCP tools', () => {
       return;
     }
     expect(r.isError).toBeFalsy();
-    expect(body.upgrade).toBe(s.available || s.latest === null ? 'requested' : 'none');
-    if (body.upgrade === 'none') return;
+    const requested = s.available || s.latest === null;
+    // The root unit may already have picked the request up by the time the tool replies.
+    expect(requested ? ['requested', 'running'] : ['none']).toContain(body.upgrade);
+    if (!requested) return;
     // A real upgrade: wait for it like the REST test, then reconnect (a restart drops the session).
     await waitFor(async () => {
       const u = (await api('GET', '/api/v1/update').catch(() => null))?.body.upgrade;
