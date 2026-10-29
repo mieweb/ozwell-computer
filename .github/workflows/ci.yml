@@ -100,6 +100,10 @@ jobs:
           docker compose up -d --wait --wait-timeout 180
         env:
           OZWELL_COMPUTER_TOKEN: testtoken
+          # Not the image's git channel: main moving mid-run would make the upgrade test
+          # restart the server and lose the coverage counters. The image is never older
+          # than the latest release, so this always reports nothing to install.
+          OZWELL_COMPUTER_UPDATE_URL: https://github.com/mieweb/ozwell-computer/releases/latest/download/Packages
       - name: Install Playwright browsers
         run: npx playwright-core install ${{ runner.environment == 'github-hosted' && '--with-deps' || '' }} chromium firefox
       - name: Full regression suite (unit + integration, Chromium + Firefox)

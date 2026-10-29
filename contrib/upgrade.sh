@@ -23,12 +23,13 @@ fail() {
 }
 
 # The server's /health answers once it is up (its unit is Type=simple, so start returns at once).
+# 20 probes of at most 2 s each, a second apart: about a minute in all.
 healthy() {
     host=${OZWELL_COMPUTER_HOST:-127.0.0.1}
     case "$host" in 0.0.0.0|::) host=127.0.0.1 ;; *:*) host="[$host]" ;; esac
     url="http://$host:${OZWELL_COMPUTER_PORT:-8080}/health"
-    for _ in $(seq 60); do
-        node -e 'fetch(process.argv[1]).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))' "$url" && return 0
+    for _ in $(seq 20); do
+        node -e 'fetch(process.argv[1], { signal: AbortSignal.timeout(2000) }).then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))' "$url" && return 0
         sleep 1
     done
     return 1
@@ -56,7 +57,8 @@ from_git() {
     # Stop only the server (Xvfb and apps open on the desktop keep running): replacing
     # its node_modules, native addons included, under the running process can crash it.
     systemctl stop ozwell-computer.service || fail
-    if ! { make -C "$SRC" install PREFIX="$PREFIX" && systemctl daemon-reload \
+    # -o build: already built above; don't rebuild while the server is down.
+    if ! { make -C "$SRC" -o build install PREFIX="$PREFIX" && systemctl daemon-reload \
         && systemctl start ozwell-computer.service && healthy \
         && systemctl try-restart ozwell-computer-upgrade.path; }; then
         # A commit no branch head has: the server keeps offering the update and a retry reinstalls

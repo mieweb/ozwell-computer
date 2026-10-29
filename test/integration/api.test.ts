@@ -58,8 +58,9 @@ describe('updates', () => {
     // so "unchanged"; "failed" if apt can't reach a source). On the git channel a main
     // that moved since the image was built means a full build, hence the long wait.
     const done = await waitFor(async () => {
-      const u = (await api('GET', '/api/v1/update')).body.upgrade;
-      return ['unchanged', 'succeeded', 'failed'].includes(u.state) ? u : null;
+      // A git install stops the server for a while; keep polling through refused connections.
+      const u = (await api('GET', '/api/v1/update').catch(() => null))?.body.upgrade;
+      return u && ['unchanged', 'succeeded', 'failed'].includes(u.state) ? u : null;
     }, 600000);
     expect(done.log).toContain('installed: ');
   }, 630000);

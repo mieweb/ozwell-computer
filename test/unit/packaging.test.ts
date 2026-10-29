@@ -69,7 +69,7 @@ describe('git update channel', () => {
         writeFileSync(join(dir, 'bin', c), `#!/bin/sh
 echo "${c} $*" >> ${dir}/calls
 case "${c} $*" in $FAIL_ON) exit 1 ;; esac
-case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/src install"*) echo new > ${dir}/prefix/REVISION ;; esac
+case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/src -o build install"*) echo new > ${dir}/prefix/REVISION ;; esac
 `, { mode: 0o755 });
       }
       return dir;
@@ -85,7 +85,7 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
       expect(r.calls.map((l) => l.replace(dir, ''))).toEqual([
         'make -C /src deps build',
         'systemctl stop ozwell-computer.service',
-        `make -C /src install PREFIX=${dir}/prefix`,
+        `make -C /src -o build install PREFIX=${dir}/prefix`,
         'systemctl daemon-reload',
         'systemctl start ozwell-computer.service',
         'systemctl try-restart ozwell-computer-upgrade.path',
