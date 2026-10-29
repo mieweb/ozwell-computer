@@ -1,6 +1,7 @@
 // Prometheus metrics: Node process defaults, container/unit memory from cgroup v2,
 // per-command RSS from /proc, and application counters/gauges.
 import { readdirSync, readFileSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import { dirname, join } from 'node:path';
 import client from 'prom-client';
 
@@ -125,6 +126,35 @@ new client.Counter({
       const usec = /^usage_usec (\d+)$/m.exec(readFileSync(join(cgroupRoot, 'cpu.stat'), 'utf8'))?.[1];
       if (usec) this.inc(Number(usec) / 1e6);
     } catch { /* ignore */ }
+  },
+});
+
+/** CPUs from a cgroup v2 cpu.max ("<quota> <period>" or "max <period>"), or null when unlimited. */
+export function parseCpuMax(text: string): number | null {
+  const [quota, period] = text.trim().split(/\s+/);
+  if (quota === 'max' || !Number(quota) || !Number(period)) return null;
+  return Number(quota) / Number(period);
+}
+
+/** CPUs available: the tightest cpu.max quota on the cgroup or its ancestors, capped by scheduler affinity. */
+export function availableCpus(cgroup: string | null, parallelism = availableParallelism()): number {
+  const ancestors = (p: string): string[] => (dirname(p) === p ? [p] : [p, ...ancestors(dirname(p))]);
+  const quotas = (cgroup ? ancestors(cgroup) : []).map((p) => {
+    try {
+      return parseCpuMax(readFileSync(join(p, 'cpu.max'), 'utf8'));
+    } catch {
+      return null; // no cpu controller here (e.g. the namespace root)
+    }
+  });
+  return Math.min(parallelism, ...quotas.filter((q) => q !== null));
+}
+
+new client.Gauge({
+  name: 'ozwell_cpus',
+  help: 'CPUs available to the container (cgroup v2 cpu.max quota, else scheduler affinity); divide CPU rates by this for a 0-100% figure',
+  registers: [registry],
+  collect() {
+    this.set(availableCpus(cgroupRoot));
   },
 });
 
