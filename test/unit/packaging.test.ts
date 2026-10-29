@@ -1,9 +1,5 @@
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { afterAll, describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { describe, expect, it } from 'vitest';
 
 const read = (p: string) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8');
 
@@ -26,25 +22,5 @@ describe('maintainer scripts', () => {
     const sh = read('contrib/upgrade.sh');
     expect(sh).toContain('dpkg --configure -a');
     expect(sh).toContain('DPkg::Lock::Timeout');
-  });
-});
-
-describe('package-version', () => {
-  const script = fileURLToPath(new URL('../../package-version', import.meta.url));
-  const repo = mkdtempSync(join(tmpdir(), 'oz-pkgver-'));
-  const git = (...args: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgSign=false', '-c', 'tag.gpgSign=false', ...args], { cwd: repo, encoding: 'utf8' }).trim();
-  const version = (fmt: string) => execFileSync(script, [fmt], { cwd: repo, encoding: 'utf8' }).trim();
-  afterAll(() => rmSync(repo, { recursive: true, force: true }));
-
-  it('ignores the rolling nightly tag, so main builds get growing snapshot versions', () => {
-    git('init', '-q');
-    git('commit', '-q', '--allow-empty', '-m', 'a');
-    git('tag', 'v1.2.3');
-    git('commit', '-q', '--allow-empty', '-m', 'b');
-    git('commit', '-q', '--allow-empty', '-m', 'c');
-    git('tag', 'nightly');
-    const hash = git('rev-parse', '--short', 'HEAD');
-    expect(version('deb')).toBe(`1.2.3+2.g${hash}`);
-    expect(version('node')).toBe(`1.2.3+2.g${hash}`);
   });
 });

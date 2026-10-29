@@ -180,13 +180,6 @@ are in `contrib/`.
 
   Until the first release is published, `apt-get update` reports a 404 for this
   source.
-- **Nightly channel:** the nightly CI run on `main` also publishes the `.deb` and
-  `Packages` to a rolling `nightly` prerelease (the `nightly` tag is moved to that
-  commit and ignored by `./package-version`). The `:main` image is built with
-  `--build-arg APT_REPO=https://github.com/mieweb/ozwell-computer/releases/download/nightly/`,
-  so its apt source and `OZWELL_COMPUTER_UPDATE_URL` track that release instead of
-  the latest stable one. Snapshot versions (`1.2.3+N.g<hash>`) grow with each commit
-  on `main`, so in-app updates offer every new nightly build.
 - **In-app updates:** every 6 hours the server compares the installed package version
   with the newest one in `OZWELL_COMPUTER_UPDATE_URL`. When a newer one exists, the
   viewer toolbar shows an "Update to X" button.
@@ -222,7 +215,7 @@ When no token is configured, one is generated and stored in
 
 ## Configuration
 
-| Variable / flag | Default | |(the `nightly` release's in `:main` images) 
+| Variable / flag | Default | |
 |---|---|---|
 | `OZWELL_COMPUTER_PORT` / `--port` | `8080` | |
 | `OZWELL_COMPUTER_HOST` / `--host` | `0.0.0.0` in a container, otherwise `127.0.0.1` | |

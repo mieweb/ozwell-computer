@@ -37,14 +37,8 @@ RUN --mount=type=bind,from=build,source=/usr/src/ozwell-computer,target=/mnt/pkg
     && apt-get install -y --no-install-recommends /tmp/ozwell-computer_*.deb \
     && rm -f /tmp/ozwell-computer_*.deb
 # Track future releases from the GitHub release flat repo (added after the install
-# above, so building the image doesn't depend on a published release). CI builds
-# :main images with APT_REPO set to the rolling `nightly` prerelease instead.
-ARG APT_REPO=https://github.com/mieweb/ozwell-computer/releases/latest/download/
+# above, so building the image doesn't depend on a published release).
 COPY docker/ozwell-computer.sources /etc/apt/sources.list.d/ozwell-computer.sources
-RUN sed -i "s|^URIs: .*|URIs: ${APT_REPO}|" /etc/apt/sources.list.d/ozwell-computer.sources \
- && mkdir -p /etc/systemd/system/ozwell-computer.service.d \
- && printf '[Service]\nEnvironment=OZWELL_COMPUTER_UPDATE_URL=%sPackages\n' "${APT_REPO}" \
-      > /etc/systemd/system/ozwell-computer.service.d/update-channel.conf
 
 # ---- container-only adjustments (not part of the package)
 # Firefox without first-run pages, password-save prompts or telemetry (agent-friendly).
