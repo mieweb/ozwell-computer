@@ -464,7 +464,9 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
 - If port 8080 is taken, set `OZWELL_COMPUTER_HOST_PORT` in a `.env` file. The tests
   discover the port and token from compose.
 - The compose container mounts `./dist` read-only, so an in-app upgrade there fails
-  to replace it. Test upgrades in a container started with `docker run`.
+  to replace it, and update checks are off there (`OZWELL_COMPUTER_UPDATE_URL`
+  defaults to `off`; set it in your shell or `.env` to test the update endpoints).
+  Test upgrades in a container started with `docker run`.
 
 ### macOS with OrbStack
 

@@ -17,8 +17,10 @@ services:
       OZWELL_COMPUTER_SCREEN: ${OZWELL_COMPUTER_SCREEN:-1920x1080x24}
       # The container can't see its host port; this makes the startup link clickable.
       OZWELL_COMPUTER_PUBLIC_URL: http://localhost:${OZWELL_COMPUTER_HOST_PORT:-8080}
-      # Passed through only when set in your shell (CI pins it for a deterministic suite).
-      OZWELL_COMPUTER_UPDATE_URL:
+      # Off by default: the read-only ./dist mount means an upgrade can't replace the
+      # build, and a local build's version isn't comparable with releases. CI sets it
+      # to cover the update endpoints.
+      OZWELL_COMPUTER_UPDATE_URL: ${OZWELL_COMPUTER_UPDATE_URL:-off}
       # Fail (500) any reply that its OpenAPI response schema would change.
       OZWELL_COMPUTER_STRICT_RESPONSES: ${OZWELL_COMPUTER_STRICT_RESPONSES:-1}
     # A TTY gives systemd a console, so the startup link appears in `docker compose up`.

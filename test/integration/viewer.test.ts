@@ -58,10 +58,17 @@ describe('noVNC viewer', () => {
     const shown = u.supported && (u.available || ['requested', 'running', 'failed'].includes(u.upgrade.state));
     await page.waitForFunction((v) => !!document.getElementById('btn-update') === v, shown, { timeout: 5000 });
     // The installed version is always shown; clicking it checks for an update now.
-    await page.waitForFunction((v) => document.getElementById('btn-version')?.textContent === `v${v}`, u.current, { timeout: 10000 });
-    await page.locator('#btn-version').click();
-    await page.waitForFunction(() => /Up to date|is available|Update check failed/.test(document.getElementById('toast')?.textContent ?? ''), null, { timeout: 20000 });
-    expect(await page.locator('#btn-version').getAttribute('title')).toContain('Last checked');
+    const version = u.current ?? (await (await fetch(`${URL_}/api/v1/capabilities`, { headers: auth })).json()).version;
+    await page.waitForFunction((v) => document.getElementById('btn-version')?.textContent === `v${v}`, version, { timeout: 10000 });
+    if (u.supported) {
+      await page.locator('#btn-version').click();
+      await page.waitForFunction(() => /Up to date|is available|Update check failed/.test(document.getElementById('toast')?.textContent ?? ''), null, { timeout: 20000 });
+      expect(await page.locator('#btn-version').getAttribute('title')).toContain('Last checked');
+    } else {
+      // compose turns update checks off unless OZWELL_COMPUTER_UPDATE_URL is set.
+      expect(await page.locator('#btn-version').isDisabled()).toBe(true);
+      expect(await page.locator('#btn-version').getAttribute('title')).toContain('Update checks unavailable');
+    }
     const box = (await page.locator('#screen canvas').boundingBox())!;
     // Move the mouse over the canvas; the server pointer follows (scaled).
     await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);

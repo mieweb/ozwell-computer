@@ -138,6 +138,8 @@ export class Updater {
     try {
       this.current = (await run('dpkg-query', ['-W', '-f=${Version}', PACKAGE])).stdout.trim() || null;
       this.arch = (await run('dpkg', ['--print-architecture'])).stdout.trim();
+      // package-version falls back to 0.0.0 when built without git tags.
+      if (this.current && /^0\.0\.0([~+]|$)/.test(this.current)) return `development build (${this.current}): its version can't be compared with releases`;
       return null;
     } catch {
       return `not installed from the ${PACKAGE} Debian package`;
