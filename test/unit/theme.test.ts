@@ -36,6 +36,14 @@ describe('desktop theme', () => {
     expect(readFileSync(join(home, 'daemon'), 'utf8')).toMatch(/^:4242 --replace --daemon /m);
   });
 
+  it('fails when xfsettingsd exits without forking', async () => {
+    const daemon = readFileSync(join(bin, 'xfsettingsd'), 'utf8');
+    writeFileSync(join(bin, 'xfsettingsd'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    const { setTheme } = await theme();
+    await expect(setTheme('dark', display, true)).rejects.toThrow(/xfsettingsd did not start \(exit code 1\)/);
+    writeFileSync(join(bin, 'xfsettingsd'), daemon, { mode: 0o755 });
+  });
+
   it('records nothing when xfconf-query fails, so if_unset retries', async () => {
     const { getTheme, setTheme } = await theme();
     fake(1);

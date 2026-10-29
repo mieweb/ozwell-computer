@@ -1,8 +1,10 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { unsupported } from './errors.js';
 
 export type ColorScheme = 'light' | 'dark';
@@ -30,26 +32,32 @@ const missing = (what: string) => (e: NodeJS.ErrnoException) => {
   throw e.code === 'ENOENT' ? unsupported('theme', `${what} is not installed`) : e;
 };
 
-// This user's xfsettingsd on `display` (not another display's or user's).
-async function xfsettingsdRunning(display: string) {
+// Names of this user's settings daemons on `display` (not another display's or user's).
+async function daemonsOn(display: string) {
   const pids = (await readdir('/proc')).filter((d) => /^\d+$/.test(d));
-  const comms = await Promise.all(pids.map((p) => readFile(`/proc/${p}/comm`, 'utf8').catch(() => '')));
-  const named = pids.filter((_, i) => comms[i].trim() === 'xfsettingsd');
-  const ours = await Promise.all(named.map(async (p) => {
+  const comms = await Promise.all(pids.map((p) => readFile(`/proc/${p}/comm`, 'utf8').then((c) => c.trim(), () => '')));
+  const named = pids.map((p, i) => [p, comms[i]]).filter(([, c]) => c === 'xfsettingsd' || c === 'xsettingsd');
+  const ours = await Promise.all(named.map(async ([p]) => {
     const [st, env] = await Promise.all([stat(`/proc/${p}`), readFile(`/proc/${p}/environ`, 'utf8')]).catch(() => [null, ''] as const);
     return st?.uid === process.getuid?.() && env.split('\0').includes(`DISPLAY=${display}`);
   }));
-  return ours.includes(true);
+  return named.filter((_, i) => ours[i]).map(([, c]) => c);
 }
 
 const onDisplay = (display: string) => ({ env: { ...process.env, DISPLAY: display } });
 
 // xfconf only stores the theme; xfsettingsd publishes it to GTK apps. The XFCE session starts it,
-// but not on a spawned Xvfb, nor after #26's xsettingsd took the XSETTINGS selection first.
+// but not on a spawned Xvfb; and #26's xsettingsd keeps the XSETTINGS selection from it until replaced.
 export async function ensureSettingsDaemon(display: string) {
-  if (await xfsettingsdRunning(display)) return;
-  await run('xfsettingsd', ['--replace', '--daemon', '--disable-wm-check', '--sm-client-disable'], onDisplay(display))
-    .catch(missing('xfsettingsd'));
+  const running = await daemonsOn(display);
+  if (running.includes('xfsettingsd') && !running.includes('xsettingsd')) return;
+  // Ignored stdio: the forked daemon would otherwise hold our pipes open forever.
+  const child = spawn('xfsettingsd', ['--replace', '--daemon', '--disable-wm-check', '--sm-client-disable'], { ...onDisplay(display), stdio: 'ignore' });
+  const exit = once(child, 'exit').then(([code]) => code as number | null, () => null);
+  await once(child, 'spawn').catch(missing('xfsettingsd'));
+  // The parent returns once the daemon has forked.
+  const code = await Promise.race([exit, sleep(5000, 'timeout' as const)]);
+  if (code !== 0) throw new Error(`xfsettingsd did not start (${code === 'timeout' ? 'no fork within 5 s' : `exit code ${code}`})`);
 }
 
 // --create makes the property when no channel default provides it (e.g. --spawn-xvfb hosts).
