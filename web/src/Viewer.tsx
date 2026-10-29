@@ -123,7 +123,8 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
       const full = document.fullscreenElement === wrapRef.current;
       setFullscreen(full);
       // Send Esc, Alt+Tab etc. to the desktop while fullscreen (Chromium only; hold Esc to exit).
-      if (full) void keyboard?.lock(); else keyboard?.unlock();
+      // If the lock is refused (e.g. permission denied), fullscreen still works without it.
+      if (full) keyboard?.lock().catch(() => undefined); else keyboard?.unlock();
       rfbRef.current?.focus();
     });
   }, []);
@@ -172,7 +173,7 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
         </div>
         <Button id="btn-full" size="sm" variant={fullscreen ? 'primary' : 'outline'} aria-pressed={fullscreen}
           title="Show only the remote desktop, fullscreen (hold Esc to exit)"
-          onClick={() => (document.fullscreenElement ? document.exitFullscreen() : wrapRef.current!.requestFullscreen())}>Fullscreen</Button>
+          onClick={() => void (document.fullscreenElement ? document.exitFullscreen() : wrapRef.current!.requestFullscreen()).catch(() => undefined)}>Fullscreen</Button>
         <ThemeToggle viewOnly={serverViewOnly} toast={showToast} />
         <span id="roster" className="flex gap-1">
           {[...roster.values()].map((p) => (
