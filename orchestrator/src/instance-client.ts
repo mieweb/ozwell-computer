@@ -47,10 +47,13 @@ export class InstanceClient {
     } catch (e) {
       throw new InstanceError('target_unavailable', `cannot reach the computer: ${(e as Error).message}`, (e as any).cause?.code === 'ECONNREFUSED');
     }
-    // Before the body: a proxy's 503 may be HTML or a JSON-RPC-looking error.
-    if (res.status === 503) throw new InstanceError('target_unavailable', 'the computer is unavailable (HTTP 503)', true);
+    // Failed statuses are classified without the body: a proxy's 503 may be HTML or a JSON-RPC-looking error.
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined);
+      if (res.status === 503) throw new InstanceError('target_unavailable', 'the computer is unavailable (HTTP 503)', true);
+      return { res, msg: null };
+    }
     const text = await res.text();
-    if (!res.ok) return { res, msg: null };
     const json = text.trimStart().startsWith('{') ? text : text.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5)).join('');
     return { res, msg: json ? JSON.parse(json) : null };
   }

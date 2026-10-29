@@ -234,7 +234,28 @@ describe('tools', () => {
     provider.get = get;
     await proxy.app.close();
     expect(r.data.error).toMatchObject({ reason: 'target_unavailable', message: expect.stringContaining('HTTP 503') });
+    set({ status: 'running', stopped: false, internalUrl: instance.url });
+  });
+
+  it('releases the connection of a 503 that keeps streaming its body', async () => {
+    const a = (await tool('alice', 'list_computers')).data.computers[0];
+    const set = (patch: Partial<Computer>) => provider.all.set(a.instance_id, { ...provider.all.get(a.instance_id)!, ...patch });
+    let closed = false;
+    const proxy = Fastify();
+    proxy.post('/mcp', async (req, reply) => {
+      req.raw.socket.once('close', () => { closed = true; });
+      reply.hijack();
+      reply.raw.writeHead(503, { 'content-type': 'text/html' });
+      const tick = setInterval(() => reply.raw.write('x'.repeat(16_384)), 10);
+      reply.raw.once('close', () => clearInterval(tick));
+    });
+    await proxy.listen({ port: 0, host: '127.0.0.1' });
+    set({ status: 'running', stopped: false, internalUrl: `http://127.0.0.1:${(proxy.server.address() as any).port}` });
+    expect((await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 2 })).data.error.message).toContain('HTTP 503');
+    for (let i = 0; i < 50 && !closed; i++) await new Promise((r) => setTimeout(r, 20));
+    expect(closed).toBe(true);
     set({ internalUrl: instance.url });
+    await proxy.close();
   });
 
   it('is not ready while the provider still reports it stopped', async () => {
