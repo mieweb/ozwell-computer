@@ -36,6 +36,9 @@ function canvasBox(screen: HTMLElement | null, overlay: HTMLElement | null) {
 export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec: boolean }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const releaseTo = useRef<HTMLElement | null>(null);
+  // The shortcut hint shows while the panel is focused, and for a few seconds after focus enters the desktop.
+  const [hint, setHint] = useState(false);
+  const hintTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const screenRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
@@ -77,7 +80,13 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
       rfb.resizeSession = false;
       rfb.viewOnly = prefs.current.viewOnly;
       rfb.focusOnClick = true;
-      rfb.addEventListener('connect', () => { retry = 0; setStatus({ text: 'connected', cls: 'text-success' }); rfb.focus(); });
+      rfb.addEventListener('connect', () => {
+        retry = 0;
+        setStatus({ text: 'connected', cls: 'text-success' });
+        // Each (re)connect makes a new canvas; screen readers read the release shortcut from it.
+        screenRef.current?.querySelector('canvas')?.setAttribute('aria-describedby', 'desktop-keys');
+        rfb.focus();
+      });
       rfb.addEventListener('disconnect', (e) => {
         setStatus({ text: e.detail.clean ? 'disconnected' : 'connection lost', cls: 'text-destructive' });
         setTimeout(connect, Math.min(10000, 500 * 2 ** retry++));
@@ -179,8 +188,14 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
         // In fullscreen the panel is outside the visible subtree; the fullscreenchange handler focuses it once we're out.
         releaseTo.current = panel;
         void document.exitFullscreen().catch(() => { releaseTo.current = null; });
+      }}
+      onFocus={(e) => {
+        if (e.target === e.currentTarget) return;
+        setHint(true);
+        clearTimeout(hintTimer.current);
+        hintTimer.current = setTimeout(() => setHint(false), 4000);
       }}>
-      <div id="desktop-keys" className="pointer-events-none absolute top-1 right-1 z-10 hidden rounded-sm bg-neutral-900/80 px-1.5 py-0.5 text-[11px] text-neutral-50 group-focus-within:block">
+      <div id="desktop-keys" className={`pointer-events-none absolute top-1 left-1/2 z-10 -translate-x-1/2 rounded-sm bg-neutral-900/80 px-1.5 py-0.5 text-[11px] text-neutral-50 ${hint ? 'block' : 'hidden group-focus:block'}`}>
         Enter: type into the desktop · Shift+Esc: leave it
       </div>
       <div id="screen" className="absolute inset-0" ref={screenRef} />
