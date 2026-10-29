@@ -54,6 +54,11 @@ from_git() {
     # Build completely before installing, so a failed build leaves the install alone.
     git -C "$SRC" reset -q --hard "$after" && git -C "$SRC" clean -qffdx \
         && make -C "$SRC" deps build || fail
+    # System packages the new commit depends on, as the image installs them from .fpm.
+    deps=$(sed -n 's/^--depends "\{0,1\}\([^ "]*\).*/\1/p' "$SRC/.fpm" | grep -vx nodejs)
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get -o DPkg::Lock::Timeout=600 update || echo "apt-get update reported errors; continuing"
+    apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends $deps || fail
     # Stop only the server (Xvfb and apps open on the desktop keep running): replacing
     # its node_modules, native addons included, under the running process can crash it.
     systemctl stop ozwell-computer.service || fail

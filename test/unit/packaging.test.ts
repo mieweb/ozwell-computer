@@ -48,7 +48,7 @@ describe('git update channel', () => {
     expect(git).toMatch(/if \[ "\$after" = "\$before" \]; then status unchanged; exit 0; fi/);
   });
 
-  describe('upgrade.sh in a sandbox (fake git, make, systemctl and node)', () => {
+  describe('upgrade.sh in a sandbox (fake git, make, apt-get, systemctl and node)', () => {
     // Runs the script with FAIL_ON (a `case` pattern over "<command> <args>") failing; returns the outcome.
     function run(dir: string, failOn = '__none__') {
       writeFileSync(join(dir, 'calls'), '');
@@ -56,7 +56,7 @@ describe('git update channel', () => {
       return {
         status: readFileSync(join(dir, 'state/upgrade.status'), 'utf8').split(' ')[0],
         revision: readFileSync(join(dir, 'prefix/REVISION'), 'utf8').trim(),
-        calls: readFileSync(join(dir, 'calls'), 'utf8').split('\n').filter((l) => /^(make|systemctl)/.test(l)),
+        calls: readFileSync(join(dir, 'calls'), 'utf8').split('\n').filter((l) => /^(make|apt-get|systemctl)/.test(l)),
       };
     }
     function sandbox() {
@@ -64,8 +64,9 @@ describe('git update channel', () => {
       for (const d of ['state', 'prefix', 'src/.git', 'bin']) mkdirSync(join(dir, d), { recursive: true });
       writeFileSync(join(dir, 'prefix/REVISION'), 'old\n');
       writeFileSync(join(dir, 'prefix/package.json'), '{"version":"1.0.0"}');
+      writeFileSync(join(dir, 'src/.fpm'), '--depends "nodejs (>= 24)"\n--depends xvfb\n--depends greybird-gtk-theme\n');
       writeFileSync(join(dir, 'upgrade'), sh.replace(/^STATE=.*$/m, `STATE=${dir}/state`).replace('@PREFIX@', `${dir}/prefix`).replace(/^SRC=.*$/m, `SRC=${dir}/src`));
-      for (const c of ['git', 'make', 'systemctl', 'node', 'sleep']) {
+      for (const c of ['git', 'make', 'apt-get', 'systemctl', 'node', 'sleep']) {
         writeFileSync(join(dir, 'bin', c), `#!/bin/sh
 echo "${c} $*" >> ${dir}/calls
 case "${c} $*" in $FAIL_ON) exit 1 ;; esac
@@ -84,6 +85,8 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
       expect(r).toMatchObject({ status: 'succeeded', revision: 'new' });
       expect(r.calls.map((l) => l.replace(dir, ''))).toEqual([
         'make -C /src deps build',
+        'apt-get -o DPkg::Lock::Timeout=600 update',
+        'apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends xvfb greybird-gtk-theme',
         'systemctl stop ozwell-computer.service',
         `make -C /src -o build install PREFIX=${dir}/prefix`,
         'systemctl daemon-reload',
@@ -97,6 +100,12 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
     it('a failed build leaves the server and the install alone', () => {
       const r = run(fresh(), 'make*deps*');
       expect(r).toMatchObject({ status: 'failed', revision: 'old', calls: [expect.stringContaining('deps build')] });
+    });
+
+    it('a failed system package install leaves the server and the install alone', () => {
+      const r = run(fresh(), 'apt-get*install*');
+      expect(r).toMatchObject({ status: 'failed', revision: 'old' });
+      expect(r.calls.some((l) => l.startsWith('systemctl'))).toBe(false);
     });
 
     it.each(['make*install*', 'systemctl daemon-reload', 'systemctl start*', 'node*', 'systemctl try-restart*'])(

@@ -189,7 +189,7 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
     },
   }, async (req) => {
     const b = req.body as { scheme: ColorScheme; if_unset?: boolean };
-    const state = await setTheme(b.scheme, b.if_unset);
+    const state = await setTheme(b.scheme, config.display, b.if_unset);
     desktop.bus.publish('desktop.theme', state);
     return state;
   });
