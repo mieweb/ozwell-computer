@@ -98,6 +98,10 @@ describe('background jobs (wait, then hand off)', () => {
     const orphan = await new Jobs(dir, ':0').start({ command: 'sleep 0.3' });
     expect((await watched.list()).find((j) => j.job_id === orphan)?.state).toBe('running');
     await vi.waitFor(() => expect(seen.at(-1)).toMatchObject({ job_id: orphan, state: 'exited' }), { timeout: 3000 });
+    // Cancelling a job this instance never watched (started before a restart) still reports it.
+    const unwatched = await new Jobs(dir, ':0').start({ command: 'sleep 30' });
+    await watched.cancel(unwatched);
+    expect(seen.at(-1)).toMatchObject({ job_id: unwatched, state: 'cancelled' });
   });
 
   it('keeps watching a job through failed reads, and reports it removed once its directory is gone', async () => {

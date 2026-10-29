@@ -251,7 +251,9 @@ export class Jobs {
       try { process.kill(-pid, 'SIGKILL'); } catch { /* gone */ }
     }
     const done = await this.wait(id, 2000);
-    if (v.state === 'running' && done.state !== 'running' && this.running.delete(id)) this.onChange(summarize(done));
+    if (v.state !== 'running' || done.state === 'running') return done;
+    this.running.delete(id);
+    this.onChange(summarize(done));
     return done;
   }
 

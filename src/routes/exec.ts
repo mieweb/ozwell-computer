@@ -170,14 +170,14 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
   const streamRoute = '/api/v1/exec/jobs/:id/stream';
   type Emit = (kind: 'output' | 'state' | 'end', data: Partial<JobView>) => void;
   /** Emit a job's new output and state changes until it stops, then `end` with its summary (unless aborted). */
-  const relay = async (id: string, offsets: JobOffsets, signal: AbortSignal, drained: () => Promise<void>, emit: Emit) => {
+  const relay = async (id: string, offsets: JobOffsets, signal: AbortSignal, drained: (signal: AbortSignal) => Promise<void>, emit: Emit) => {
     let last: JobView | null = null;
     for await (const v of jobs.follow(id, offsets, signal)) {
       const { stdout, stderr, stdout_offset, stderr_offset, truncated } = v;
       if (stdout || stderr || truncated) emit('output', { stdout, stderr, stdout_offset, stderr_offset, truncated });
       if (v.state !== last?.state) emit('state', summarize(v));
       last = v;
-      await drained();
+      await drained(signal);
     }
     if (signal.aborted || !last) return;
     emit('end', summarize(last));

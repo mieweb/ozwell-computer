@@ -23,7 +23,8 @@ export function openSse(reply: FastifyReply, route: string) {
     res.write(`${id ? `id: ${id}\n` : ''}event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
     if (res.writableLength > MAX_BUFFERED) res.destroy();
   };
-  const drained = () => (res.writableNeedDrain ? once(res, 'drain', { signal: ac.signal }).then(() => undefined, () => undefined) : Promise.resolve());
+  const drained = (signal = ac.signal) =>
+    (res.writableNeedDrain ? once(res, 'drain', { signal }).then(() => undefined, () => undefined) : Promise.resolve());
   const ka = setInterval(() => send('keepalive', { ts: Date.now() }), 15_000);
   const started = performance.now();
   const close = () => {
