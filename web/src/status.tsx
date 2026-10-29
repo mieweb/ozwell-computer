@@ -61,11 +61,11 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
     return () => clearInterval(timer);
   }, [intervalMs]);
   return (
-    <span id="perf" title="Container resource use (from /api/v1/metrics)">
+    <span id="perf" className="font-mono text-[11px] whitespace-nowrap text-muted-foreground" title="Container resource use (from /api/v1/metrics)">
       {parts.map((p, i) => (
         <Fragment key={i}>
           {i > 0 && ' · '}
-          <span className={p.hot ? 'hot' : undefined}>{p.text}</span>
+          <span className={p.hot ? 'text-warning' : undefined}>{p.text}</span>
         </Fragment>
       ))}
     </span>

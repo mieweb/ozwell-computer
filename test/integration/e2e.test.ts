@@ -23,8 +23,12 @@ describe('container smoke', () => {
     const cookie = q.headers.get('set-cookie')!.split(';')[0];
     expect((await fetch(URL_ + '/api/v1/capabilities', { headers: { cookie } })).status).toBe(200);
     expect((await fetch(URL_ + '/api/v1/capabilities', { headers: { 'x-auth-token': TOKEN } })).status).toBe(200);
-    const page = await fetch(URL_ + '/', { headers: { cookie } });
-    expect(await page.text()).toContain('/static/viewer.js');
+    // The app shell is static and needs no credentials; the SPA gets its data from the API.
+    const page = await fetch(URL_ + '/');
+    expect(page.status).toBe(200);
+    expect(page.headers.get('content-security-policy')).toContain("script-src 'self'");
+    expect(page.headers.get('cache-control')).toBe('no-store');
+    expect(await page.text()).toMatch(/<div id="root"[^>]*>[\s\S]*\/static\/assets\/.*\.js/);
   });
 
   it('capabilities report a working display', async () => {

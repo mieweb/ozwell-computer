@@ -13,7 +13,6 @@ import { Perf, UpdateButton } from './status';
 type Participant = { participant_id: string; name: string; kind: string; color: string; cursor?: { x: number; y: number; visible: boolean } };
 type Cursor = Pick<Participant, 'participant_id' | 'name' | 'color'> & { x: number; y: number; visible: boolean };
 
-const serverViewOnly = document.body.dataset.viewOnly === '1';
 const myName = localStorage.getItem('ozwell-computer-name') || `viewer-${Math.random().toString(36).slice(2, 6)}`;
 localStorage.setItem('ozwell-computer-name', myName);
 
@@ -30,7 +29,7 @@ function canvasBox(screen: HTMLElement | null, overlay: HTMLElement | null) {
   return { x: a.left - b.left, y: a.top - b.top, w: a.width, h: a.height };
 }
 
-export function Viewer() {
+export function Viewer({ serverViewOnly }: { serverViewOnly: boolean }) {
   const screenRef = useRef<HTMLDivElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const rfbRef = useRef<RFB | null>(null);
@@ -68,9 +67,9 @@ export function Viewer() {
       rfb.resizeSession = false;
       rfb.viewOnly = prefs.current.viewOnly;
       rfb.focusOnClick = true;
-      rfb.addEventListener('connect', () => { retry = 0; setStatus({ text: 'connected', cls: 'ok' }); rfb.focus(); });
+      rfb.addEventListener('connect', () => { retry = 0; setStatus({ text: 'connected', cls: 'text-success' }); rfb.focus(); });
       rfb.addEventListener('disconnect', (e) => {
-        setStatus({ text: e.detail.clean ? 'disconnected' : 'connection lost', cls: 'err' });
+        setStatus({ text: e.detail.clean ? 'disconnected' : 'connection lost', cls: 'text-destructive' });
         setTimeout(connect, Math.min(10000, 500 * 2 ** retry++));
       });
       rfb.addEventListener('clipboard', (e) => { if (!clipboardSupported) setClipText(e.detail.text); });
@@ -130,11 +129,11 @@ export function Viewer() {
 
   return (
     <>
-      <div id="toolbar">
+      <div id="toolbar" className="flex flex-none items-center gap-1.5 border-b border-border bg-card px-2 py-1">
         <span id="status" className={status.cls}>{status.text}</span>
         <Perf />
         <UpdateButton />
-        <span className="spacer" />
+        <span className="flex-1" />
         <Button id="btn-cad" size="sm" variant="outline" title="Send Ctrl+Alt+Del" onClick={() => rfbRef.current?.sendCtrlAltDel()}>Ctrl+Alt+Del</Button>
         <Button id="btn-super" size="sm" variant="outline" title="Send Super" onClick={() => rfbRef.current?.sendKey(0xffeb, 'MetaLeft')}>Super</Button>
         <Button id="btn-alttab" size="sm" variant="outline" title="Send Alt+Tab" onClick={altTab}>Alt+Tab</Button>
@@ -145,23 +144,23 @@ export function Viewer() {
         )}
         <Checkbox id="chk-viewonly" size="sm" label="view only" title="Ignore my input"
           checked={viewOnly} disabled={serverViewOnly} onChange={(e) => setViewOnly(e.target.checked)} />
-        <div className="scale">
+        <div className="w-24">
           <Select id="sel-scale" size="sm" aria-label="Scaling" value={scale} onValueChange={setScale}
             options={[{ value: 'fit', label: 'fit' }, { value: 'remote', label: '1:1' }]} />
         </div>
         <Button id="btn-full" size="sm" variant="outline" title="Fullscreen"
           onClick={() => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen())}>Fullscreen</Button>
-        <span id="roster">
+        <span id="roster" className="flex gap-1">
           {[...roster.values()].map((p) => (
-            <Badge key={p.participant_id} className="chip" size="sm" title={p.kind} style={{ background: p.color }}>
+            <Badge key={p.participant_id} data-participant={p.participant_id} className="text-neutral-950" size="sm" title={p.kind} style={{ background: p.color }}>
               {`${p.kind === 'agent' ? 'agent: ' : ''}${p.name}`}
             </Badge>
           ))}
         </span>
       </div>
       {clipOpen && (
-        <div id="clip-panel">
-          <div className="clip-text">
+        <div id="clip-panel" className="flex flex-none items-start gap-1.5 bg-muted px-2 py-1.5">
+          <div className="flex-1">
             <Textarea id="clip-text" rows={4} label="Remote clipboard" hideLabel placeholder="Remote clipboard (edit and press Send)"
               value={clipText} onChange={(e) => setClipText(e.target.value)} />
           </div>
@@ -169,20 +168,21 @@ export function Viewer() {
           <Button id="clip-refresh" size="sm" variant="outline" onClick={refreshClip}>Refresh</Button>
         </div>
       )}
-      <div id="screen-wrap">
-        <div id="screen" ref={screenRef} />
-        <div id="overlay" ref={overlayRef}>
+      <div className="relative flex-1 overflow-hidden">
+        <div id="screen" className="absolute inset-0" ref={screenRef} />
+        <div id="overlay" className="pointer-events-none absolute inset-0" ref={overlayRef}>
           {[...cursors.values()].map((p) => (
-            <div key={p.participant_id} className="pcursor"
+            <div key={p.participant_id} data-participant={p.participant_id} className="absolute size-0 transition-[left,top]! duration-[60ms]! ease-linear!"
               style={box ? { left: box.x + p.x * box.w, top: box.y + p.y * box.h } : undefined}>
-              <svg width="16" height="20" viewBox="0 0 16 20">
+              <svg className="absolute -top-px -left-px drop-shadow-[0_0_1px_black]" width="16" height="20" viewBox="0 0 16 20">
                 <path d="M1 1 L1 17 L5 13 L8 19 L11 18 L8 12 L14 12 Z" fill={p.color} stroke="#000" strokeWidth="1" />
               </svg>
-              <span style={{ background: p.color }}>{p.name}</span>
+              <span className="absolute top-4 left-3.5 rounded-sm px-1 text-[11px] whitespace-nowrap text-neutral-950" style={{ background: p.color }}>{p.name}</span>
             </div>
           ))}
         </div>
-        <div id="toast" hidden={!toast.shown}>{toast.text}</div>
+        <div id="toast" className="pointer-events-none absolute bottom-6 left-1/2 -translate-x-1/2 rounded-md bg-neutral-900/90 px-3.5 py-1.5 text-neutral-50"
+          hidden={!toast.shown}>{toast.text}</div>
       </div>
     </>
   );
