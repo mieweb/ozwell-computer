@@ -12,7 +12,9 @@ interface Session { id: string; protocol: string; lastUsed: number; url: string;
 
 export class InstanceError extends Error {
   readonly reason: string;
-  constructor(reason: string, message: string) { super(message); this.reason = reason; }
+  /** A proxy 503 or a refused connection: the computer may have been stopped. */
+  readonly unreachable: boolean;
+  constructor(reason: string, message: string, unreachable = false) { super(message); this.reason = reason; this.unreachable = unreachable; }
 }
 
 export class InstanceClient {
@@ -43,7 +45,7 @@ export class InstanceClient {
     try {
       res = await fetch(`${url}/mcp`, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(CALL_TIMEOUT_MS) });
     } catch (e) {
-      throw new InstanceError('target_unavailable', `cannot reach the computer: ${(e as Error).message}`);
+      throw new InstanceError('target_unavailable', `cannot reach the computer: ${(e as Error).message}`, (e as any).cause?.code === 'ECONNREFUSED');
     }
     const text = await res.text();
     const json = text.trimStart().startsWith('{') ? text : text.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5)).join('');
@@ -57,7 +59,7 @@ export class InstanceClient {
     });
     if (init.res.status === 401) throw new InstanceError('unauthenticated', 'the computer rejected its token');
     const id = init.res.headers.get('mcp-session-id');
-    if (!init.res.ok || !id) throw new InstanceError('target_unavailable', `MCP initialize failed (HTTP ${init.res.status})`);
+    if (!init.res.ok || !id) throw new InstanceError('target_unavailable', `MCP initialize failed (HTTP ${init.res.status})`, init.res.status === 503);
     const s: Session = { id, protocol: init.msg?.result?.protocolVersion ?? PROTOCOL, lastUsed: Date.now(), url, token };
     await this.post(url, token, { jsonrpc: '2.0', method: 'notifications/initialized' }, s);
     return s;
@@ -81,7 +83,7 @@ export class InstanceClient {
       const r = await this.post(url, token, { jsonrpc: '2.0', id: ++this.seq, method: 'tools/call', params: { name, arguments: args } }, s);
       if (r.res.status === 404 || r.res.status === 400) { this.sessions.delete(key); continue; } // session gone: re-init once
       if (r.msg?.error) throw new InstanceError('internal', r.msg.error.message ?? 'tool call failed');
-      if (!r.res.ok || !r.msg?.result) throw new InstanceError('target_unavailable', `tool call failed (HTTP ${r.res.status})`);
+      if (!r.res.ok || !r.msg?.result) throw new InstanceError('target_unavailable', `tool call failed (HTTP ${r.res.status})`, r.res.status === 503);
       return r.msg.result;
     }
     throw new InstanceError('target_unavailable', 'the computer keeps dropping its MCP session');

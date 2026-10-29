@@ -14,16 +14,21 @@ provider, and proxies every ozwell-computer tool with an extra `instance_id` arg
   tool is scoped to that user id: other users' computers are reported as not found.
   These headers are only trusted on requests carrying the pre-shared key.
 - **Tools.**
-  - Management: `list_computers`, `create_computer`, `get_computer` and
-    `destroy_computer`. `create_computer` takes an optional `display_name`. It and
-    `get_computer` wait up to about 40 s for the computer to start, then return
+  - Management: `list_computers`, `create_computer`, `get_computer`, `start_computer`
+    and `destroy_computer`. `create_computer` takes an optional `display_name`. It,
+    `get_computer` and `start_computer` wait up to about 40 s for the computer to start, then return
     `ready: false` if it is still starting (under the 60 s MCP client limit); the agent
-    calls `get_computer` again. They return `instance_id` and
+    calls `get_computer` again. They return `instance_id`, `status`, `stopped` and
     `viewer_url`, which embeds the computer's token for the user to open.
   - Quota: with `ORCHESTRATOR_MAX_INSTANCES` set, `create_computer` fails with
     `quota_exceeded` once the user has that many computers (counted from the provider,
     whatever their status). The error lists them and tells the agent to reuse one, or to
     `destroy_computer` one only after the user explicitly agrees.
+  - Stopped computers: a platform may stop idle computers. `list_computers` reports
+    `stopped: true` for them, and tools called on them fail with `computer_stopped`,
+    telling the agent to call `start_computer`. When a call gets a 503 (from a proxy) or
+    a refused connection, the orchestrator asks the provider whether the computer is
+    stopped; if the provider says it is running, the original error is returned.
   - Proxied: every tool in `../docs/mcp-tools.json` with `instance_id` added. That
     catalog is generated from the computer (`npm run mcp-tools` at the repo root), so
     the orchestrator knows the tools without a running instance.
@@ -202,10 +207,10 @@ HTTP) with the header `Authorization: Bearer <psk>`. Put TLS in front of it.
 
 `PROVIDER_URI`'s scheme selects a provider (`src/providers/index.ts`). The rest of the
 URI, and the environment, are passed to it. A provider implements `list(owner)`,
-`get(id)`, `create({ owner, displayName })` and `destroy(id)`. Each computer reports:
+`get(id)`, `create({ owner, displayName })`, `start(id)` and `destroy(id)`. Each computer reports:
 - `id`: provider-generated and DNS-compatible;
 - `owner` and metadata;
-- `status`;
+- `status`, and `stopped` when it must be started before use;
 - `internalUrl` (orchestrator → instance) and `externalUrl` (given to users);
 - `token`.
 
@@ -280,6 +285,9 @@ The API key comes from `OPENSOURCE_SERVER_API_KEY`.
 - **Internal URL:** `internal=external` (default) reaches computers through their public
   URL. `internal=ip` uses `http://<ipv4>:8080`, for an orchestrator running on the
   site's network.
+- **Starting:** the API has no start route. `start` asks for a restart job
+  (`PUT /sites/<id>/containers/<id>` with `restart: true`), which starts an `offline`
+  container.
 - **Note:** an admin key lists every container on the site; non-orchestrator containers
   are ignored.
 

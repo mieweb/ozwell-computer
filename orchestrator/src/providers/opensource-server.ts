@@ -95,6 +95,7 @@ export class OpensourceServerProvider implements Provider {
       ownerEmail: env[TAG.ownerEmail] || undefined,
       ownerName: env[TAG.ownerName] || undefined,
       status: c.status ?? 'unknown',
+      stopped: c.status === 'offline',
       createdAt: env[TAG.created],
       internalUrl: this.internal === 'ip' ? ip : external,
       externalUrl: external,
@@ -156,6 +157,16 @@ export class OpensourceServerProvider implements Provider {
     const c = await this.get(hostname);
     if (!c) throw new Error(`container ${hostname} was not found after creation`);
     return c;
+  }
+
+  /** There is no start route: a restart job (reconfigure) starts a stopped container. */
+  async start(id: string): Promise<Computer> {
+    const c = await this.find(id);
+    if (!c) throw new Error(`container ${id} not found`);
+    await this.api('PUT', `/sites/${this.site}/containers/${c.id}`, { restart: true });
+    const after = await this.get(id);
+    if (!after) throw new Error(`container ${id} vanished after start`);
+    return after;
   }
 
   async destroy(id: string): Promise<void> {

@@ -20,6 +20,8 @@ export interface Computer {
   ownerName?: string;
   /** Provider-specific state, e.g. running / exited / creating. */
   status: string;
+  /** Stopped (e.g. by the platform when idle) and needs start() before use. */
+  stopped: boolean;
   createdAt?: string;
   /** Base URL the orchestrator uses to reach the instance (API + MCP). */
   internalUrl?: string;
@@ -43,6 +45,8 @@ export interface Provider {
   get(id: string): Promise<Computer | null>;
   /** Create and start a computer. May return before it is ready to serve. */
   create(opts: CreateOptions): Promise<Computer>;
+  /** Start a stopped computer. May return before it is ready to serve. */
+  start(id: string): Promise<Computer>;
   /** Destroy a computer and its storage. */
   destroy(id: string): Promise<void>;
 }

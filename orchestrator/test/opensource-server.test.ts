@@ -29,6 +29,12 @@ async function fakeOs() {
     containers.push(c);
     return reply.code(201).send({ data: { containerId: c.id, jobId: 1, hostname: c.hostname, status: 'creating' } });
   });
+  app.put('/api/v1/sites/:site/containers/:id', async (req) => {
+    const c = containers.find((x) => String(x.id) === (req.params as any).id);
+    c._put = req.body;
+    if ((req.body as any).restart) c.status = 'running';
+    return { data: { containerId: c.id, jobId: 2, dnsWarnings: [], pendingRestart: false, message: 'Container is restarting' } };
+  });
   app.delete('/api/v1/sites/:site/containers/:id', async (req) => {
     const i = containers.findIndex((c) => String(c.id) === (req.params as any).id);
     containers.splice(i, 1);
@@ -87,6 +93,17 @@ describe('opensource-server provider', () => {
     expect(os.containers.find((x) => x.hostname === c.id).owner).toBe('asmith');
     await expect(make('owner=email').create({ owner: { id: 'u-4', email: 'nobody@example.com' } })).rejects.toThrow(/no opensource-server account/);
     await expect(make('owner=email').create({ owner: { id: 'u-5' } })).rejects.toThrow(/X-Ozwell-User-Email/);
+  });
+
+  it('reports offline containers as stopped and starts them with a restart job', async () => {
+    const p = make('');
+    const c = await p.create({ owner: { id: 'u-6' } });
+    const raw = os.containers.find((x) => x.hostname === c.id);
+    raw.status = 'offline';
+    expect(await p.get(c.id)).toMatchObject({ status: 'offline', stopped: true });
+    expect(await p.start(c.id)).toMatchObject({ status: 'running', stopped: false });
+    expect(raw._put).toEqual({ restart: true });
+    await expect(p.start('ozc-doesnotexi')).rejects.toThrow(/not found/);
   });
 
   it('destroys by hostname via the numeric id, and surfaces API errors', async () => {
