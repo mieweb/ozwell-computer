@@ -61,6 +61,13 @@ describe('container image', () => {
 describe('updates', () => {
   it('reports versions, checks on demand, and runs an upgrade request to completion', async () => {
     const s = (await api('GET', '/api/v1/update')).body;
+    // compose turns update checks off unless OZWELL_COMPUTER_UPDATE_URL is set (CI sets it).
+    if (!s.supported) {
+      expect(s.limitation).toBeTruthy();
+      expect((await api('POST', '/api/v1/update/check')).status).toBe(200);
+      expect((await api('POST', '/api/v1/update/apply')).status).toBe(501);
+      return;
+    }
     expect(s).toMatchObject({ supported: true, url: expect.any(String) });
     expect(s.current).toMatch(/^\d+\.\d+\.\d+/); // the installed .deb (or build, on the git channel)
     if (s.url.startsWith('git+')) expect(s.revision.current).toMatch(/^[0-9a-f]{40}$/);

@@ -222,7 +222,7 @@ describe('frame ancestors config', () => {
   });
 });
 
-import { parsePackages, newest, parseUpdateSource, parseLsRemote } from '../../src/update.js';
+import { parsePackages, newest, parseUpdateSource, parseLsRemote, isDevelopmentVersion } from '../../src/update.js';
 describe('update check', () => {
   const index = `Package: ozwell-computer
 Version: 1.2.0
@@ -278,6 +278,10 @@ Architecture: arm64
     expect(parseLsRemote(out, 'refs/heads/main')).toBe(b);
     expect(parseLsRemote(out, 'refs/heads/dev')).toBeNull();
     expect(parseLsRemote('', 'refs/heads/main')).toBeNull();
+  });
+  it('treats untagged 0.0.0 builds as development versions', () => {
+    for (const v of ['0.0.0', '0.0.0+12.gabc1234', '0.0.0~dev']) expect(isDevelopmentVersion(v), v).toBe(true);
+    for (const v of ['0.0.1', '0.0.10', '1.0.0', '2026.10.2', '10.0.0+1.gabc1234', '0.0.01']) expect(isDevelopmentVersion(v), v).toBe(false);
   });
 });
 
