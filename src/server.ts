@@ -80,8 +80,6 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   const staticDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'web', 'static');
   await app.register(fastifyStatic, { root: staticDir, prefix: '/static/', index: false });
 
-  app.get('/api/v1/openapi.json', { schema: { hide: true } }, async () => app.swagger());
-
   app.addHook('onResponse', async (req, reply) => {
     const route = req.routeOptions?.url ?? 'unmatched';
     if (route === '/health') return;

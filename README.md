@@ -3,7 +3,7 @@
 One HTTP port that serves an X11 desktop to people and to agents:
 
 - `/`: a noVNC viewer for humans, with presence cursors, local clipboard sharing and special keys
-- `/api/v1/*`: JSON API for screenshots, input, windows, clipboard, accessibility, processes and files (Swagger UI at `/api/docs`, OpenAPI at `/api/v1/openapi.json`)
+- `/api/v1/*`: JSON API for screenshots, input, windows, clipboard, accessibility, processes and files (Swagger UI at `/api/docs`, OpenAPI at `/api/docs/json`)
 - `/mcp`: an MCP server (Streamable HTTP) with the same capabilities as tools
 
 The VNC server is written in TypeScript and runs in-process; it talks to X through
