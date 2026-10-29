@@ -84,7 +84,6 @@ ozwell-computer/
 │  ├─ Dockerfile
 │  ├─ systemd/             # *.service units
 │  └─ openbox/             # minimal WM config / autostart
-└─ docs/openapi.json       # generated
 ```
 
 ---

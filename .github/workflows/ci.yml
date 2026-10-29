@@ -37,8 +37,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:unit
       - run: npm run build
-      - name: OpenAPI document and MCP tool catalog are up to date
-        run: npm run openapi && npm run mcp-tools && git diff --exit-code docs/openapi.json docs/mcp-tools.json
+      - name: MCP tool catalog is up to date
+        run: npm run mcp-tools && git diff --exit-code docs/mcp-tools.json
 
   orchestrator:
     runs-on: ubuntu-latest

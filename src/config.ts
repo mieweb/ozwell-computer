@@ -120,7 +120,6 @@ const BOOLEAN_FLAGS = new Set(['auth-disabled', 'no-auth', 'spawn-xvfb', 'view-o
 
 export interface ParsedArgs {
   overrides: Partial<Record<keyof Config, unknown>>;
-  printOpenapi: boolean;
   printMcpTools: boolean;
   help: boolean;
   version: boolean;
@@ -128,13 +127,11 @@ export interface ParsedArgs {
 
 export function parseArgs(argv: string[]): ParsedArgs {
   const overrides: Partial<Record<keyof Config, unknown>> = {};
-  let printOpenapi = false;
   let printMcpTools = false;
   let help = false;
   let version = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--print-openapi') { printOpenapi = true; continue; }
     if (a === '--print-mcp-tools') { printMcpTools = true; continue; }
     if (a === '-h' || a === '--help') { help = true; continue; }
     if (a === '-v' || a === '--version') { version = true; continue; }
@@ -153,7 +150,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     }
     overrides[key] = value;
   }
-  return { overrides, printOpenapi, printMcpTools, help, version };
+  return { overrides, printMcpTools, help, version };
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] = []): { config: Config; args: ParsedArgs } {
@@ -190,6 +187,5 @@ Usage: ozwell-computer [flags]
   --update-url <url|off>  OZWELL_COMPUTER_UPDATE_URL: APT Packages index, or git+https://<repo>#<branch>, checked for updates
   --open                  OZWELL_COMPUTER_OPEN=true: open the viewer in the default browser
   --frame-ancestors <o>   OZWELL_COMPUTER_FRAME_ANCESTORS: origins (space/comma separated) allowed to embed the viewer
-  --print-openapi         Print the OpenAPI document and exit
   --print-mcp-tools       Print the MCP tool catalog (name, description, input schema) and exit
 `;

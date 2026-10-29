@@ -3,7 +3,7 @@
 One HTTP port that serves an X11 desktop to people and to agents:
 
 - `/`: a noVNC viewer for humans, with presence cursors, local clipboard sharing and special keys
-- `/api/v1/*`: JSON API for screenshots, input, windows, clipboard, accessibility, processes and files ([OpenAPI](docs/openapi.json), Swagger UI at `/api/docs`)
+- `/api/v1/*`: JSON API for screenshots, input, windows, clipboard, accessibility, processes and files (Swagger UI at `/api/docs`, OpenAPI at `/api/v1/openapi.json`)
 - `/mcp`: an MCP server (Streamable HTTP) with the same capabilities as tools
 
 The VNC server is written in TypeScript and runs in-process; it talks to X through
@@ -450,7 +450,6 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
   retrying.
 - If port 8080 is taken, set `OZWELL_COMPUTER_HOST_PORT` in a `.env` file. The tests
   discover the port and token from compose.
-- `npm run openapi` regenerates `docs/openapi.json`.
 - The compose container mounts `./dist` read-only, so an in-app upgrade there fails
   to replace it. Test upgrades in a container started with `docker run`.
 
