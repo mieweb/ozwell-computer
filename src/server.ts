@@ -101,6 +101,6 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(async (s) => a11yRoutes(s, ctx));
   await app.register(async (s) => vncRoutes(s, ctx));
   await app.register(async (s) => mcpRoutes(s, ctx));
-  await app.register(async (s) => webRoutes(s));
+  await app.register(async (s) => webRoutes(s, ctx));
   return app;
 }

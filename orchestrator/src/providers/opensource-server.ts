@@ -16,7 +16,7 @@
 //
 // State is entirely on the containers: environment variables carry the tags and token.
 import type { Computer, CreateOptions, Provider, ProviderFactory } from './types.ts';
-import { generateId } from './types.ts';
+import { computerEnv, generateId } from './types.ts';
 
 const T = 'OZWELL_ORCHESTRATOR_';
 const TAG = {
@@ -44,6 +44,7 @@ export class OpensourceServerProvider implements Provider {
   readonly template: string;
   readonly ownerMode: 'tag' | 'email';
   readonly internal: 'external' | 'ip';
+  readonly env: Record<string, string>;
   private readonly key: string;
   private readonly fetchImpl: typeof fetch;
 
@@ -64,6 +65,7 @@ export class OpensourceServerProvider implements Provider {
     const internal = q.get('internal') ?? 'external';
     if (internal !== 'external' && internal !== 'ip') throw new Error('opensource-server provider: internal must be external or ip');
     this.internal = internal;
+    this.env = computerEnv(env);
     this.fetchImpl = fetchImpl;
   }
 
@@ -132,6 +134,7 @@ export class OpensourceServerProvider implements Provider {
     const token = crypto.getRandomValues(new Uint8Array(24)).reduce((s, b) => s + b.toString(16).padStart(2, '0'), '');
     const username = this.ownerMode === 'email' ? await this.usernameFor(opts.owner.email) : undefined;
     const tags: Record<string, string> = {
+      ...this.env,
       [TAG.managed]: 'true',
       [TAG.owner]: opts.owner.id,
       [TAG.ownerEmail]: opts.owner.email ?? '',

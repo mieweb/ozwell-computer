@@ -15,7 +15,7 @@
 import { request } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import type { Computer, CreateOptions, Provider, ProviderFactory } from './types.ts';
-import { generateId } from './types.ts';
+import { computerEnv, generateId } from './types.ts';
 
 const L = 'org.mieweb.ozwell-computer.';
 const LABEL = {
@@ -67,8 +67,9 @@ export class DockerProvider implements Provider {
   readonly network?: string;
   readonly publish: boolean;
   readonly publishHost: string;
+  readonly env: Record<string, string>;
 
-  constructor(uri: URL) {
+  constructor(uri: URL, env: NodeJS.ProcessEnv = {}) {
     const q = uri.searchParams;
     this.api = new DockerApi(uri.hostname
       ? { host: uri.hostname, port: Number(uri.port || 2375) }
@@ -77,6 +78,7 @@ export class DockerProvider implements Provider {
     this.network = q.get('network') ?? undefined;
     this.publish = ['1', 'true', 'yes'].includes((q.get('publish') ?? '').toLowerCase());
     this.publishHost = q.get('publish_host') ?? (uri.hostname || 'localhost');
+    this.env = computerEnv(env);
   }
 
   private toComputer(c: any): Computer {
@@ -132,7 +134,7 @@ export class DockerProvider implements Provider {
       Image: this.image,
       Hostname: id,
       Tty: true,
-      Env: [`OZWELL_COMPUTER_TOKEN=${token}`],
+      Env: Object.entries({ ...this.env, OZWELL_COMPUTER_TOKEN: token }).map(([k, v]) => `${k}=${v}`),
       Labels: {
         [LABEL.managed]: 'true',
         [LABEL.owner]: opts.owner.id,
@@ -178,4 +180,4 @@ export class DockerProvider implements Provider {
   }
 }
 
-export const dockerProvider: ProviderFactory = (uri) => new DockerProvider(uri);
+export const dockerProvider: ProviderFactory = (uri, env) => new DockerProvider(uri, env);

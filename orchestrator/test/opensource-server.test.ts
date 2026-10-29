@@ -99,4 +99,13 @@ describe('opensource-server provider', () => {
     const bad = new OpensourceServerProvider(new URL(`opensource-server://${os.host}?tls=0&site=1&domain=7`), { OPENSOURCE_SERVER_API_KEY: 'wrong' });
     await expect(bad.list('u-1')).rejects.toThrow(/bad key/);
   });
+  it('passes COMPUTER_FRAME_ANCESTORS to new computers', async () => {
+    const p = new OpensourceServerProvider(new URL(`opensource-server://${os.host}?tls=0&site=1&domain=7`),
+      { ...env, COMPUTER_FRAME_ANCESTORS: 'https://app.ozwell.ai' });
+    const c = await p.create({ owner: { id: 'u-fa' } });
+    const raw = os.containers.find((x) => x.hostname === c.id);
+    expect(raw.environmentVars.OZWELL_COMPUTER_FRAME_ANCESTORS).toBe('https://app.ozwell.ai');
+    const plain = await make('').create({ owner: { id: 'u-fa' } });
+    expect(os.containers.find((x) => x.hostname === plain.id).environmentVars).not.toHaveProperty('OZWELL_COMPUTER_FRAME_ANCESTORS');
+  });
 });

@@ -201,4 +201,18 @@ describe('providers', () => {
     proxiedTools(catalog);
     expect(catalog.find((t) => t.name === 'click')!.inputSchema.required).toEqual(['x', 'y']);
   });
+  it('docker passes COMPUTER_FRAME_ANCESTORS to new computers', async () => {
+    const created: any[] = [];
+    const docker = Fastify();
+    docker.post('/containers/create', async (req) => { created.push(req.body); return { Id: 'x' }; });
+    docker.post('/containers/:id/start', async (_req, reply) => reply.code(204).send());
+    docker.get('/containers/:id/json', async () => ({ Name: '/c', Config: created[0], State: { Status: 'running' } }));
+    await docker.listen({ port: 0, host: '127.0.0.1' });
+    const port = (docker.server.address() as any).port;
+    const p = await providerFromUri(`docker://127.0.0.1:${port}`, { COMPUTER_FRAME_ANCESTORS: 'https://app.ozwell.ai' });
+    const c = await p.create({ owner: { id: 'u' } });
+    await docker.close();
+    expect(created[0].Env).toContain('OZWELL_COMPUTER_FRAME_ANCESTORS=https://app.ozwell.ai');
+    expect(created[0].Env).toContain(`OZWELL_COMPUTER_TOKEN=${c.token}`);
+  });
 });

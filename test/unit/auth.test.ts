@@ -76,6 +76,7 @@ describe('auth matrix', () => {
       const r = await app.inject({ url });
       expect(r.statusCode, url).not.toBe(401);
       expect(r.headers['set-cookie'], url).toBeUndefined();
+      expect(r.headers['content-security-policy'], url).toMatch(/frame-ancestors 'self'$/);
     }
     expect((await app.inject({ url: '/api/v1/capabilities' })).statusCode).toBe(401);
     expect((await app.inject({ method: 'POST', url: '/' })).statusCode).toBe(401);
@@ -103,6 +104,22 @@ describe('auth matrix', () => {
     const r = await app.inject({ method: 'POST', url: '/api/v1/input/pointer', headers: { authorization: 'Bearer ' + TOKEN }, payload: { action: 'fly' } });
     expect(r.statusCode).toBe(400);
     expect(r.json().error.reason).toBe('invalid_request');
+  });
+});
+
+describe('frame ancestors', () => {
+  let app: FastifyInstance;
+  beforeAll(async () => { ({ app } = await makeApp({ frameAncestors: ['https://app.ozwell.ai'] })); });
+  afterAll(async () => { await app.close(); });
+
+  it('allows configured origins to frame the app shell, signed in or not', async () => {
+    for (const headers of [{}, { authorization: 'Bearer ' + TOKEN }]) {
+      for (const url of ['/', '/index.html']) {
+        const r = await app.inject({ url, headers });
+        expect(r.headers['content-security-policy'], url).toMatch(/frame-ancestors 'self' https:\/\/app\.ozwell\.ai$/);
+        expect(r.headers['x-frame-options'], url).toBeUndefined();
+      }
+    }
   });
 });
 
