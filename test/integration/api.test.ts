@@ -169,6 +169,18 @@ describe('accessibility tree', () => {
   });
 });
 
+describe('screenshot', () => {
+  it('ocr=true returns the text in the captured window', async () => {
+    const id = await zenity(['--info', '--text=Ozwell OCR Probe'], '/tmp/oz-ocr.txt', 'oz-ocr');
+    const r = await api('GET', `/api/v1/screenshot?window=${id}&ocr=true`);
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ format: 'png', image_base64: expect.any(String) });
+    expect(r.body.text).toContain('Ozwell OCR Probe');
+    expect((await api('GET', `/api/v1/screenshot?window=${id}`, undefined, { accept: 'application/json' })).body.text).toBeUndefined();
+    await api('POST', `/api/v1/windows/${id}/close`);
+  });
+});
+
 describe('exec and files', () => {
   it('streams NDJSON with ?stream=1', async () => {
     const res = await fetch(`${URL_}/api/v1/exec?stream=1`, {

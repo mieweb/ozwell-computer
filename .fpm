@@ -23,6 +23,7 @@
 --depends xdg-utils
 --depends x11-xserver-utils
 --depends xclip
+--depends tesseract-ocr
 --depends fonts-dejavu-core
 --depends fonts-noto-core
 --deb-suggests firefox-esr

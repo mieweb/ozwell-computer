@@ -61,20 +61,21 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
     });
 
   mcp.registerTool('screenshot', {
-    description: 'Capture the screen (or one window). Returns an image plus screenshot_id; pass that id with coordinates taken from this image.',
+    description: 'Capture the screen (or one window). Returns an image plus screenshot_id; pass that id with coordinates taken from this image. ' +
+      'Set ocr to also get the text in the image as an extra text item.',
     inputSchema: {
       window: z.string().optional(), max_dimension: z.number().int().min(64).max(4096).optional().describe('Default 1280'),
       format: z.enum(['png', 'jpeg', 'webp']).optional(), cursor: z.boolean().optional(),
+      ocr: z.boolean().optional().describe('Also return text extracted from the screenshot (OCR via tesseract)'),
     },
   }, async (a) => wrap(async () => {
-    const r = await desktop.screenshot({ window: a.window, max_dimension: a.max_dimension ?? 1280, format: a.format ?? 'png', cursor: a.cursor ?? true, quality: 75 });
+    const r = await desktop.screenshot({ window: a.window, max_dimension: a.max_dimension ?? 1280, format: a.format ?? 'png', cursor: a.cursor ?? true, quality: 75, ocr: a.ocr });
     const e = r.entry;
-    return {
-      content: [
-        { type: 'image', data: r.data.toString('base64'), mimeType: r.contentType },
-        { type: 'text', text: JSON.stringify({ screenshot_id: e.id, width: e.imageSize.width, height: e.imageSize.height, native_width: e.nativeSize.width, native_height: e.nativeSize.height, scale: e.scale }) },
-      ],
-    };
+    const content: Content[] = [
+      { type: 'image', data: r.data.toString('base64'), mimeType: r.contentType },
+      { type: 'text', text: JSON.stringify({ screenshot_id: e.id, width: e.imageSize.width, height: e.imageSize.height, native_width: e.nativeSize.width, native_height: e.nativeSize.height, scale: e.scale }) },
+    ];
+    return { content: r.text !== undefined ? [...content, { type: 'text', text: r.text }] : content };
   }));
 
   const pointer = (req: any) => wrap(async () => text(await desktop.pointerAction(req, principal())));

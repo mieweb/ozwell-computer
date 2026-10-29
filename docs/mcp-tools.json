@@ -2,7 +2,7 @@
   "tools": [
     {
       "name": "screenshot",
-      "description": "Capture the screen (or one window). Returns an image plus screenshot_id; pass that id with coordinates taken from this image.",
+      "description": "Capture the screen (or one window). Returns an image plus screenshot_id; pass that id with coordinates taken from this image. Set ocr to also get the text in the image as an extra text item.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
@@ -25,6 +25,10 @@
             ]
           },
           "cursor": {
+            "type": "boolean"
+          },
+          "ocr": {
+            "description": "Also return text extracted from the screenshot (OCR via tesseract)",
             "type": "boolean"
           }
         }
