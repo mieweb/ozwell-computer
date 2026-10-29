@@ -105,6 +105,29 @@ describe('noVNC viewer', () => {
     await b.context().close();
   });
 
+  it('the jobs panel streams a background command\'s output and cancels it', async () => {
+    const start = await (await fetch(`${URL_}/api/v1/exec`, {
+      method: 'POST', headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify({ cmd: 'echo first; sleep 1; echo second >&2; sleep 60', wait_ms: 0 }),
+    })).json();
+    const page = await openViewer();
+    await page.locator('#btn-jobs').waitFor({ state: 'visible', timeout: 10000 });
+    await page.click('#btn-jobs');
+    await page.waitForFunction(() => document.getElementById('jobs-cmd')?.textContent?.includes('sleep 60'), null, { timeout: 10000 });
+    expect(await page.locator('#jobs-list li.sel button').getAttribute('aria-pressed')).toBe('true');
+    await page.waitForFunction(() => {
+      const out = document.getElementById('jobs-out')!;
+      return out.textContent!.includes('first') && out.querySelector('.err')?.textContent === 'second\n';
+    }, null, { timeout: 10000 });
+    page.once('dialog', (d) => d.accept());
+    await page.click('#jobs-cancel');
+    await page.waitForFunction(() => document.getElementById('jobs-state')?.textContent === 'cancelled', null, { timeout: 10000 });
+    expect(await page.locator('#jobs-cancel').isHidden()).toBe(true);
+    const v = await (await fetch(`${URL_}/api/v1/exec/jobs/${start.job_id}`, { headers: auth })).json();
+    expect(v.state).toBe('cancelled');
+    await page.context().close();
+  });
+
   it('shares the local clipboard: Ctrl+V pastes local text, Ctrl+C copies desktop text locally', async () => {
     const page = await openViewer();
     expect(await page.locator('#btn-clip').isHidden()).toBe(true); // localhost is a secure context

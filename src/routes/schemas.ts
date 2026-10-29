@@ -90,13 +90,19 @@ export const feature = obj('Availability of a feature', {
   limitation: prop('string', 'Why it is unavailable or limited'),
 }, { required: ['available'], additionalProperties: true });
 
-export const jobView = record('State and output of a background command', {
+const jobFields = {
   job_id: prop('string', 'Job id (j-xxxxxxxxxxxx)'),
   state: prop('string', 'Lifecycle state; lost means the process vanished without recording an exit code', { enum: ['running', 'exited', 'timed_out', 'cancelled', 'lost'] }),
   exit_code: prop(['integer', 'null'], 'Exit status once exited or timed_out, else null'),
   command: prop('string', 'The command line as run by /bin/sh'),
   started_at: prop('string', 'Start time', { format: 'date-time' }),
   duration_ms: prop('integer', 'Run time so far, or total once finished'),
+};
+
+export const jobSummary = record('A background command, without its output', jobFields);
+
+export const jobView = record('State and output of a background command', {
+  ...jobFields,
   stdout: prop('string', 'Standard output from stdout_offset on (only the newest 50,000 bytes if longer)'),
   stderr: prop('string', 'Standard error from stderr_offset on (only the newest 50,000 bytes if longer)'),
   stdout_offset: prop('integer', 'Byte offset to pass next time to read only newer stdout'),

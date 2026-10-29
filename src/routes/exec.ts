@@ -8,11 +8,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ApiError } from '../errors.js';
 import type { AppContext } from '../server.js';
 import { runCommand, type ExecRequest } from '../process/exec.js';
-import { MAX_WAIT_MS, jobsFor } from '../process/jobs.js';
+import { MAX_WAIT_MS, jobsFor, summarize, type JobOffsets, type JobView } from '../process/jobs.js';
 import { loadPty } from '../process/pty.js';
 import { parseRange, safePath, signedUrl, verifySignature, type SignMethod } from '../fs/index.js';
 import { deriveKey, generateToken } from '../auth/token.js';
-import { errors, execResult, fsPath, fsStat, jobView, media, ok, prop, record, upload } from './schemas.js';
+import { errors, execResult, fsPath, fsStat, jobSummary, jobView, media, ok, prop, record, upload } from './schemas.js';
+import { eventStreams, openSse } from './sse.js';
 
 const MAX_UPLOAD = 2 * 1024 * 1024 * 1024;
 
@@ -71,7 +72,7 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
     if (!config.exec) throw new ApiError('permission_denied', 'process and filesystem APIs are disabled (OZWELL_COMPUTER_EXEC=false)');
   };
   const root = config.fsRoot;
-  const jobs = jobsFor(config, desktop.x.displayName);
+  const jobs = jobsFor(config, desktop);
 
   // Raw uploads: accept any content type as a stream.
   app.addContentTypeParser('*', (_req, payload, done) => done(null, payload));
@@ -134,7 +135,20 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
     reply.raw.end();
   });
 
-  const jobParams = { type: 'object', properties: { id: prop('string', 'Job id (j-xxxxxxxxxxxx)') }, required: ['id'] };
+  app.get('/api/v1/exec/jobs', {
+    preHandler: gate,
+    schema: {
+      tags: ['exec'], summary: 'List background commands, newest first',
+      description: 'Every job still on disk (finished jobs are kept for 24 h), without output. Starts, finishes and removals are also '
+        + 'published on /api/v1/events as `job` and `job.removed` events.',
+      response: { 200: record('The jobs', { jobs: prop('array', 'Jobs, newest first', { items: jobSummary }) }), ...errors },
+    },
+  }, async () => ({ jobs: await jobs.list() }));
+  const jobParams = { type: 'object', properties: { id: prop('string', 'Job id (j-xxxxxxxxxxxx) from POST /api/v1/exec or GET /api/v1/exec/jobs') }, required: ['id'] };
+  const offsetProps = {
+    stdout_offset: prop('integer', 'Return stdout from this byte offset (from a previous view)', { minimum: 0 }),
+    stderr_offset: prop('integer', 'Return stderr from this byte offset (from a previous view)', { minimum: 0 }),
+  };
   app.get('/api/v1/exec/jobs/:id', {
     preHandler: gate,
     schema: {
@@ -144,8 +158,7 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
         type: 'object',
         properties: {
           wait_ms: prop('integer', 'How long to wait for the job to finish (default 0)', { minimum: 0, maximum: MAX_WAIT_MS }),
-          stdout_offset: prop('integer', 'Return stdout from this byte offset (from a previous view)', { minimum: 0 }),
-          stderr_offset: prop('integer', 'Return stderr from this byte offset (from a previous view)', { minimum: 0 }),
+          ...offsetProps,
         },
       },
       response: { 200: jobView, ...errors },
@@ -153,6 +166,92 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
   }, async (req) => {
     const q = req.query as { wait_ms?: number; stdout_offset?: number; stderr_offset?: number };
     return jobs.wait((req.params as any).id, q.wait_ms ?? 0, { stdout: q.stdout_offset, stderr: q.stderr_offset });
+  });
+  const streamRoute = '/api/v1/exec/jobs/:id/stream';
+  type Emit = (kind: 'output' | 'state' | 'end', data: Partial<JobView>) => void;
+  /** Emit a job's new output and state changes until it stops, then `end` with its summary (unless aborted). */
+  const relay = async (id: string, offsets: JobOffsets, signal: AbortSignal, drained: () => Promise<void>, emit: Emit) => {
+    let last: JobView | null = null;
+    for await (const v of jobs.follow(id, offsets, signal)) {
+      const { stdout, stderr, stdout_offset, stderr_offset, truncated } = v;
+      if (stdout || stderr || truncated) emit('output', { stdout, stderr, stdout_offset, stderr_offset, truncated });
+      if (v.state !== last?.state) emit('state', summarize(v));
+      last = v;
+      await drained();
+    }
+    if (signal.aborted || !last) return;
+    emit('end', summarize(last));
+  };
+  app.get(streamRoute, {
+    preHandler: gate,
+    schema: {
+      tags: ['exec'], summary: 'Stream a background command\'s output as server-sent events',
+      description: 'Tails stdout/stderr from the given offsets. `output` events carry {stdout, stderr, stdout_offset, stderr_offset, truncated} '
+        + 'with an event id of `<stdout_offset>-<stderr_offset>`; a `Last-Event-ID` header in that form overrides the query offsets, so '
+        + 'EventSource reconnects resume where they left off. `state` events carry the job summary when its state changes. When the job '
+        + 'is no longer running, a final `end` event with the summary is sent and the stream closes.',
+      params: jobParams,
+      querystring: { type: 'object', properties: offsetProps },
+      response: { 200: media('An event stream that ends with the job', ['text/event-stream'], { type: 'string' }), ...errors },
+    },
+  }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const q = req.query as { stdout_offset?: number; stderr_offset?: number };
+    const resume = /^(\d+)-(\d+)$/.exec(String(req.headers['last-event-id'] ?? ''));
+    const offsets = resume ? { stdout: Number(resume[1]), stderr: Number(resume[2]) } : { stdout: q.stdout_offset, stderr: q.stderr_offset };
+    await jobs.summary(id); // 404 before the stream opens
+    const { send, drained, signal, end } = openSse(reply, streamRoute);
+    // A read that fails mid-stream (e.g. the job was pruned) just ends it; EventSource reconnects from its last id.
+    await relay(id, offsets, signal, drained, (kind, data) =>
+      send(kind, data, kind === 'output' ? `${data.stdout_offset}-${data.stderr_offset}` : undefined)).catch(() => undefined);
+    if (!signal.aborted) end();
+  });
+
+  // The job each /api/v1/events stream currently carries output for, by stream_id.
+  const followers = new Map<string, AbortController>();
+  app.put('/api/v1/events/:stream_id/job', {
+    preHandler: gate,
+    schema: {
+      tags: ['exec'], summary: 'Carry a background command\'s output on an event stream',
+      description: 'Makes the /api/v1/events stream with this `stream_id` (from its `hello` event) tail one job, replacing any job it '
+        + 'carried before; `job_id: null` stops. The stream then gets `job.output` events {job_id, stdout, stderr, stdout_offset, '
+        + 'stderr_offset, truncated}, `job.state` with the job summary when its state changes, and `job.end` with the final summary '
+        + 'once the job is no longer running. Each event also carries the `tag` given here. A reconnected stream has a new '
+        + '`stream_id`, so subscribe again with the last offsets received.',
+      params: {
+        type: 'object', required: ['stream_id'],
+        properties: { stream_id: prop('string', 'The `stream_id` from the stream\'s `hello` event') },
+      },
+      body: {
+        type: 'object', required: ['job_id'], additionalProperties: false,
+        properties: {
+          job_id: prop(['string', 'null'], 'Job id (j-xxxxxxxxxxxx) to tail, or null to stop'),
+          ...offsetProps,
+          tag: prop('string', 'Echoed in this subscription\'s events, to tell them from an earlier subscription\'s', { maxLength: 64 }),
+        },
+      },
+      response: { 200: ok, ...errors },
+    },
+  }, async (req) => {
+    const { stream_id } = req.params as { stream_id: string };
+    const b = req.body as { job_id: string | null; stdout_offset?: number; stderr_offset?: number; tag?: string };
+    const stream = eventStreams.get(stream_id);
+    if (!stream) throw new ApiError('target_unavailable', `no event stream ${stream_id}`);
+    followers.get(stream_id)?.abort();
+    followers.delete(stream_id);
+    const { job_id, tag } = b;
+    if (job_id === null) return { ok: true };
+    const ac = new AbortController();
+    followers.set(stream_id, ac);
+    const signal = AbortSignal.any([stream.signal, ac.signal]);
+    const done = () => { if (followers.get(stream_id) === ac) followers.delete(stream_id); };
+    await jobs.summary(job_id).catch((e) => { done(); throw e; });
+    void relay(job_id, { stdout: b.stdout_offset, stderr: b.stderr_offset }, signal, stream.drained, (kind, data) =>
+      stream.send(`job.${kind}`, kind === 'output' ? { job_id, ...data, tag } : { ...data, tag }))
+      // Close the shared stream so the viewer reconnects and resubscribes (or sees the job is gone).
+      .catch(() => { if (!signal.aborted) stream.end(); })
+      .finally(done);
+    return { ok: true };
   });
   app.delete('/api/v1/exec/jobs/:id', {
     preHandler: gate,
