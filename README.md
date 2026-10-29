@@ -286,8 +286,10 @@ are in `contrib/`.
   - **Security:** a `:main` image runs `npm ci` and the build of whatever is on `main`
     as root when someone applies an update. It trusts the `main` branch (and its
     npm dependencies) as much as the image itself. Use a release image, or set
-    `OZWELL_COMPUTER_UPDATE_URL` to a release `Packages` URL or `off`, where that's
-    not acceptable.
+    `OZWELL_COMPUTER_UPDATE_URL=off`, where that's not acceptable. (A release
+    `Packages` URL alone isn't enough on a `:main` image: it has no apt source, so
+    apt would never install the release it reports; restore
+    `/etc/apt/sources.list.d/ozwell-computer.sources` as above too.)
   - Upgrades restart only the server; the viewer reconnects and apps on the desktop
     stay open.
   - apt and dpkg run inside `ozwell-computer-upgrade.service`, so maintainer scripts

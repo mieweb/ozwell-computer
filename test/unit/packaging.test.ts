@@ -124,7 +124,7 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
   it('make install records the source commit last and keeps existing config files', () => {
     const mk = read('Makefile');
     const recipe = /^install: .*\n((?:\t.*\n)+)/m.exec(mk)?.[1].trimEnd().split('\n') ?? [];
-    expect(recipe.at(-1)).toMatch(/^\tgit rev-parse --verify -q HEAD > \$\(DESTAPP\)\/REVISION/);
+    expect(recipe.at(-1)).toMatch(/^\trev=\$\$\(git rev-parse --verify -q HEAD .*then echo "\$\$rev" > \$\(DESTAPP\)\/REVISION; else rm -f/);
     // From the source checkout: the installed tree (e.g. /opt) has no git history.
     expect(mk).toContain('npm pkg set version="$$(cd "$(CURDIR)" && ./package-version node)"');
     expect(mk).toContain('$(call conffile,contrib/default/ozwell-computer,');

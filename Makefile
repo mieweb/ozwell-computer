@@ -68,7 +68,7 @@ install: build
 	$(INSTALL_DATA) contrib/xfce/xfce4-session.xml $(APP_XFCONF)/
 	$(INSTALL_DATA) contrib/xfce/applications/*.desktop $(DESTDIR)/usr/share/applications/
 	# Last: the source commit marks a complete install for in-app updates from git (contrib/upgrade.sh).
-	git rev-parse --verify -q HEAD > $(DESTAPP)/REVISION 2>/dev/null || rm -f $(DESTAPP)/REVISION
+	rev=$$(git rev-parse --verify -q HEAD 2>/dev/null); if [ -n "$$rev" ]; then echo "$$rev" > $(DESTAPP)/REVISION; else rm -f $(DESTAPP)/REVISION; fi
 
 deb:
 	@case "$(STAGE)" in /|"") echo "refusing to package from DESTDIR=$(STAGE)" >&2; exit 1;; esac
