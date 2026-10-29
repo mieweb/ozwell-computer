@@ -54,7 +54,9 @@ function createClipboardSync(target: HTMLElement, getRfb: () => RFB | null, toas
     const rfb = getRfb();
     if (!rfb) return;
     for (const [sym, code] of keys) rfb.sendKey(sym, code, true);
-    for (const [sym, code] of [...keys].reverse()) rfb.sendKey(sym, code, false);
+    // A modifier the user still holds (physically or via a remapped Caps Lock) stays down.
+    const stillHeld = (sym: number) => (sym === XK.Control_L && held.ctrlKey) || (sym === XK.Shift_L && held.shiftKey);
+    for (const [sym, code] of [...keys].reverse()) if (!stillHeld(sym)) rfb.sendKey(sym, code, false);
   }
   function releaseSuper() {
     const rfb = getRfb();
@@ -114,6 +116,8 @@ function createClipboardSync(target: HTMLElement, getRfb: () => RFB | null, toas
   // textarea during keydown sends the browser's paste (either form) here instead.
   const sink = document.createElement('textarea');
   sink.setAttribute('aria-hidden', 'true');
+  // Keys typed while it briefly has focus still belong to the desktop (see keyboard.ts).
+  sink.dataset.screenKeys = '';
   sink.tabIndex = -1;
   sink.className = 'fixed top-0 -left-[9999px] size-px opacity-0';
   document.body.appendChild(sink);
@@ -160,6 +164,9 @@ function createClipboardSync(target: HTMLElement, getRfb: () => RFB | null, toas
 
   // Keep noVNC from sending the keyup of a key we handled ourselves.
   const swallowed = new Set<string>();
+  // Modifier flags of the latest key event anywhere in the page (focus may be on the sink).
+  let held: Pick<KeyboardEvent, 'ctrlKey' | 'shiftKey'> = { ctrlKey: false, shiftKey: false };
+  const trackHeld = (e: KeyboardEvent) => { held = e; };
 
   const onKeydown = (e: KeyboardEvent) => {
     if (getRfb()?.viewOnly) return;
@@ -189,12 +196,16 @@ function createClipboardSync(target: HTMLElement, getRfb: () => RFB | null, toas
   }
 
   document.addEventListener('paste', onPasteEvent, true);
+  document.addEventListener('keydown', trackHeld, true);
+  document.addEventListener('keyup', trackHeld, true);
   target.addEventListener('keydown', onKeydown, true);
   target.addEventListener('keyup', onKeyup, true);
   target.addEventListener('pointerup', maybeSyncPending, true);
   sink.addEventListener('keyup', onSinkKeyup);
   const dispose = () => {
     document.removeEventListener('paste', onPasteEvent, true);
+    document.removeEventListener('keydown', trackHeld, true);
+    document.removeEventListener('keyup', trackHeld, true);
     target.removeEventListener('keydown', onKeydown, true);
     target.removeEventListener('keyup', onKeyup, true);
     target.removeEventListener('pointerup', maybeSyncPending, true);

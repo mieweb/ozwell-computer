@@ -47,12 +47,25 @@ describe('Caps Lock remaps', () => {
 
   it('does not mistake a real held modifier for the remap', () => {
     const { sent, passed } = run([
-      down('Control', { ctrlKey: true }), down('CapsLock', { ctrlKey: true }), up('CapsLock', { ctrlKey: true }), up('Control'),
-      down('Shift', { shiftKey: true }), up('Shift'),
+      down('Shift', { shiftKey: true }), down('CapsLock', { shiftKey: true }), up('Shift'), up('CapsLock'),
       down('AltGraph'), down('@'), up('@'), up('AltGraph'),
     ]);
     expect(sent).toEqual(['ffe5 tap']);
-    expect(passed).toEqual(['keydown Control', 'keyup Control', 'keydown Shift', 'keyup Shift', 'keydown AltGraph', 'keydown @', 'keyup @', 'keyup AltGraph']);
+    expect(passed).toEqual(['keydown Shift', 'keyup Shift', 'keydown AltGraph', 'keydown @', 'keyup @', 'keyup AltGraph']);
+  });
+
+  it('keeps Caps Lock pending while a held Ctrl also explains the flag, in either press order', () => {
+    const C = { ctrlKey: true };
+    // Physical Ctrl first: once it is released, the flag still set shows Caps Lock is Ctrl.
+    const a = run([down('Control', C), down('CapsLock', C), down('c', C), up('c', C), up('Control', C), down('x', C), up('CapsLock')]);
+    expect(a.sent).toEqual(['ffe3 up']);
+    expect(a.passed).toEqual(['keydown Control', 'keydown c', 'keyup c', 'keydown x']);
+    // Caps Lock first (Chrome: no flag yet), then physical Ctrl, which is released first.
+    const b = run([down('CapsLock'), down('Control', C), up('Control', C), down('x', C), up('CapsLock')]);
+    expect(b.sent).toEqual(['ffe3 up']);
+    expect(b.passed).toEqual(['keydown Control', 'keydown x']);
+    // Ctrl held from start to finish: never shown otherwise, so it was a plain Caps Lock.
+    expect(run([down('Control', C), down('CapsLock', C), up('CapsLock', C), up('Control')]).sent).toEqual(['ffe5 tap']);
   });
 
   it('a real modifier pressed after Caps Lock resolves it as Caps_Lock', () => {

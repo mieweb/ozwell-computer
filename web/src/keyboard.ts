@@ -23,6 +23,8 @@ const KEY_FLAGS: Record<string, Flag[]> = {
   Control: ['ctrlKey'], Alt: ['altKey'], Shift: ['shiftKey'], Meta: ['metaKey'], AltGraph: ['ctrlKey', 'altKey'],
 };
 const XK_Caps_Lock = 0xffe5;
+// Elements outside the screen that briefly take focus on its behalf (the clipboard's paste sink).
+const PROXY = '[data-screen-keys]';
 
 /** `handle` returns true when it consumed the event, which must then be hidden from noVNC. */
 export function createCapsLockRemap(send: Send) {
@@ -47,8 +49,11 @@ export function createCapsLockRemap(send: Send) {
   const resolve = (e: Flags, own: Flag[]) => {
     if (caps !== 'pending') return;
     const mod = unexplained(e, own);
+    if (mod) return press(mod);
+    // A held modifier accounts for the flags, but Caps Lock might set them too: wait for its release.
+    if (MODS.some(([flag]) => e[flag])) return;
     caps = null;
-    if (mod) press(mod); else tap(undefined);
+    tap(undefined);
   };
 
   const onCaps = (e: KeyLike) => {
@@ -72,7 +77,16 @@ export function createCapsLockRemap(send: Send) {
       if (!flags) return false;
       if (e.type === 'keydown') { held.set(e.code, flags); return false; }
       held.delete(e.code);
-      if (caps === 'pending' || caps?.mod[2] !== e.code) return false;
+      if (caps === 'pending') {
+        // The released key no longer explains its flag: if it is still set, Caps Lock sets it.
+        const mod = unexplained(e, []);
+        if (!mod) return false;
+        // Same keysym: keep the remote press for Caps Lock instead of letting noVNC release it.
+        if (mod[2] !== e.code) { press(mod); return false; }
+        caps = { mod, sent: true };
+        return true;
+      }
+      if (caps?.mod[2] !== e.code) return false;
       // Caps Lock still holds this keysym: keep it pressed remotely until Caps Lock is released.
       caps.sent = true;
       return true;
@@ -104,15 +118,23 @@ export function useCapsLockRemap(target: RefObject<HTMLElement | null>, getRfb: 
       if (!getRfb()?.viewOnly) remap.pointer(e);
     };
     const reset = () => remap.reset();
+    const isProxy = (t: EventTarget | null) => t instanceof Element && t.matches(PROXY);
+    const onProxyKey = (e: KeyboardEvent) => {
+      if (isProxy(e.target)) onKey(e);
+    };
     // Focus moving elsewhere in the page sends the key-up there, not to the desktop.
     const onFocusOut = (e: FocusEvent) => {
-      if (!el.contains(e.relatedTarget as Node | null)) reset();
+      if (!el.contains(e.relatedTarget as Node | null) && !isProxy(e.relatedTarget)) reset();
     };
     const listeners = [['keydown', onKey], ['keyup', onKey], ['pointerdown', onPointer], ['wheel', onPointer], ['focusout', onFocusOut]] as const;
     for (const [type, fn] of listeners) el.addEventListener(type, fn as EventListener, true);
+    document.addEventListener('keydown', onProxyKey, true);
+    document.addEventListener('keyup', onProxyKey, true);
     window.addEventListener('blur', reset);
     return () => {
       for (const [type, fn] of listeners) el.removeEventListener(type, fn as EventListener, true);
+      document.removeEventListener('keydown', onProxyKey, true);
+      document.removeEventListener('keyup', onProxyKey, true);
       window.removeEventListener('blur', reset);
     };
   }, []); // getRfb only reads a ref
