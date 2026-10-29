@@ -175,6 +175,7 @@ describe('noVNC viewer', () => {
     await page.waitForFunction(() => {
       const c = document.querySelector('#screen canvas')!.getBoundingClientRect();
       const s = document.getElementById('screen')!.getBoundingClientRect();
+      if (!c.width || !c.height || !s.width || !s.height) return false; // still hidden
       return c.width <= s.width + 1 && c.height <= s.height + 1 && (Math.abs(c.width - s.width) < 2 || Math.abs(c.height - s.height) < 2);
     }, null, { timeout: 5000 });
     await page.context().close();
