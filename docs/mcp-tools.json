@@ -528,6 +528,15 @@
       }
     },
     {
+      "name": "update_computer",
+      "description": "Install the ozwell-computer update that tool results announce. The server restarts while it installs (the desktop and its apps keep running), so tool calls fail for a short while, or several minutes when it builds from git: wait, then retry.",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
       "name": "run_command",
       "description": "Run a shell command in the desktop environment (non-interactive). Waits up to wait_ms (default 25 s) and returns {state, exit_code, stdout, stderr}. If it is still going, state is \"running\" with a job_id: the command keeps running, and you call command_output to wait for it. Use this for long commands (installs, builds) too.",
       "inputSchema": {

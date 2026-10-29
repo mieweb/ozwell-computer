@@ -394,8 +394,16 @@ viewer.
 
 The tools are: `screenshot`, `click`, `double_click`, `move`, `drag`, `scroll`,
 `type_text`, `press_key`, `hotkey`, `list_windows`, `activate_window`, `launch_app`,
-`get_ui_tree`, `find_element`, `ui_action`, `get_clipboard` and `set_clipboard`. When
-exec is enabled, `run_command`, `read_file` and `write_file` are also available.
+`get_ui_tree`, `find_element`, `ui_action`, `get_clipboard`, `set_clipboard` and
+`update_computer`. When exec is enabled, `run_command`, `read_file` and `write_file` are
+also available.
+
+**Updates:** while the last update check found a newer version that isn't being
+installed yet, every tool result ends with a text item saying so and asking the agent
+to call `update_computer` before its next turn that uses the computer (it may finish the
+current task first). The tool doesn't run a check itself. `update_computer` requests the
+upgrade (like `POST /api/v1/update/apply`) and returns at once; the server restarts once
+the update is installed, so tool calls fail briefly and should be retried.
 
 **Long-running commands:** `run_command` waits up to `wait_ms` (default 25 s, max 50 s,
 under typical 60 s MCP client timeouts). If the command finishes, it returns the result.

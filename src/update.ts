@@ -108,6 +108,7 @@ export class Updater {
   private error: string | null = null;
   private limitation: string | null = null;
   private timer: NodeJS.Timeout | null = null;
+  private last: UpdateStatus | null = null;
 
   constructor(
     private url: string | null,
@@ -239,7 +240,7 @@ export class Updater {
     const available = this.currentRev
       ? this.latestRev !== null && this.latestRev !== this.currentRev
       : this.current !== null && this.latest !== null && await this.lt(this.current, this.latest);
-    return {
+    this.last = {
       supported,
       ...(this.limitation ? { limitation: this.limitation } : {}),
       url: this.url,
@@ -251,6 +252,12 @@ export class Updater {
       ...(this.currentRev ? { revision: { current: this.currentRev, latest: this.latestRev } } : {}),
       upgrade: supported ? await this.upgradeState() : { state: 'idle', at: null, log: '' },
     };
+    return this.last;
+  }
+
+  /** The status last computed (by a check, an upgrade request or a read), without doing any work. */
+  cached(): UpdateStatus | null {
+    return this.last;
   }
 
   /** Ask the root upgrade unit to upgrade the package. */

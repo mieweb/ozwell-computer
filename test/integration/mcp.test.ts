@@ -35,8 +35,22 @@ describe('MCP tools', () => {
     expect(names).toEqual([
       'activate_window', 'click', 'command_output', 'double_click', 'drag', 'find_element', 'get_clipboard', 'get_ui_tree', 'hotkey',
       'launch_app', 'list_windows', 'move', 'press_key', 'read_file', 'run_command', 'screenshot', 'scroll',
-      'set_clipboard', 'type_text', 'ui_action', 'write_file',
+      'set_clipboard', 'type_text', 'ui_action', 'update_computer', 'write_file',
     ]);
+  });
+
+  it('update_computer installs an announced update, or says why it cannot', async () => {
+    const s = (await api('GET', '/api/v1/update')).body;
+    const r: any = await client.callTool({ name: 'update_computer', arguments: {} });
+    const body = JSON.parse(r.content[0].text);
+    // compose turns update checks off unless OZWELL_COMPUTER_UPDATE_URL is set (CI sets it).
+    if (!s.supported) {
+      expect(r.isError).toBe(true);
+      expect(body.error.reason).toBe('feature_unsupported');
+      return;
+    }
+    expect(r.isError).toBeFalsy();
+    expect(body.upgrade).toBe(s.available ? 'requested' : 'none');
   });
 
   it('move puts the pointer where asked', async () => {

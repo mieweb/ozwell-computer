@@ -12,6 +12,7 @@ import { DEFAULT_WAIT_MS, MAX_WAIT_MS, jobsFor, present } from '../process/jobs.
 import { safePath } from '../fs/index.js';
 import { launchDetached } from '../routes/windows.js';
 import { m } from '../metrics.js';
+import type { UpdateStatus } from '../update.js';
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 interface ToolResult { content: Content[]; isError?: boolean; [k: string]: unknown }
@@ -41,12 +42,20 @@ const Coord = {
 };
 const Mods = z.array(z.string()).optional().describe('Modifiers held during the action: ctrl, shift, alt, super');
 
+/** Added to every tool result while the last check found an update that isn't being installed yet. */
+export function updateNotice(s: UpdateStatus | null): string | null {
+  if (!s?.supported || !s.available || s.upgrade.state === 'requested' || s.upgrade.state === 'running') return null;
+  return `Update available: ozwell-computer ${s.latest} (installed: ${s.current}). Call update_computer to install it. ` +
+    'You may finish your current task first, but install it before you start your next turn that uses this computer.';
+}
+
 function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
   const { desktop, config } = ctx;
   const mcp = new McpServer({ name: 'ozwell-computer', version: ctx.version }, {
     instructions:
       'Controls a Linux X11 desktop. Typical loop: screenshot → act using coordinates from that screenshot (pass its screenshot_id) → screenshot to verify. ' +
-      'Prefer find_element/ui_action for apps that expose accessibility. Errors carry a "reason"; on stale_geometry take a new screenshot.',
+      'Prefer find_element/ui_action for apps that expose accessibility. Errors carry a "reason"; on stale_geometry take a new screenshot. ' +
+      'When a tool result says an update is available, call update_computer at the next break in your work.',
   });
 
   // Log every tool call by name (operational visibility; also used by the test-coverage check).
@@ -57,7 +66,8 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
       ctx.log.info({ tool: name, agent: p.name, session: p.id }, 'mcp tool call');
       const r = await cb(...a);
       m.mcpToolCalls.inc({ tool: name, outcome: r.isError ? 'error' : 'ok' });
-      return r;
+      const notice = name === 'update_computer' ? null : updateNotice(ctx.updater?.cached() ?? null);
+      return notice ? { ...r, content: [...r.content, { type: 'text', text: notice }] } : r;
     });
 
   mcp.registerTool('screenshot', {
@@ -153,6 +163,19 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
     async () => wrap(async () => text(await desktop.ctl().clipboard.read())));
   mcp.registerTool('set_clipboard', { description: 'Set the clipboard text.', inputSchema: { text: z.string() } },
     async (a) => wrap(async () => text({ generation: await desktop.ctl().clipboard.write({ text: a.text }) })));
+
+  mcp.registerTool('update_computer', {
+    description: 'Install the ozwell-computer update that tool results announce. The server restarts while it installs ' +
+      '(the desktop and its apps keep running), so tool calls fail for a short while, or several minutes when it builds from git: ' +
+      'wait, then retry.',
+    inputSchema: {},
+  }, async () => wrap(async () => {
+    if (!ctx.updater) throw new ApiError('feature_unsupported', 'update checks are not running', { feature: 'update' });
+    const before = await ctx.updater.status();
+    if (before.supported && !before.available) return text({ upgrade: 'none', current: before.current, message: 'Already up to date.' });
+    const s = await ctx.updater.apply();
+    return text({ upgrade: s.upgrade.state, current: s.current, latest: s.latest, message: 'Update requested; the server restarts once it is installed. If a tool call fails meanwhile, wait and retry.' });
+  }));
 
   if (config.exec) {
     const jobs = jobsFor(config, desktop);
