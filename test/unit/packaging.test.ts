@@ -177,11 +177,13 @@ describe('desktop session', () => {
     expect(read('.fpm')).toMatch(/^--depends xfce4-session$/m);
   });
 
-  it('the default GTK and xfwm4 themes are the installed light Greybird', () => {
+  it('the default themes are installed and light: Adwaita apps and panel, Greybird borders', () => {
     expect(read('.fpm')).toMatch(/^--depends greybird-gtk-theme$/m);
+    expect(read('.fpm')).toMatch(/^--depends gnome-themes-extra-data$/m);
     expect(read('.fpm')).not.toMatch(/xsettingsd/);
-    expect(read('contrib/xfce/xsettings.xml')).toMatch(/<property name="ThemeName" type="string" value="Greybird"\/>/);
+    expect(read('contrib/xfce/xsettings.xml')).toMatch(/<property name="ThemeName" type="string" value="Adwaita"\/>/);
     expect(read('contrib/xfce/xfconf/xfwm4.xml')).toMatch(/<property name="theme" type="string" value="Greybird"\/>/);
+    expect(read('contrib/xfce/xfconf/xfce4-panel.xml')).toMatch(/<property name="dark-mode" type="bool" value="false"\/>/);
     // Not /etc/xdg: xfce4-settings owns that xsettings.xml.
     expect(read('Makefile')).toMatch(/^\t\$\(INSTALL_DATA\) .*contrib\/xfce\/xsettings\.xml .*\$\(APP_XFCONF\)\/$/m);
   });

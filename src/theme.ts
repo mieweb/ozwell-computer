@@ -10,11 +10,14 @@ import { unsupported } from './errors.js';
 export type ColorScheme = 'light' | 'dark';
 export interface ThemeState { scheme: ColorScheme; set: boolean }
 
-// Greybird ships GTK and xfwm4 themes for both schemes.
-const THEME: Record<ColorScheme, string> = { light: 'Greybird', dark: 'Greybird-dark' };
-// xfsettingsd serves /Net/ThemeName to GTK apps; xfwm4 follows /general/theme.
-const PROPERTIES = [['xsettings', '/Net/ThemeName'], ['xfwm4', '/general/theme']];
-// Written once both properties are set, so a choice that failed to apply still counts as unset.
+// GTK apps (xfsettingsd serves /Net/ThemeName), window borders (Greybird's xfwm4 themes) and the panel,
+// whose dark-mode picks the GTK theme's dark variant. Not Greybird's GTK theme: it paints the panel dark always.
+const SETTINGS: [channel: string, property: string, type: string, value: Record<ColorScheme, string>][] = [
+  ['xsettings', '/Net/ThemeName', 'string', { light: 'Adwaita', dark: 'Adwaita-dark' }],
+  ['xfwm4', '/general/theme', 'string', { light: 'Greybird', dark: 'Greybird-dark' }],
+  ['xfce4-panel', '/panels/dark-mode', 'bool', { light: 'false', dark: 'true' }],
+];
+// Written once every setting is applied, so a choice that failed to apply still counts as unset.
 const MARKER = join(homedir(), '.config', 'ozwell-computer', 'color-scheme');
 const run = promisify(execFile);
 
@@ -63,8 +66,8 @@ export async function ensureSettingsDaemon(display: string) {
 // --create makes the property when no channel default provides it (e.g. --spawn-xvfb hosts).
 // allSettled: a failed write must not release the queue while the other is still running.
 async function apply(scheme: ColorScheme, display: string) {
-  const results = await Promise.allSettled(PROPERTIES.map(([channel, property]) =>
-    run('xfconf-query', ['-c', channel, '-p', property, '-n', '-t', 'string', '-s', THEME[scheme]], onDisplay(display))
+  const results = await Promise.allSettled(SETTINGS.map(([channel, property, type, value]) =>
+    run('xfconf-query', ['-c', channel, '-p', property, '-n', '-t', type, '-s', value[scheme]], onDisplay(display))
       .catch(missing('xfconf-query'))));
   const failed = results.find((r) => r.status === 'rejected');
   if (failed) throw failed.reason;

@@ -20,6 +20,7 @@
 --depends thunar
 --depends adwaita-icon-theme
 --depends greybird-gtk-theme
+--depends gnome-themes-extra-data
 --depends dbus-daemon
 --depends dbus-bin
 --depends at-spi2-core

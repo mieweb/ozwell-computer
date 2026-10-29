@@ -20,17 +20,17 @@ describe('system', () => {
 
 describe('desktop theme', () => {
   const reset = () => exec('rm -f ~/.config/ozwell-computer/color-scheme');
-  const effective = async () => (await exec('xfconf-query -c xsettings -p /Net/ThemeName; xfconf-query -c xfwm4 -p /general/theme')).stdout.trim().split('\n');
+  const effective = async () => (await exec('xfconf-query -c xsettings -p /Net/ThemeName; xfconf-query -c xfwm4 -p /general/theme; xfconf-query -c xfce4-panel -p /panels/dark-mode')).stdout.trim().split('\n');
 
   it('sets the GTK and xfwm4 themes once with if_unset, then only on explicit changes', async () => {
     await reset();
     expect((await api('GET', '/api/v1/desktop/theme')).body).toEqual({ scheme: 'light', set: false });
     expect((await api('PUT', '/api/v1/desktop/theme', { scheme: 'dark', if_unset: true })).body).toEqual({ scheme: 'dark', set: true });
     expect((await api('PUT', '/api/v1/desktop/theme', { scheme: 'light', if_unset: true })).body).toEqual({ scheme: 'dark', set: true });
-    expect(await effective()).toEqual(['Greybird-dark', 'Greybird-dark']);
+    expect(await effective()).toEqual(['Adwaita-dark', 'Greybird-dark', 'true']);
     expect((await api('PUT', '/api/v1/desktop/theme', { scheme: 'light' })).body).toEqual({ scheme: 'light', set: true });
     expect((await api('GET', '/api/v1/desktop/theme')).body).toEqual({ scheme: 'light', set: true });
-    expect(await effective()).toEqual(['Greybird', 'Greybird']);
+    expect(await effective()).toEqual(['Adwaita', 'Greybird', 'false']);
     expect((await api('PUT', '/api/v1/desktop/theme', { scheme: 'blue' })).status).toBe(400);
     await reset();
   });

@@ -55,17 +55,19 @@ describe('desktop theme', () => {
     expect(await getTheme()).toEqual({ scheme: 'dark', set: true });
   });
 
-  it('sets the GTK and xfwm4 themes to Greybird-dark / Greybird', async () => {
+  it('sets the GTK, xfwm4 and panel themes for each scheme', async () => {
     expect(recorded()).toEqual([
+      '-c xfce4-panel -p /panels/dark-mode -n -t bool -s true',
       '-c xfwm4 -p /general/theme -n -t string -s Greybird-dark',
-      '-c xsettings -p /Net/ThemeName -n -t string -s Greybird-dark',
+      '-c xsettings -p /Net/ThemeName -n -t string -s Adwaita-dark',
     ]);
     rmSync(calls);
     const { getTheme, setTheme } = await theme();
     expect(await setTheme('light', display)).toEqual({ scheme: 'light', set: true });
     expect(recorded()).toEqual([
+      '-c xfce4-panel -p /panels/dark-mode -n -t bool -s false',
       '-c xfwm4 -p /general/theme -n -t string -s Greybird',
-      '-c xsettings -p /Net/ThemeName -n -t string -s Greybird',
+      '-c xsettings -p /Net/ThemeName -n -t string -s Adwaita',
     ]);
     expect(await getTheme()).toEqual({ scheme: 'light', set: true });
   });
@@ -88,6 +90,9 @@ echo "$*" >> '${calls}'
     const retry = setTheme('light', display);
     await expect(failed).rejects.toThrow();
     await retry;
-    expect(readFileSync(calls, 'utf8').trim().split('\n').at(-1)).toMatch(/-s Greybird$/);
+    // The failed switch's slow xfwm4 write landed before the retry's writes, not after them.
+    const lines = readFileSync(calls, 'utf8').trim().split('\n');
+    expect(lines.findIndex((l) => l.endsWith('Greybird-dark'))).toBeLessThan(lines.findIndex((l) => l.endsWith(' Greybird')));
+    expect(lines.at(-1)).not.toMatch(/-dark$|true$/);
   });
 });

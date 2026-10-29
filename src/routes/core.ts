@@ -7,7 +7,7 @@ import { getTheme, setTheme, type ColorScheme } from '../theme.js';
 import { bounds, errors, feature, inputResult, media, obj, point, prop, record, updateStatus, windowRef } from './schemas.js';
 
 const themeState = record('The desktop color scheme', {
-  scheme: prop('string', 'GTK and window theme in use: Greybird (light) or Greybird-dark (dark)', { enum: ['light', 'dark'] }),
+  scheme: prop('string', 'GTK, window and panel theme in use: light (Adwaita, Greybird) or dark (Adwaita-dark, Greybird-dark)', { enum: ['light', 'dark'] }),
   set: prop('boolean', 'Whether a scheme has been chosen; until then the desktop is light and the first viewer may pick one'),
 });
 

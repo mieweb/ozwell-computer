@@ -4,6 +4,8 @@
   <property name="panels" type="array">
     <value type="int" value="1"/>
     <value type="int" value="2"/>
+    <!-- light by default; the desktop theme API switches it with the GTK theme -->
+    <property name="dark-mode" type="bool" value="false"/>
     <!-- top bar -->
     <property name="panel-1" type="empty">
       <property name="position" type="string" value="p=6;x=0;y=0"/>
