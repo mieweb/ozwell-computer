@@ -153,6 +153,24 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
       hidden={!toast.shown}>{toast.text}</div>
   );
 
+  const desktop = (
+    <div id="screen-wrap" className="relative flex-1 overflow-hidden [&:fullscreen]:size-full [&:fullscreen]:bg-background" ref={wrapRef}>
+      <div id="screen" className="absolute inset-0" ref={screenRef} />
+      <div id="overlay" className="pointer-events-none absolute inset-0" ref={overlayRef}>
+        {[...cursors.values()].map((p) => (
+          <div key={p.participant_id} data-participant={p.participant_id} className="absolute size-0 transition-[left,top]! duration-[60ms]! ease-linear!"
+            style={box ? { left: box.x + p.x * box.w, top: box.y + p.y * box.h } : undefined}>
+            <svg className="absolute -top-px -left-px drop-shadow-[0_0_1px_black]" width="16" height="20" viewBox="0 0 16 20">
+              <path d="M1 1 L1 17 L5 13 L8 19 L11 18 L8 12 L14 12 Z" fill={p.color} stroke="#000" strokeWidth="1" />
+            </svg>
+            <span className="absolute top-4 left-3.5 rounded-sm px-1 text-[11px] whitespace-nowrap text-neutral-950" style={{ background: p.color }}>{p.name}</span>
+          </div>
+        ))}
+      </div>
+      {tab === 'desktop' && toastEl}
+    </div>
+  );
+
   return (
     <Tabs value={tab} onValueChange={setTab} variant="pills" className="flex min-h-0 flex-1 flex-col">
       <div id="toolbar" className="flex flex-none items-center gap-1.5 border-b border-border bg-card px-2 py-1">
@@ -204,26 +222,16 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
           <Button id="clip-refresh" size="sm" variant="outline" onClick={refreshClip}>Refresh</Button>
         </div>
       )}
+      {/* Without exec there is only the desktop, so no tab semantics. */}
+      {!exec && <div className="flex min-h-0 flex-1 flex-col">{desktop}</div>}
       {/* Kept mounted while hidden so the VNC session stays connected; noVNC rescales when it is shown again. */}
-      <TabsContent value="desktop" forceMount tabIndex={-1} className={`mt-0 min-h-0 flex-1 flex-col rounded-none ${tab === 'desktop' ? 'flex' : 'hidden'}`}>
-        <div id="screen-wrap" className="relative flex-1 overflow-hidden [&:fullscreen]:size-full [&:fullscreen]:bg-background" ref={wrapRef}>
-          <div id="screen" className="absolute inset-0" ref={screenRef} />
-          <div id="overlay" className="pointer-events-none absolute inset-0" ref={overlayRef}>
-            {[...cursors.values()].map((p) => (
-              <div key={p.participant_id} data-participant={p.participant_id} className="absolute size-0 transition-[left,top]! duration-[60ms]! ease-linear!"
-                style={box ? { left: box.x + p.x * box.w, top: box.y + p.y * box.h } : undefined}>
-                <svg className="absolute -top-px -left-px drop-shadow-[0_0_1px_black]" width="16" height="20" viewBox="0 0 16 20">
-                  <path d="M1 1 L1 17 L5 13 L8 19 L11 18 L8 12 L14 12 Z" fill={p.color} stroke="#000" strokeWidth="1" />
-                </svg>
-                <span className="absolute top-4 left-3.5 rounded-sm px-1 text-[11px] whitespace-nowrap text-neutral-950" style={{ background: p.color }}>{p.name}</span>
-              </div>
-            ))}
-          </div>
-          {tab === 'desktop' && toastEl}
-        </div>
-      </TabsContent>
       {exec && (
-        <TabsContent value="jobs" tabIndex={-1} className="relative mt-0 flex min-h-0 flex-1 flex-col rounded-none">
+        <TabsContent value="desktop" forceMount tabIndex={-1} className={`mt-0 min-h-0 flex-1 flex-col rounded-none ${tab === 'desktop' ? 'flex' : 'hidden'}`}>
+          {desktop}
+        </TabsContent>
+      )}
+      {exec && (
+        <TabsContent value="jobs" tabIndex={0} className="relative mt-0 flex min-h-0 flex-1 flex-col rounded-none">
           <JobsPanel jobs={jobs} refresh={refreshJobs} canCancel={!viewOnly} toast={showToast} />
           {toastEl}
         </TabsContent>
