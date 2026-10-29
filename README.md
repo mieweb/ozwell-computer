@@ -405,6 +405,10 @@ npm test                # full unit + integration suite; leaves the container ru
 docker compose down     # stop it; preserves the generated token in the state volume
 ```
 
+macOS resolves `/tmp` to `/private/tmp`, so commands such as `pwd` can report the
+canonical path. Tests that check a working directory should resolve symlinks before
+comparing paths.
+
 The macOS smoke check verified a healthy 1920x1080 Xvfb display, API keyboard input,
 Firefox loading a webpage, desktop/window PNG captures, and a connected noVNC viewer
 in Chrome without page errors. That check used the existing development image

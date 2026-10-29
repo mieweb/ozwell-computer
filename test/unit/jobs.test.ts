@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -38,7 +38,7 @@ describe('background jobs (wait, then hand off)', () => {
     const a = await jobs.wait(await jobs.start({ command: 'printf', args: ['%s|', "it's", '$HOME'] }), 5000);
     expect(a.stdout).toBe("it's|$HOME|");
     const b = await jobs.wait(await jobs.start({ command: 'cat; echo $FOO; pwd', stdin: 'in\n', env: { FOO: 'bar' }, cwd: '/tmp' }), 5000);
-    expect(b.stdout).toBe('in\nbar\n/tmp\n');
+    expect(b.stdout).toBe(`in\nbar\n${realpathSync('/tmp')}\n`);
     const big = await jobs.wait(await jobs.start({ command: 'seq 1 30000' }), 5000);
     expect(big.truncated).toBe(true);
     expect(big.stdout.trimEnd().endsWith('30000')).toBe(true);
