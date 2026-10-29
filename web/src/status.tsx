@@ -5,32 +5,18 @@ import { Button, type ButtonProps } from '@mieweb/ui/components/Button';
 import { api } from './api';
 import { useServerEvent } from './events';
 import { checkResult, versionTitle, type UpdateStatus } from './version';
-import { cpuPercent, perfTitle, readMetrics, type Sample } from './metrics';
-
-type Part = { text: string; hot?: boolean };
-
-const MiB = (b: number) => `${Math.round(b / 2 ** 20)} MiB`;
-
-function perfParts(prev: Sample | null, now: Sample): Part[] {
-  const secs = prev ? (now.t - prev.t) / 1000 : 0;
-  const cpu = prev?.cpu !== undefined && now.cpu !== undefined ? cpuPercent({ cpu: prev.cpu, t: prev.t }, { cpu: now.cpu, t: now.t, cpus: now.cpus }) : undefined;
-  const kbs = prev?.vnc !== undefined && now.vnc !== undefined ? (now.vnc - prev.vnc) / secs / 1024 : undefined;
-  return [
-    cpu !== undefined && { text: `CPU ${cpu.toFixed(0)}%`, hot: cpu > 80 },
-    now.mem !== undefined && {
-      text: `Mem ${MiB(now.mem)}${now.limit ? ` / ${MiB(now.limit)}` : ''}`,
-      hot: !!now.limit && now.mem / now.limit > 0.85,
-    },
-    kbs !== undefined && { text: `VNC ${kbs >= 1024 ? `${(kbs / 1024).toFixed(1)} MB/s` : `${kbs.toFixed(0)} KB/s`}` },
-  ].filter((p): p is Part => !!p);
-}
+import { perfTitle, readMetrics, type Sample } from './metrics';
+import { perfParts } from './perf';
 
 export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
-  const [parts, setParts] = useState<Part[]>([]);
+  const [parts, setParts] = useState(() => perfParts(null, null));
   const [cpus, setCpus] = useState<number>();
   useEffect(() => {
     let prev: Sample | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
     const tick = async () => {
+      const hadSample = prev !== null;
       try {
         const res = await fetch('/api/v1/metrics', { credentials: 'same-origin' });
         if (!res.ok) throw new Error(res.statusText);
@@ -39,13 +25,15 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
         setCpus(now.cpus);
         prev = now;
       } catch {
-        setParts([]);
+        setParts(perfParts(null, null));
         prev = null;
       }
+      if (stopped) return;
+      // A first sample (also after a failure): take the second quickly so the rates fill in within ~1s.
+      timer = setTimeout(tick, !hadSample && prev !== null ? 1000 : intervalMs);
     };
     void tick();
-    const timer = setInterval(tick, intervalMs);
-    return () => clearInterval(timer);
+    return () => { stopped = true; clearTimeout(timer); };
   }, [intervalMs]);
   return (
     <span id="perf" className="font-mono text-[11px] whitespace-nowrap text-muted-foreground" title={perfTitle(cpus)}>
