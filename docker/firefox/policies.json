@@ -10,6 +10,7 @@
     "NoDefaultBookmarks": true,
     "UserMessaging": { "WhatsNew": false, "ExtensionRecommendations": false, "FeatureRecommendations": false, "SkipOnboarding": true, "MoreFromMozilla": false },
     "FirefoxHome": { "SponsoredTopSites": false, "SponsoredPocket": false, "Pocket": false },
+    "Homepage": { "StartPage": "previous-session" },
     "Preferences": {
       "datareporting.policy.dataSubmissionPolicyBypassNotification": { "Value": true, "Status": "locked" },
       "browser.aboutwelcome.enabled": { "Value": false, "Status": "locked" }

@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-session" version="1.0">
+  <property name="general" type="empty">
+    <property name="FailsafeSessionName" type="string" value="Ozwell"/>
+    <property name="SaveOnExit" type="bool" value="true"/>
+    <property name="PromptOnLogout" type="bool" value="false"/>
+  </property>
+  <property name="startup" type="empty">
+    <property name="ssh-agent" type="empty">
+      <property name="enabled" type="bool" value="false"/>
+    </property>
+  </property>
+  <!-- Started only when there is no saved session, so restored apps aren't duplicated -->
+  <property name="sessions" type="empty">
+    <property name="Ozwell" type="empty">
+      <property name="IsFailsafe" type="bool" value="true"/>
+      <property name="Count" type="int" value="3"/>
+      <property name="Client0_Command" type="array">
+        <value type="string" value="xfwm4"/>
+        <value type="string" value="--compositor=off"/>
+      </property>
+      <property name="Client0_Priority" type="int" value="15"/>
+      <property name="Client1_Command" type="array">
+        <value type="string" value="xfce4-panel"/>
+      </property>
+      <property name="Client1_Priority" type="int" value="25"/>
+      <property name="Client2_Command" type="array">
+        <value type="string" value="xfce4-terminal"/>
+        <value type="string" value="--geometry=100x30+60+60"/>
+      </property>
+      <property name="Client2_Priority" type="int" value="35"/>
+    </property>
+  </property>
+</channel>

@@ -106,11 +106,22 @@ package provides these units, all running as the `desktop` user:
 |---|---|
 | `ozwell-computer-dbus.service` | session D-Bus at the fixed address `unix:path=/run/desktop-bus/bus` |
 | `ozwell-computer-xvfb.service` | `Xvfb :0` at `$OZWELL_COMPUTER_SCREEN` |
-| `ozwell-computer-session.service` | xfwm4 plus `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). It also starts the AT-SPI bus and a terminal (xfce4-terminal); Thunar is the file manager. |
+| `ozwell-computer-session.service` | xfce4-session running xfwm4 plus `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). It also starts the AT-SPI bus and, on first start, a terminal (xfce4-terminal); Thunar is the file manager. |
 | `ozwell-computer.service` | this server |
 
 Apps launched through the API share the session bus and have the GTK/Qt
 accessibility bridges enabled, so their UI shows up in `/api/v1/a11y/*`.
+
+**The desktop persists.** Restarting, upgrading or crashing the server leaves Xvfb,
+the bus and the session running; the server reattaches to the display, and open apps
+stay open. When the session itself stops (container or machine restart, `systemctl
+restart ozwell-computer-session`) xfce4-session saves it, and it also checkpoints every
+minute. The next start restores session-aware apps (those started from the panel or
+dock, such as xfce4-terminal, Thunar and Firefox) with their window positions. Firefox
+reopens its previous tabs (`docker/firefox/policies.json`). Apps launched through the
+API aren't session clients and aren't restored. The session lives in the `desktop`
+user's home (`~/.cache/sessions`), so it survives `docker restart` but not a new
+container.
 
 Container-only adjustments live in `docker/` and are applied by the `Dockerfile`, not
 the package. They include passwordless sudo for `desktop` (see the security section
