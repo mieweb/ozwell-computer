@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { ApiError } from '../errors.js';
@@ -21,19 +20,7 @@ const windowActions = {
   close: 'Ask a window to close (like clicking its close button)',
 };
 
-export function launchDetached(display: string, command: string, args: string[] = [], env: Record<string, string> = {}, cwd?: string) {
-  return new Promise<{ pid: number }>((resolve, reject) => {
-    const child = spawn(command, args, {
-      detached: true,
-      stdio: 'ignore',
-      cwd: cwd || process.env.HOME || '/',
-      env: { ...process.env, DISPLAY: display, ...env },
-    });
-    child.once('error', (e: NodeJS.ErrnoException) =>
-      reject(e.code === 'ENOENT' ? new ApiError('path_not_found', `command not found: ${command}`) : e));
-    child.once('spawn', () => { child.unref(); resolve({ pid: child.pid! }); });
-  });
-}
+export { launchDetached } from '../process/launch.js';
 
 export default async function windowRoutes(app: FastifyInstance, ctx: AppContext, build: () => string | null) {
   const { desktop, config } = ctx;
@@ -113,7 +100,7 @@ export default async function windowRoutes(app: FastifyInstance, ctx: AppContext
   }, async (req) => {
     if (!config.exec) throw new ApiError('permission_denied', 'launching apps is disabled (OZWELL_COMPUTER_EXEC=false)');
     const b = req.body as { command: string; args?: string[]; env?: Record<string, string>; cwd?: string };
-    return launchDetached(desktop.x.displayName, b.command, b.args, b.env, b.cwd);
+    return desktop.launchApp(b.command, b.args, b.env, b.cwd);
   });
 
   app.post('/api/v1/open', {
@@ -127,12 +114,7 @@ export default async function windowRoutes(app: FastifyInstance, ctx: AppContext
     if (!config.exec) throw new ApiError('permission_denied', 'opening targets is disabled (OZWELL_COMPUTER_EXEC=false)');
     const { target } = req.body as { target: string };
     if (target.startsWith('-')) throw new ApiError('invalid_request', 'target must not start with "-"');
-    try {
-      return await launchDetached(desktop.x.displayName, 'xdg-open', [target]);
-    } catch (e) {
-      if (e instanceof ApiError && e.reason === 'path_not_found') throw new ApiError('feature_unsupported', 'xdg-open is not installed', { feature: 'open' });
-      throw e;
-    }
+    return desktop.open(target);
   });
 
   // ---- events & presence

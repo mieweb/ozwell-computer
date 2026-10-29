@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Fastify from 'fastify';
 import { afterAll, describe, expect, it, vi } from 'vitest';
-import { Jobs, type JobSummary, type JobView } from '../../src/process/jobs.js';
+import { jobTimeout, Jobs, type JobSummary, type JobView } from '../../src/process/jobs.js';
 import type { BusEvent } from '../../src/presence/index.js';
 import { openSse } from '../../src/routes/sse.js';
 import { webBuild } from '../../src/web/routes.js';
@@ -13,6 +13,30 @@ import { makeApp } from '../helpers.js';
 const root = mkdtempSync(join(tmpdir(), 'oz-jobs-'));
 const jobs = new Jobs(root, ':0');
 afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+describe('background job timeout dependency', () => {
+  it.each(['timeout', 'gtimeout'])('finds GNU %s by absolute path on macOS', async (name) => {
+    const dir = join(root, `coreutils '${name}`);
+    mkdirSync(dir);
+    const executable = join(dir, name);
+    writeFileSync(executable, '#!/bin/sh\nprintf "timeout (GNU coreutils) 9.7\\n"\n', { mode: 0o755 });
+    expect(await jobTimeout('darwin', dir)).toBe(executable);
+  });
+
+  it('skips incompatible and non-executable candidates and explains how to install coreutils', async () => {
+    const dir = join(root, 'incompatible-timeout');
+    mkdirSync(dir);
+    writeFileSync(join(dir, 'timeout'), '#!/bin/sh\nprintf "BSD timeout\\n"\n', { mode: 0o755 });
+    writeFileSync(join(dir, 'gtimeout'), '#!/bin/sh\nprintf "timeout (GNU coreutils) 9.7\\n"\n', { mode: 0o644 });
+    await expect(jobTimeout('darwin', dir)).rejects.toMatchObject({
+      reason: 'feature_unsupported', feature: 'exec.jobs', message: expect.stringContaining('brew install coreutils'),
+    });
+  });
+
+  it('preserves Linux timeout lookup without probing the PATH', async () => {
+    expect(await jobTimeout('linux', '/missing/path')).toBe('timeout');
+  });
+});
 
 describe('background jobs (wait, then hand off)', () => {
   it('returns the result directly when the command finishes within the wait', async () => {

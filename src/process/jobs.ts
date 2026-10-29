@@ -7,13 +7,14 @@
 //   meta.json  {id, command, cwd, started, timeout_ms, pid}
 //   exit       exit status (written when the command ends; 124/137 = timed out)
 //   cancelled  marker written by cancel()
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { closeSync, openSync } from 'node:fs';
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile, open } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { closeSync, constants, openSync } from 'node:fs';
+import { access, mkdir, readdir, readFile, rename, rm, stat, writeFile, open } from 'node:fs/promises';
+import { delimiter, dirname, join, resolve } from 'node:path';
+import { promisify } from 'node:util';
 import { ApiError } from '../errors.js';
-import type { EventBus } from '../presence/index.js';
+import type { DesktopBackend } from '../backend.js';
 import { tracer, type Span } from '../tracing.js';
 
 export const MAX_WAIT_MS = 50_000; // stays under common 60 s MCP client request timeouts
@@ -72,16 +73,34 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 
 const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch (e) { return (e as NodeJS.ErrnoException).code === 'EPERM'; } };
 
+const execFileAsync = promisify(execFile);
+
+/** macOS has no built-in timeout; Homebrew coreutils provides timeout or gtimeout. */
+export async function jobTimeout(platform = process.platform, searchPath = process.env.PATH ?? ''): Promise<string> {
+  if (platform !== 'darwin') return 'timeout';
+  for (const name of ['timeout', 'gtimeout']) {
+    for (const dir of searchPath.split(delimiter)) {
+      const executable = resolve(dir || '.', name);
+      try {
+        await access(executable, constants.X_OK);
+        const { stdout } = await execFileAsync(executable, ['--version'], { encoding: 'utf8', timeout: 1000, maxBuffer: 16 * 1024 });
+        if (stdout.includes('GNU coreutils')) return executable;
+      } catch { /* Try the next executable; incompatible timeout implementations cannot enforce our job limit. */ }
+    }
+  }
+  throw new ApiError('feature_unsupported', 'Background commands on macOS require GNU coreutils. Install it with brew install coreutils and add timeout or gtimeout to the server PATH.', { feature: 'exec.jobs' });
+}
+
 const instances = new WeakMap<object, Jobs>();
 
 /**
  * One Jobs per desktop (shared by HTTP and MCP), publishing `job` and `job.removed` events on its bus.
  * Jobs live next to the token file: /var/lib/ozwell-computer/jobs in the package/container.
  */
-export function jobsFor(config: { tokenFile: string }, desktop: { x: { displayName: string }; bus: EventBus }) {
+export function jobsFor(config: { tokenFile: string }, desktop: Pick<DesktopBackend, 'kind' | 'displayName' | 'bus'>) {
   const existing = instances.get(desktop);
   if (existing) return existing;
-  const jobs = new Jobs(join(dirname(config.tokenFile), 'jobs'), desktop.x.displayName,
+  const jobs = new Jobs(join(dirname(config.tokenFile), 'jobs'), desktop.kind === 'x11' ? desktop.displayName : undefined,
     (s) => desktop.bus.publish('job', s), (id) => desktop.bus.publish('job.removed', { job_id: id }));
   instances.set(desktop, jobs);
   return jobs;
@@ -103,7 +122,7 @@ export class Jobs {
   /** onChange gets a job's summary when it starts and when it stops running; onRemove its id when pruned. */
   constructor(
     private root: string,
-    private display: string,
+    private display: string | undefined,
     private onChange: (s: JobSummary) => void = () => {},
     private onRemove: (id: string) => void = () => {},
   ) {}
@@ -165,6 +184,7 @@ export class Jobs {
   }
 
   private async startJob(req: JobStart): Promise<string> {
+    const timeoutCommand = q(await jobTimeout());
     await mkdir(this.root, { recursive: true, mode: 0o700 });
     void this.prune();
     const id = 'j-' + randomBytes(9).toString('base64url').toLowerCase().replace(/[^a-z0-9]/g, '0').slice(0, 12);
@@ -175,14 +195,14 @@ export class Jobs {
     await writeFile(join(dir, 'cmd.sh'), command + '\n');
     if (req.stdin !== undefined) await writeFile(join(dir, 'stdin'), req.stdin);
     // timeout(1) enforces the limit even if this server restarts; it kills the whole group.
-    const wrapper = `timeout --kill-after=5 ${timeoutS} sh ${q(join(dir, 'cmd.sh'))} < ${req.stdin !== undefined ? q(join(dir, 'stdin')) : '/dev/null'}; echo $? > ${q(join(dir, 'exit.tmp'))}; mv ${q(join(dir, 'exit.tmp'))} ${q(join(dir, 'exit'))}`;
+    const wrapper = `${timeoutCommand} --kill-after=5 ${timeoutS} sh ${q(join(dir, 'cmd.sh'))} < ${req.stdin !== undefined ? q(join(dir, 'stdin')) : '/dev/null'}; echo $? > ${q(join(dir, 'exit.tmp'))}; mv ${q(join(dir, 'exit.tmp'))} ${q(join(dir, 'exit'))}`;
     const out = openSync(join(dir, 'stdout'), 'a');
     const err = openSync(join(dir, 'stderr'), 'a');
     let child;
     try {
       child = spawn('/bin/sh', ['-c', wrapper], {
         cwd: req.cwd || process.env.HOME || '/', detached: true, stdio: ['ignore', out, err],
-        env: { ...process.env, DISPLAY: this.display, ...req.env },
+        env: { ...process.env, ...(this.display ? { DISPLAY: this.display } : {}), ...req.env },
       });
       await new Promise<void>((resolve, reject) => { child!.once('spawn', resolve); child!.once('error', reject); });
     } catch (e) {

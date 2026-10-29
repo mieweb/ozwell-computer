@@ -57,9 +57,9 @@ export const windowInfo = record('A top-level window', {
   app_instance: prop(['string', 'null'], 'WM_CLASS instance name'),
   pid: prop(['integer', 'null'], 'Owning process id (_NET_WM_PID), if advertised'),
   bounds,
-  focused: prop('boolean', 'Whether this is the active window'),
+  focused: prop(['boolean', 'null'], 'Whether this is the active window, or null when unavailable'),
   minimized: prop('boolean', 'Whether the window is minimized (hidden)'),
-  maximized: prop('boolean', 'Whether the window is maximized both ways'),
+  maximized: prop(['boolean', 'null'], 'Whether the window is maximized both ways, or null when unavailable'),
 });
 
 export const participant = record('A participant sharing the desktop', {
@@ -81,7 +81,7 @@ export const roster = prop('array', 'Everyone currently on the desktop', { items
 export const inputResult = record('Outcome of an input action', {
   delivery: prop('string', 'How the input was delivered (XTEST input always goes to the foreground)', { enum: ['foreground'] }),
   pointer_moved: prop('boolean', 'Whether the pointer position changed'),
-  focus_changed: prop('boolean', 'Whether the active window changed'),
+  focus_changed: prop(['boolean', 'null'], 'Whether the active window changed, or null when unavailable'),
   cursor: { ...point, description: 'Pointer position afterwards, in screen pixels' },
 });
 

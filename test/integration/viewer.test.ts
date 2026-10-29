@@ -308,7 +308,7 @@ describe('noVNC viewer', () => {
     await page.context().close();
   });
 
-  it('shares the local clipboard: Ctrl+V pastes local text, Ctrl+C copies desktop text locally', async () => {
+  it('shares the local clipboard: native paste pastes local text, Ctrl+C copies desktop text locally', async () => {
     const page = await openViewer();
     expect(await page.locator('#btn-clip').isHidden()).toBe(true); // localhost is a secure context
     const exec = async (cmd: string) => (await (await fetch(`${URL_}/api/v1/exec`, {
@@ -331,7 +331,7 @@ describe('noVNC viewer', () => {
       navigator.clipboard.readText = () => { w.readTextCalls++; return orig(); };
       return navigator.clipboard.writeText('from local ✓ ünï');
     });
-    await page.keyboard.press('Control+v');
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+v' : 'Control+v');
     await sleep(1000);
     expect(await page.evaluate(() => (window as any).readTextCalls)).toBe(0);
 

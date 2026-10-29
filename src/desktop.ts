@@ -13,6 +13,8 @@ import { ApiError, unsupported } from './errors.js';
 import { EventBus, Presence, type Principal } from './presence/index.js';
 import { m } from './metrics.js';
 import { withSpan } from './tracing.js';
+import type { DesktopBackend, DesktopStatus } from './backend.js';
+import { launchDetached } from './process/launch.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -60,11 +62,12 @@ export interface KeyboardRequest {
 export interface InputResult {
   delivery: 'foreground';
   pointer_moved: boolean;
-  focus_changed: boolean;
+  focus_changed: boolean | null;
   cursor: { x: number; y: number };
 }
 
-export class Desktop {
+export class Desktop implements DesktopBackend {
+  readonly kind = 'x11' as const;
   readonly x: XManager;
   readonly bus = new EventBus();
   readonly presence: Presence;
@@ -86,6 +89,41 @@ export class Desktop {
 
   async start() {
     await this.x.start();
+  }
+
+  get displayName() { return this.x.displayName; }
+
+  status(): DesktopStatus {
+    const s = this.x.session;
+    const feat = (available: boolean, limitation: string) => available ? { available } : { available, limitation };
+    return {
+      display: s
+        ? { name: s.displayName, connected: true, width: s.width, height: s.height, depth: s.pixel.depth, geometry_epoch: s.geometryEpoch }
+        : { name: this.displayName, connected: false, error: this.x.lastError },
+      extensions: s?.extensionNames() ?? [],
+      features: {
+        screenshot: feat(!!s, 'X display not connected'),
+        input: feat(!!s?.ext.xtest, s ? 'XTEST extension missing' : 'X display not connected'),
+        damage: feat(!!s?.ext.damage, 'DAMAGE missing; VNC falls back to polling'),
+        clipboard: feat(!!s, 'X display not connected'),
+        clipboard_events: feat(!!s?.ext.fixes, 'XFIXES missing; clipboard generation only tracks our own writes'),
+        windows: feat(!!s, 'X display not connected'),
+        background_delivery: feat(false, 'XTEST injects into the global input stream; only accessibility actions are background-safe'),
+        vnc: { available: true },
+      },
+    };
+  }
+
+  launchApp(command: string, args?: string[], env?: Record<string, string>, cwd?: string) {
+    return launchDetached(this.displayName, command, args, env, cwd);
+  }
+
+  async open(target: string) {
+    try { return await this.launchApp('xdg-open', [target]); }
+    catch (e) {
+      if (e instanceof ApiError && e.reason === 'path_not_found') throw unsupported('open', 'xdg-open is not installed');
+      throw e;
+    }
   }
 
   private attach(s: XSession) {

@@ -11,6 +11,10 @@ The VNC server is written in TypeScript and runs in-process; it talks to X throu
 xdotool. The design takes ideas from [CUA](https://github.com/trycua/cua) but is not
 wire-compatible with it.
 
+An opt-in [native macOS pilot](docs/native-macos.md) uses Cua Driver for the current
+Mac desktop's screenshots, input, windows, clipboard and accessibility. Linux/X11
+remains the default backend.
+
 ## Architecture
 
 The suite has four layers. The orchestrator manages a computer's lifecycle (create,
@@ -324,6 +328,26 @@ npx @mieweb/ozwell-computer --spawn-xvfb --display :99 # headless desktop for de
 When no token is configured, one is generated and stored in
 `~/.config/ozwell-computer/token`, and a one-time access URL is printed to stderr.
 
+### Native macOS pilot (no container)
+
+Install the signed CuaDriver helper and grant its Accessibility and Screen Recording
+permissions using the [native setup guide](docs/native-macos.md). Then, from a checkout:
+
+```bash
+npm ci
+npm run build
+node dist/cli.js --backend macos --host 127.0.0.1 --port 8081 --update-url off
+```
+
+This operates the logged-in Mac user session. It does not create an isolated desktop
+or contain agents. `/` shows a screenshot preview; live VNC is unavailable in this
+pilot. Exec and filesystem APIs default to disabled on macOS; `--exec` explicitly
+enables them with the server process's Mac account permissions. Native app launch
+and open-target APIs are unsupported. Generated
+native access tokens are stored separately in `~/.config/ozwell-computer/macos/token`.
+The [read-only smoke test](docs/native-macos.md#verify-the-connection) checks HTTP/MCP
+capture, windows and accessibility without sending input.
+
 ## Configuration
 
 | Variable / flag | Default | |
@@ -338,12 +362,13 @@ When no token is configured, one is generated and stored in
 | `OZWELL_COMPUTER_FRAME_ANCESTORS` / `--frame-ancestors` | none | Origins, space or comma separated (`https://app.ozwell.ai https://*.example.com`), allowed to embed the viewer in an iframe, via CSP `frame-ancestors`. The viewer is always frameable by its own origin |
 | `OZWELL_COMPUTER_CPUS` / `--cpus` | detected | CPU capacity the toolbar's CPU % is relative to (`ozwell_cpus`). Detected from cgroup `cpu.max` and CPU affinity; set it when the limit sits outside the container's view, e.g. a Proxmox LXC `cpulimit` around a Docker host |
 | `OZWELL_COMPUTER_AUTH_DISABLED` / `--no-auth` | `false` | Logs loud warnings |
+| `OZWELL_COMPUTER_BACKEND` / `--backend` | `x11` | `macos` selects the native macOS pilot |
 | `DISPLAY` / `--display` | `:0` | |
 | `OZWELL_COMPUTER_SPAWN_XVFB` / `--spawn-xvfb` | `false` | Development only |
 | `OZWELL_COMPUTER_SCREEN` / `--screen` | `1920x1080x24` | |
 | `OZWELL_COMPUTER_VIEW_ONLY` / `--view-only` | `false` | VNC viewers can't send input |
 | `OZWELL_COMPUTER_A11Y` / `--a11y` | `auto` | `auto`, `on` or `off` |
-| `OZWELL_COMPUTER_EXEC` / `--no-exec` | `true` | Controls the process, PTY, file and app-launch APIs |
+| `OZWELL_COMPUTER_EXEC` / `--exec` / `--no-exec` | `true` on X11, `false` on macOS | Controls the process, PTY, file and app-launch APIs |
 | `OZWELL_COMPUTER_VNC_BACKEND` / `--vnc-backend` | `builtin` | `external:[host:]port` proxies to another VNC server, such as x11vnc |
 | `OZWELL_COMPUTER_FS_ROOT` / `--fs-root` | `/` | Root directory for the file API |
 | `OZWELL_COMPUTER_LOG_LEVEL` / `--log-level` | `info` | |

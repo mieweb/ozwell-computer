@@ -5,7 +5,7 @@ export interface DisplayInfo {
   name: string;
   primary: boolean;
   bounds: { x: number; y: number; width: number; height: number };
-  scale: 1;
+  scale: number;
 }
 
 const p = <T>(fn: (cb: (err: unknown, res: T) => void) => void) =>

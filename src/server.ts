@@ -14,7 +14,7 @@ import type { Logger } from 'pino';
 import type { Config } from './config.js';
 import { registerAuth, redactUrl } from './auth/plugin.js';
 import { ApiError, toApiError } from './errors.js';
-import type { Desktop } from './desktop.js';
+import type { DesktopBackend, AccessibilityBackend } from './backend.js';
 import coreRoutes from './routes/core.js';
 import windowRoutes from './routes/windows.js';
 import execRoutes from './routes/exec.js';
@@ -23,7 +23,6 @@ import browserRoutes from './routes/browser.js';
 import webRoutes, { webBuild } from './web/routes.js';
 import vncRoutes from './vnc/routes.js';
 import mcpRoutes from './mcp/server.js';
-import type { A11y } from './a11y/atspi.js';
 import type { BrowserBridge } from './browser/bridge.js';
 import type { Updater } from './update.js';
 import { m, render as renderMetrics, setCpus, setVersion } from './metrics.js';
@@ -34,10 +33,10 @@ export const VERSION: string = require('../package.json').version;
 
 export interface AppContext {
   config: Config;
-  desktop: Desktop;
+  desktop: DesktopBackend;
   token: string | null;
   version: string;
-  a11y: A11y | null;
+  a11y: AccessibilityBackend | null;
   ptyAvailable: boolean;
   updater: Updater | null;
   /** The link to Firefox's ozwell-computer extension (cookies), or null when not running. */
@@ -147,7 +146,7 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(fastifySwagger, {
     openapi: {
       openapi: '3.1.0',
-      info: { title: 'ozwell-computer', version: ctx.version, description: 'Control an X11 desktop over HTTP' },
+      info: { title: 'ozwell-computer', version: ctx.version, description: 'Control a desktop over HTTP' },
       components: {
         securitySchemes: {
           bearer: { type: 'http', scheme: 'bearer' },

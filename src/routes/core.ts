@@ -1,5 +1,5 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import { ApiError } from '../errors.js';
+import { ApiError, unsupported } from '../errors.js';
 import type { AppContext } from '../server.js';
 import { parsePrincipal } from '../presence/index.js';
 import type { ImageFormat } from '../image.js';
@@ -13,9 +13,10 @@ const themeState = record('The desktop color scheme', {
 
 const capabilities = record('What this server can do right now', {
   version: prop('string', 'Server version'),
+  backend: prop('string', 'Desktop backend', { enum: ['x11', 'macos'] }),
   auth: prop('string', 'Whether requests need a token', { enum: ['token', 'disabled'] }),
-  display: obj('The X display', {
-    name: prop('string', 'X display name, e.g. :99'),
+  display: obj('The desktop display', {
+    name: prop('string', 'Display name, e.g. :99 or macos:primary'),
     connected: prop('boolean', 'Whether the X connection is up'),
     width: prop('integer', 'Root window width (when connected)'),
     height: prop('integer', 'Root window height (when connected)'),
@@ -29,11 +30,12 @@ const capabilities = record('What this server can do right now', {
     screenshot: feature, input: feature, damage: feature, clipboard: feature, clipboard_events: feature, windows: feature,
     a11y: feature, exec: feature, pty: feature,
     browser: { ...feature, description: 'Firefox cookie API: available while Firefox runs with its ozwell-computer extension connected' },
-    vnc: record('Built-in VNC (always available)', {
-      available: prop('boolean', 'Always true'),
+    vnc: obj('VNC availability and configuration', {
+      available: prop('boolean', 'Whether this backend provides VNC'),
+      limitation: prop('string', 'Why VNC is unavailable'),
       backend: prop('string', 'builtin, or external:[host:]port when proxying another VNC server'),
       view_only: prop('boolean', 'Whether VNC clients may only watch'),
-    }),
+    }, { required: ['available', 'backend', 'view_only'] }),
     mcp: feature, update: feature, background_delivery: feature,
   }),
 });
@@ -82,8 +84,9 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
 
   // Polled by healthchecks every few seconds: never logged.
   app.get('/health', { schema: { hide: true }, logLevel: 'silent' }, async (_req, reply) => {
-    if (desktop.x.session) return reply.code(204).send();
-    return reply.code(503).send(new ApiError('target_unavailable', 'X display not connected').toBody());
+    const status = desktop.status();
+    if (status.display.connected) return reply.code(204).send();
+    return reply.code(503).send(new ApiError('target_unavailable', status.display.error || 'Desktop not connected').toBody());
   });
 
   app.get('/api/v1/capabilities', {
@@ -93,35 +96,27 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
       response: { 200: capabilities, ...errors },
     },
   }, async () => {
-    const s = desktop.x.session;
+    const status = desktop.status();
     const feat = (ok: boolean, limitation: string) => (ok ? { available: true } : { available: false, limitation });
     return {
       version: ctx.version,
+      backend: desktop.kind,
       auth: config.authDisabled ? 'disabled' : 'token',
-      display: s
-        ? {
-          name: s.displayName, connected: true, width: s.width, height: s.height, depth: s.pixel.depth, geometry_epoch: s.geometryEpoch,
-          window_manager: await desktop.ctl().windows.hasWindowManager().catch(() => false),
-        }
-        : { name: config.display, connected: false, error: desktop.x.lastError },
-      extensions: s?.extensionNames() ?? [],
+      display: desktop.kind === 'x11' && status.display.connected
+        ? { ...status.display, window_manager: await (desktop.ctl().windows.hasWindowManager?.().catch(() => false) ?? false) }
+        : status.display,
+      extensions: status.extensions,
       features: {
-        screenshot: feat(!!s, 'X display not connected'),
-        input: feat(!!s?.ext.xtest, s ? 'XTEST extension missing' : 'X display not connected'),
-        damage: feat(!!s?.ext.damage, 'DAMAGE missing; VNC falls back to polling'),
-        clipboard: feat(!!s, 'X display not connected'),
-        clipboard_events: feat(!!s?.ext.fixes, 'XFIXES missing; clipboard generation only tracks our own writes'),
-        windows: feat(!!s, 'X display not connected'),
+        ...status.features,
         a11y: ctx.a11y ? await ctx.a11y.capability() : feat(false, 'accessibility disabled'),
         exec: feat(config.exec, 'disabled by OZWELL_COMPUTER_EXEC=false'),
         pty: feat(config.exec && ctx.ptyAvailable, config.exec ? 'node-pty not installed' : 'disabled by OZWELL_COMPUTER_EXEC=false'),
         browser: !config.exec ? feat(false, 'disabled by OZWELL_COMPUTER_EXEC=false')
           : feat(!!ctx.browser?.info(), !ctx.browser ? 'the browser bridge is not running'
             : ctx.browser.ambiguous() ? 'Firefox is running with more than one profile' : 'Firefox is not running, or its ozwell-computer extension is not connected'),
-        vnc: { available: true, backend: config.vncBackend, view_only: config.viewOnly },
+        vnc: { ...status.features.vnc, backend: config.vncBackend, view_only: config.viewOnly },
         mcp: { available: true },
         update: ctx.updater ? await ctx.updater.status().then((u) => (u.supported ? { available: true } : { available: false, limitation: u.limitation })) : feat(false, 'update checks are not running'),
-        background_delivery: feat(false, 'XTEST injects into the global input stream; only accessibility actions are background-safe'),
       },
     };
   });
@@ -180,7 +175,10 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
       tags: ['system'], summary: 'Desktop color scheme; set is false until a client has chosen one',
       response: { 200: themeState, ...errors },
     },
-  }, async () => getTheme());
+  }, async () => {
+    if (desktop.kind !== 'x11') throw unsupported('theme', 'Desktop theme APIs require the X11 backend');
+    return getTheme();
+  });
   app.put('/api/v1/desktop/theme', {
     schema: {
       tags: ['system'],
@@ -196,6 +194,7 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
       response: { 200: { ...themeState, description: 'The scheme now in effect' }, ...errors },
     },
   }, async (req) => {
+    if (desktop.kind !== 'x11') throw unsupported('theme', 'Desktop theme APIs require the X11 backend');
     const b = req.body as { scheme: ColorScheme; if_unset?: boolean };
     const state = await setTheme(b.scheme, config.display, b.if_unset);
     desktop.bus.publish('desktop.theme', state);

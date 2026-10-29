@@ -19,15 +19,36 @@ export function contentSecurityPolicy(frameAncestors: string[]) {
     + ['frame-ancestors', "'self'", ...frameAncestors].join(' ');
 }
 
-// The React app (web/, built by Vite into dist/web/static) loads its data from the API, so
-// the shell holds nothing secret and is served with or without credentials.
+export function nativeHtml() {
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ozwell-computer: native Mac</title><link rel="stylesheet" href="/static/native.css"></head>
+<body><main>
+<header><h1>Native Mac desktop</h1><button id="refresh" type="button">Refresh screenshot</button></header>
+<p>This pilot controls this Mac through the API and MCP. The preview updates when you refresh it.</p>
+<form id="login" method="get" action="/" hidden>
+<h2>Sign in</h2><p id="login-message">Enter the access token to view this desktop.</p>
+<label for="token">Access token</label>
+<input id="token" type="password" name="token" autocomplete="current-password" required>
+<button type="submit">Open</button></form>
+<p id="status" role="status">Connecting…</p>
+<img id="snapshot" alt="Screenshot of the native Mac desktop" hidden>
+<p><a href="/api/docs">API documentation</a> · <a href="/api/v1/capabilities">Desktop capabilities</a></p>
+</main><script type="module" src="/static/native.js"></script></body></html>`;
+}
+
+// Both shells load their data from the authenticated API. Vite builds the React
+// X11 viewer and packages the native preview assets into dist/web/static.
 export default async function webRoutes(app: FastifyInstance, ctx: AppContext) {
   const csp = contentSecurityPolicy(ctx.config.frameAncestors);
-  const page = async (_req: FastifyRequest, reply: FastifyReply) =>
+  const page = async (_req: FastifyRequest, reply: FastifyReply) => {
     reply
       .header('cache-control', 'no-store')
-      .header('content-security-policy', csp)
-      .sendFile('index.html', { cacheControl: false });
+      .header('content-security-policy', csp);
+    return ctx.desktop.kind === 'macos'
+      ? reply.type('text/html; charset=utf-8').send(nativeHtml())
+      : reply.sendFile('index.html', { cacheControl: false });
+  };
   app.get('/', { schema: { hide: true } }, page);
   app.get('/index.html', { schema: { hide: true } }, page);
   app.get('/favicon.ico', { schema: { hide: true } }, async (_req, reply) => reply.code(204).send());

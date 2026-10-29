@@ -3,13 +3,16 @@
 // running, so the same link works for both.
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { ROOT, generatedToken, isRunning, url } from './compose.mjs';
+import { loadConfig } from '../dist/config.js';
 
-const tokenFile = process.env.OZWELL_COMPUTER_TOKEN_FILE || join(homedir(), '.config', 'ozwell-computer', 'token');
+const args = process.argv.slice(2);
+const { config } = loadConfig(process.env, args);
+const native = config.backend === 'macos';
+const tokenFile = config.tokenFile;
 
-if (!process.env.OZWELL_COMPUTER_TOKEN) {
+if (!native && !process.env.OZWELL_COMPUTER_TOKEN) {
   let shared = null;
   try { if (isRunning()) shared = generatedToken(); } catch { /* no docker: fine */ }
   if (shared) {
@@ -24,7 +27,6 @@ if (!process.env.OZWELL_COMPUTER_TOKEN) {
 }
 
 // Don't collide with the compose service on the default port.
-const args = process.argv.slice(2);
 const portGiven = process.env.OZWELL_COMPUTER_PORT || args.some((a) => a === '--port' || a.startsWith('--port='));
 if (!portGiven) {
   let composePort = null;
