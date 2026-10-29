@@ -143,7 +143,8 @@ describe('MCP tools', () => {
     const id = await zenity(['--info', '--text=Ozwell MCP Probe'], '/tmp/oz-mcp-ocr.txt', 'oz-mcp-ocr');
     const r: any = await client.callTool({ name: 'screenshot', arguments: { window: id, ocr: true } });
     expect(r.isError).toBeFalsy();
-    expect(r.content.map((c: any) => c.type)).toEqual(['image', 'text', 'text']);
+    // An update notice may follow while an update is available.
+    expect(r.content.slice(0, 3).map((c: any) => c.type)).toEqual(['image', 'text', 'text']);
     expect(JSON.parse(r.content[1].text).screenshot_id).toBeTruthy();
     expect(r.content[2].text).toContain('Ozwell MCP Probe');
     await api('POST', `/api/v1/windows/${id}/close`);
