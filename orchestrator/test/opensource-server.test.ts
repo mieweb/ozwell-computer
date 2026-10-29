@@ -29,6 +29,14 @@ async function fakeOs() {
     containers.push(c);
     return reply.code(201).send({ data: { containerId: c.id, jobId: 1, hostname: c.hostname, status: 'creating' } });
   });
+  app.put('/api/v1/sites/:site/containers/:id', async (req) => {
+    const c = containers.find((x) => String(x.id) === (req.params as any).id);
+    c._put = req.body;
+    const b = req.body as any;
+    if (b.environmentVars) c.environmentVars = Object.fromEntries(b.environmentVars.map((e: any) => [e.key, e.value]));
+    if (b.restart) c.status = 'running';
+    return { data: { containerId: c.id, jobId: 2, dnsWarnings: [], pendingRestart: false, message: 'Container is restarting' } };
+  });
   app.delete('/api/v1/sites/:site/containers/:id', async (req) => {
     const i = containers.findIndex((c) => String(c.id) === (req.params as any).id);
     containers.splice(i, 1);
@@ -87,6 +95,38 @@ describe('opensource-server provider', () => {
     expect(os.containers.find((x) => x.hostname === c.id).owner).toBe('asmith');
     await expect(make('owner=email').create({ owner: { id: 'u-4', email: 'nobody@example.com' } })).rejects.toThrow(/no opensource-server account/);
     await expect(make('owner=email').create({ owner: { id: 'u-5' } })).rejects.toThrow(/X-Ozwell-User-Email/);
+  });
+
+  it('reports offline containers as stopped and starts them with a restart job', async () => {
+    const p = make('');
+    const c = await p.create({ owner: { id: 'u-6' } });
+    const raw = os.containers.find((x) => x.hostname === c.id);
+    raw.status = 'offline';
+    expect(await p.get(c.id)).toMatchObject({ status: 'offline', stopped: true });
+    expect(await p.start(c.id)).toMatchObject({ status: 'running', stopped: false });
+    expect(raw._put.restart).toBe(true);
+    expect(raw.environmentVars).toMatchObject({ OZWELL_ORCHESTRATOR_OWNER: 'u-6', OZWELL_ORCHESTRATOR_START_REQUESTED: expect.any(String) });
+    expect(raw.environmentVars.OZWELL_COMPUTER_TOKEN).toMatch(/\S/);
+    await expect(p.start('ozc-doesnotexi')).rejects.toThrow(/not found/);
+  });
+
+  it('enqueues one restart job for concurrent or repeated starts', async () => {
+    const p = make('');
+    const c = await p.create({ owner: { id: 'u-9' } });
+    const raw = os.containers.find((x) => x.hostname === c.id);
+    raw.status = 'offline';
+    const puts = () => os.requests.filter((r) => r.method === 'PUT' && r.url.endsWith(`/containers/${raw.id}`)).length;
+    await Promise.all([p.start(c.id), p.start(c.id)]);
+    expect(puts()).toBe(1);
+    // the job hasn't brought it up yet: a retry (from any orchestrator) waits for that job
+    raw.status = 'offline';
+    expect(await make('').start(c.id)).toMatchObject({ stopped: true });
+    expect(puts()).toBe(1);
+    // a running computer is never restarted
+    raw.status = 'running';
+    raw.environmentVars.OZWELL_ORCHESTRATOR_START_REQUESTED = '2000-01-01T00:00:00Z';
+    await p.start(c.id);
+    expect(puts()).toBe(1);
   });
 
   it('destroys by hostname via the numeric id, and surfaces API errors', async () => {

@@ -12,7 +12,9 @@ interface Session { id: string; protocol: string; lastUsed: number; url: string;
 
 export class InstanceError extends Error {
   readonly reason: string;
-  constructor(reason: string, message: string) { super(message); this.reason = reason; }
+  /** A proxy 503 or a refused connection: the computer may have been stopped. */
+  readonly unreachable: boolean;
+  constructor(reason: string, message: string, unreachable = false) { super(message); this.reason = reason; this.unreachable = unreachable; }
 }
 
 export class InstanceClient {
@@ -43,7 +45,13 @@ export class InstanceClient {
     try {
       res = await fetch(`${url}/mcp`, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(CALL_TIMEOUT_MS) });
     } catch (e) {
-      throw new InstanceError('target_unavailable', `cannot reach the computer: ${(e as Error).message}`);
+      throw new InstanceError('target_unavailable', `cannot reach the computer: ${(e as Error).message}`, (e as any).cause?.code === 'ECONNREFUSED');
+    }
+    // Failed statuses are classified without the body: a proxy's 503 may be HTML or a JSON-RPC-looking error.
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined);
+      if (res.status === 503) throw new InstanceError('target_unavailable', 'the computer is unavailable (HTTP 503)', true);
+      return { res, msg: null };
     }
     const text = await res.text();
     const json = text.trimStart().startsWith('{') ? text : text.split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5)).join('');
@@ -80,8 +88,9 @@ export class InstanceClient {
       s.lastUsed = Date.now();
       const r = await this.post(url, token, { jsonrpc: '2.0', id: ++this.seq, method: 'tools/call', params: { name, arguments: args } }, s);
       if (r.res.status === 404 || r.res.status === 400) { this.sessions.delete(key); continue; } // session gone: re-init once
+      if (!r.res.ok) throw new InstanceError('target_unavailable', `tool call failed (HTTP ${r.res.status})`);
       if (r.msg?.error) throw new InstanceError('internal', r.msg.error.message ?? 'tool call failed');
-      if (!r.res.ok || !r.msg?.result) throw new InstanceError('target_unavailable', `tool call failed (HTTP ${r.res.status})`);
+      if (!r.msg?.result) throw new InstanceError('target_unavailable', 'tool call returned no result');
       return r.msg.result;
     }
     throw new InstanceError('target_unavailable', 'the computer keeps dropping its MCP session');

@@ -96,13 +96,15 @@ export class DockerProvider implements Provider {
       const ip = (this.network ? nets[this.network]?.IPAddress : undefined) ?? Object.values<any>(nets).find((n) => n?.IPAddress)?.IPAddress;
       if (ip) url = `http://${ip}:${PORT}`;
     }
+    const status: string = c.State?.Status ?? c.State ?? 'unknown';
     return {
       id: name,
       owner: labels[LABEL.owner] ?? '',
       displayName: labels[LABEL.displayName] || undefined,
       ownerEmail: labels[LABEL.ownerEmail] || undefined,
       ownerName: labels[LABEL.ownerName] || undefined,
-      status: c.State?.Status ?? c.State ?? 'unknown',
+      status,
+      stopped: status === 'exited' || status === 'created',
       createdAt: labels[LABEL.created],
       internalUrl: url,
       externalUrl: url,
@@ -163,6 +165,15 @@ export class DockerProvider implements Provider {
     }
     if (r.status >= 300) throw new Error(`docker create: HTTP ${r.status}: ${r.data?.message ?? r.data}`);
     await this.api.ok('POST', `/containers/${id}/start`);
+    const c = await this.get(id);
+    if (!c) throw new Error(`container ${id} vanished after start`);
+    return c;
+  }
+
+  async start(id: string): Promise<Computer> {
+    const r = await this.api.call('POST', `/containers/${encodeURIComponent(id)}/start`);
+    // 304: already running
+    if (r.status >= 300 && r.status !== 304) throw new Error(`docker start ${id}: HTTP ${r.status}: ${r.data?.message ?? r.data}`);
     const c = await this.get(id);
     if (!c) throw new Error(`container ${id} vanished after start`);
     return c;
