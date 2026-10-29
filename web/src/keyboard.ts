@@ -95,6 +95,10 @@ export function createCapsLockRemap(send: Send) {
     pointer(e: Flags) {
       resolve(e, []);
     },
+    /** Whether the desktop has `code`'s key down for someone else: a physical key or Caps Lock. */
+    holds(code: string) {
+      return held.has(code) || (caps !== 'pending' && caps?.mod[2] === code);
+    },
     reset() {
       if (caps !== 'pending' && caps?.sent) send(caps.mod[1], caps.mod[2], false);
       caps = null;
@@ -103,12 +107,17 @@ export function createCapsLockRemap(send: Send) {
   };
 }
 
+let active: ReturnType<typeof createCapsLockRemap> | null = null;
+/** Whether a key the viewer's user holds keeps `code` down on the desktop (synthetic shortcuts must not release it). */
+export const remoteHolds = (code: string) => active?.holds(code) ?? false;
+
 export function useCapsLockRemap(target: RefObject<HTMLElement | null>, getRfb: () => { viewOnly: boolean; sendKey: Send } | null) {
   useEffect(() => {
     const el = target.current;
     // macOS reports Caps Lock as a toggle (down when on, up when off), which noVNC handles.
     if (!el || /^(Mac|iP)/.test(navigator.platform)) return;
     const remap = createCapsLockRemap((keysym, code, down) => getRfb()?.sendKey(keysym, code, down));
+    active = remap;
     const onKey = (e: KeyboardEvent) => {
       if (getRfb()?.viewOnly || !remap.handle(e)) return;
       e.preventDefault();
@@ -132,6 +141,7 @@ export function useCapsLockRemap(target: RefObject<HTMLElement | null>, getRfb: 
     document.addEventListener('keyup', onProxyKey, true);
     window.addEventListener('blur', reset);
     return () => {
+      active = null;
       for (const [type, fn] of listeners) el.removeEventListener(type, fn as EventListener, true);
       document.removeEventListener('keydown', onProxyKey, true);
       document.removeEventListener('keyup', onProxyKey, true);

@@ -113,6 +113,18 @@ describe('Caps Lock remaps', () => {
     expect(run([down('AltGraph', G), down('CapsLock', G), up('CapsLock', G), up('AltGraph')]).sent).toEqual(['ffe5 tap']);
   });
 
+  it('reports which keys the user holds down on the desktop, by exact code', () => {
+    const C = { ctrlKey: true };
+    // Right Ctrl held: a synthetic Control_L (paste shortcut) is nobody else's and must be released.
+    const a = run([down('Control', { ...C, code: 'ControlRight' })]);
+    expect([a.remap.holds('ControlRight'), a.remap.holds('ControlLeft')]).toEqual([true, false]);
+    // Caps Lock as Ctrl holds Control_L until it is released.
+    const b = run([down('CapsLock', C)]);
+    expect(b.remap.holds('ControlLeft')).toBe(true);
+    b.remap.handle(up('CapsLock', C));
+    expect(b.remap.holds('ControlLeft')).toBe(false);
+  });
+
   it('settles a pending Caps Lock from a pointer event before noVNC sends the click', () => {
     const { sent, remap } = run([down('CapsLock')]);
     remap.pointer({ ...NONE, ctrlKey: true });
