@@ -1,6 +1,6 @@
 // Light/dark: the viewer follows the desktop's GTK theme, and the toolbar toggle switches both.
 // The first human viewer's prefers-color-scheme becomes the desktop default; it isn't changed after.
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@mieweb/ui/components/Button';
 import { api } from './api';
 import { useServerEvent } from './events';
@@ -18,16 +18,30 @@ const putTheme = (body: { scheme: Scheme; if_unset?: boolean }) =>
 export function ThemeToggle({ viewOnly }: { viewOnly: boolean }) {
   const [scheme, setScheme] = useState(prefersScheme);
   useEffect(() => applyScheme(scheme), [scheme]);
-  useServerEvent<ThemeState>('desktop.theme', (t) => setScheme(t.scheme));
-  useEffect(() => {
-    void api<ThemeState>('/api/v1/desktop/theme').then(async (t) => {
+  // Bumped by every event and request; a response that arrives after a newer one is dropped.
+  const gen = useRef(0);
+  const latest = async (p: Promise<ThemeState>) => {
+    const g = ++gen.current;
+    const t = await p;
+    if (g === gen.current) setScheme(t.scheme);
+  };
+  useServerEvent<ThemeState>('desktop.theme', (t) => { gen.current++; setScheme(t.scheme); });
+  // On every (re)connect: the stream doesn't replay changes missed while it was down.
+  useServerEvent('hello', () => {
+    const g = ++gen.current;
+    void api<ThemeState>('/api/v1/desktop/theme').then((t) => {
+      if (g !== gen.current) return;
       if (t.set) return setScheme(t.scheme);
-      if (!viewOnly) setScheme((await putTheme({ scheme: prefersScheme(), if_unset: true })).scheme);
+      if (!viewOnly) void latest(putTheme({ scheme: prefersScheme(), if_unset: true }));
     });
-  }, []);
+  });
 
   const next: Scheme = scheme === 'dark' ? 'light' : 'dark';
-  const toggle = async () => setScheme(viewOnly ? next : (await putTheme({ scheme: next })).scheme);
+  const toggle = () => {
+    if (!viewOnly) return void latest(putTheme({ scheme: next }));
+    gen.current++;
+    setScheme(next);
+  };
   return (
     <Button id="btn-theme" size="sm" variant="outline" onClick={toggle}
       title={`Switch ${viewOnly ? 'this viewer' : 'the viewer and the desktop'} to ${next} mode`}>

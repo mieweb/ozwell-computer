@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { readFile, readdir, writeFile } from 'node:fs/promises';
+import { readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { unsupported } from './errors.js';
@@ -25,22 +25,38 @@ export async function getTheme(): Promise<ThemeState> {
   return { scheme: theme?.includes('-dark"') ? 'dark' : 'light', set: !!theme };
 }
 
-async function xsettingsdPids() {
+// Only this user's daemons serving `display`: another display's would take the signal
+// instead, and another user's would fail with EPERM.
+async function xsettingsdPids(display: string) {
   const pids = (await readdir('/proc')).filter((d) => /^\d+$/.test(d));
   const comms = await Promise.all(pids.map((p) => readFile(`/proc/${p}/comm`, 'utf8').catch(() => '')));
-  return pids.filter((_, i) => comms[i].trim() === 'xsettingsd').map(Number);
+  const named = pids.filter((_, i) => comms[i].trim() === 'xsettingsd');
+  const ours = await Promise.all(named.map(async (p) => {
+    const [st, env] = await Promise.all([stat(`/proc/${p}`), readFile(`/proc/${p}/environ`, 'utf8')]).catch(() => [null, ''] as const);
+    return st?.uid === process.getuid?.() && env.split('\0').includes(`DISPLAY=${display}`);
+  }));
+  return named.filter((_, i) => ours[i]).map(Number);
 }
 
-// SIGHUP makes xsettingsd reload its config; start it if the session hasn't (older sessions, --spawn-xvfb).
-async function reload(display: string) {
-  const pids = await xsettingsdPids();
-  pids.forEach((p) => process.kill(p, 'SIGHUP'));
-  if (pids.length) return;
+async function startDaemon(display: string) {
   const child = spawn('xsettingsd', [], { detached: true, stdio: 'ignore', env: { ...process.env, DISPLAY: display } });
   await once(child, 'spawn').catch((e: NodeJS.ErrnoException) => {
     throw e.code === 'ENOENT' ? unsupported('theme', 'xsettingsd is not installed') : e;
   });
   child.unref();
+}
+
+// SIGHUP makes xsettingsd reload its config; start it if the session hasn't (older sessions, --spawn-xvfb).
+async function reload(display: string) {
+  const pids = await xsettingsdPids(display);
+  if (!pids.length) return startDaemon(display);
+  pids.forEach((p) => process.kill(p, 'SIGHUP'));
+}
+
+/** Serve a saved theme on a display the server started itself; the desktop session starts its own daemon. */
+export async function startSettingsDaemon(display: string) {
+  if (!(await readConf()) || (await xsettingsdPids(display)).length) return;
+  await startDaemon(display);
 }
 
 let queue: Promise<unknown> = Promise.resolve();
@@ -50,9 +66,14 @@ export function setTheme(scheme: ColorScheme, display: string, onlyIfUnset = fal
   const next = queue.then(async (): Promise<ThemeState> => {
     const current = await getTheme();
     if (onlyIfUnset && current.set) return current;
-    const kept = ((await readConf()) ?? '').split('\n').filter((l) => l && !THEME_LINE.test(l));
+    const before = await readConf();
+    const kept = (before ?? '').split('\n').filter((l) => l && !THEME_LINE.test(l));
     await writeFile(CONF, [...kept, `Net/ThemeName "${GTK_THEME[scheme]}"`, 'Net/IconThemeName "Adwaita"', ''].join('\n'));
-    await reload(display);
+    // Undo a choice that never applied, so it doesn't count as set and if_unset can retry.
+    await reload(display).catch(async (e) => {
+      await (before === null ? rm(CONF, { force: true }) : writeFile(CONF, before));
+      throw e;
+    });
     return { scheme, set: true };
   });
   queue = next.catch(() => undefined);
