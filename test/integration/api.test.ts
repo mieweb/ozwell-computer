@@ -205,9 +205,36 @@ describe('exec and files', () => {
     expect(slow.body.state).toBe('running');
     const done = await api('GET', `/api/v1/exec/jobs/${slow.body.job_id}?wait_ms=10000`);
     expect(done.body).toMatchObject({ state: 'exited', exit_code: 0 });
+    const streamed = await (await fetch(`${URL_}/api/v1/exec/jobs/${slow.body.job_id}/stream`, { headers: auth })).text();
+    expect(streamed).toContain('event: state');
+    expect(streamed.trimEnd()).toMatch(/event: end\ndata: \{.*"state":"exited".*\}$/);
     const long = await api('POST', '/api/v1/exec', { cmd: 'sleep 60', wait_ms: 0 });
+    const listed = await api('GET', '/api/v1/exec/jobs');
+    expect(listed.body.jobs[0]).toMatchObject({ job_id: long.body.job_id, state: 'running', command: 'sleep 60' });
+    expect(listed.body.jobs.map((j: any) => j.job_id)).toContain(slow.body.job_id);
     expect((await api('DELETE', `/api/v1/exec/jobs/${long.body.job_id}`)).body.state).toBe('cancelled');
     expect((await api('GET', '/api/v1/exec/jobs/j-000000000000')).status).toBe(404);
+  });
+
+  it('carries a job\'s output on the shared event stream', async () => {
+    const ctl = new AbortController();
+    const res = await fetch(`${URL_}/api/v1/events`, { headers: auth, signal: ctl.signal });
+    const reader = res.body!.getReader();
+    let text = '';
+    const until = async (re: RegExp) => {
+      while (!re.test(text)) text += Buffer.from((await reader.read()).value!).toString();
+      return re.exec(text)!;
+    };
+    const streamId = JSON.parse((await until(/event: hello\ndata: (.*)\n/))[1]).stream_id;
+    const job = await api('POST', '/api/v1/exec', { cmd: 'echo one; sleep 0.5; echo two', wait_ms: 0 });
+    const r = await api('PUT', `/api/v1/events/${streamId}/job`, { job_id: job.body.job_id, tag: 't' });
+    expect(r.body).toEqual({ ok: true });
+    const end = JSON.parse((await until(/event: job\.end\ndata: (.*)\n/))[1]);
+    expect(end).toMatchObject({ job_id: job.body.job_id, state: 'exited', exit_code: 0, tag: 't' });
+    const out = [...text.matchAll(/event: job\.output\ndata: (.*)\n/g)].map((m) => JSON.parse(m[1]).stdout).join('');
+    expect(out).toBe('one\ntwo\n');
+    ctl.abort();
+    expect((await api('PUT', '/api/v1/events/unknown/job', { job_id: null })).status).toBe(404);
   });
 
   it('mkdir, move and delete', async () => {

@@ -155,7 +155,7 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
     async (a) => wrap(async () => text({ generation: await desktop.ctl().clipboard.write({ text: a.text }) })));
 
   if (config.exec) {
-    const jobs = jobsFor(config, desktop.x.displayName);
+    const jobs = jobsFor(config, desktop);
     mcp.registerTool('run_command', {
       description: 'Run a shell command in the desktop environment (non-interactive). Waits up to wait_ms (default 25 s) ' +
         'and returns {state, exit_code, stdout, stderr}. If it is still going, state is "running" with a job_id: ' +
