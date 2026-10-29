@@ -5,49 +5,18 @@ import { Button, type ButtonProps } from '@mieweb/ui/components/Button';
 import { api } from './api';
 import { useServerEvent } from './events';
 import { checkResult, versionTitle, type UpdateStatus } from './version';
+import { PLACEHOLDER, perfParts, readMetrics, type Sample } from './perf';
 
-type Metrics = { cpu?: number; mem?: number; limit?: number; vnc?: number };
-type Sample = Metrics & { t: number };
-type Part = { text: string; hot?: boolean };
-
-const MiB = (b: number) => `${Math.round(b / 2 ** 20)} MiB`;
-
-/** The few series the toolbar shows, from Prometheus text format. */
-export function readMetrics(text: string): Metrics {
-  const out: Metrics = {};
-  for (const line of text.split('\n')) {
-    if (line.startsWith('#')) continue;
-    const m = /^(\w+)(\{[^}]*\})? (\S+)$/.exec(line);
-    if (!m) continue;
-    const [, name, labels = '', value] = m;
-    const v = Number(value);
-    if (name === 'ozwell_cgroup_cpu_seconds_total') out.cpu = v;
-    else if (name === 'ozwell_cgroup_memory_bytes' && labels.includes('scope="container"')) out.mem = v;
-    else if (name === 'ozwell_cgroup_memory_limit_bytes') out.limit = v;
-    else if (name === 'ozwell_vnc_sent_bytes_total') out.vnc = v;
-  }
-  return out;
-}
-
-function perfParts(prev: Sample | null, now: Sample): Part[] {
-  const secs = prev ? (now.t - prev.t) / 1000 : 0;
-  const cpu = prev?.cpu !== undefined && now.cpu !== undefined ? ((now.cpu - prev.cpu) / secs) * 100 : undefined;
-  const kbs = prev?.vnc !== undefined && now.vnc !== undefined ? (now.vnc - prev.vnc) / secs / 1024 : undefined;
-  return [
-    cpu !== undefined && { text: `CPU ${Math.max(0, cpu).toFixed(0)}%`, hot: cpu > 80 },
-    now.mem !== undefined && {
-      text: `Mem ${MiB(now.mem)}${now.limit ? ` / ${MiB(now.limit)}` : ''}`,
-      hot: !!now.limit && now.mem / now.limit > 0.85,
-    },
-    kbs !== undefined && { text: `VNC ${kbs >= 1024 ? `${(kbs / 1024).toFixed(1)} MB/s` : `${kbs.toFixed(0)} KB/s`}` },
-  ].filter((p): p is Part => !!p);
-}
+// Literal class names so Tailwind generates them; fixed widths keep the toolbar from shifting.
+const WIDTH: Record<number, string> = { 3: 'w-[3ch]', 4: 'w-[4ch]', 5: 'w-[5ch]' };
 
 export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
-  const [parts, setParts] = useState<Part[]>([]);
+  const [parts, setParts] = useState(() => perfParts(null, null));
   useEffect(() => {
     let prev: Sample | null = null;
-    const tick = async () => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    const tick = async (next: number) => {
       try {
         const res = await fetch('/api/v1/metrics', { credentials: 'same-origin' });
         if (!res.ok) throw new Error(res.statusText);
@@ -55,20 +24,26 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
         setParts(perfParts(prev, now));
         prev = now;
       } catch {
-        setParts([]);
+        setParts(perfParts(null, null));
         prev = null;
       }
+      if (stopped) return;
+      timer = setTimeout(() => tick(intervalMs), next);
     };
-    void tick();
-    const timer = setInterval(tick, intervalMs);
-    return () => clearInterval(timer);
+    // A quick second sample so the values replace the placeholders within ~1s.
+    void tick(1000);
+    return () => { stopped = true; clearTimeout(timer); };
   }, [intervalMs]);
   return (
     <span id="perf" className="font-mono text-[11px] whitespace-nowrap text-muted-foreground" title="Container resource use (from /api/v1/metrics)">
       {parts.map((p, i) => (
-        <Fragment key={i}>
+        <Fragment key={p.label}>
           {i > 0 && ' · '}
-          <span className={p.hot ? 'text-warning' : undefined}>{p.text}</span>
+          <span className={p.hot ? 'text-warning' : undefined}>
+            {`${p.label} `}
+            <span className={`inline-block text-right tabular-nums ${WIDTH[p.width]}`}>{p.value ?? PLACEHOLDER}</span>
+            {p.unit}
+          </span>
         </Fragment>
       ))}
     </span>
