@@ -20,8 +20,9 @@ const uri = env.PROVIDER_URI || die('PROVIDER_URI is required (e.g. docker:///va
 const authDisabled = ['1', 'true', 'yes'].includes((env.ORCHESTRATOR_AUTH_DISABLED ?? '').toLowerCase());
 const psk = env.ORCHESTRATOR_TOKEN || (authDisabled ? null : die('ORCHESTRATOR_TOKEN is required (or ORCHESTRATOR_AUTH_DISABLED=true)'));
 const version: string = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
-const maxInstances = env.ORCHESTRATOR_MAX_INSTANCES ? Number(env.ORCHESTRATOR_MAX_INSTANCES) : undefined;
-if (maxInstances !== undefined && !(Number.isInteger(maxInstances) && maxInstances >= 0)) die('ORCHESTRATOR_MAX_INSTANCES must be a non-negative integer');
+const rawMax = env.ORCHESTRATOR_MAX_INSTANCES;
+if (rawMax !== undefined && !/^\d+$/.test(rawMax)) die('ORCHESTRATOR_MAX_INSTANCES must be a non-negative integer');
+const maxInstances = rawMax === undefined ? undefined : Number(rawMax);
 
 const provider = await providerFromUri(uri as string, env);
 const catalog = loadCatalog(env.TOOL_CATALOG || new URL('../../docs/mcp-tools.json', import.meta.url));
