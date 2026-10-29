@@ -9,6 +9,8 @@ STAGE := $(if $(filter command line,$(origin DESTDIR)),$(DESTDIR),$(CURDIR)/.pkg
 DESTAPP  := $(DESTDIR)$(PREFIX)
 UNIT_DIR := $(DESTDIR)/usr/lib/systemd/system
 XFCONF   := $(DESTDIR)/etc/xdg/xfce4/xfconf/xfce-perchannel-xml
+# Read through XDG_CONFIG_DIRS (see ozwell-computer-dbus.service).
+APP_XFCONF := $(DESTAPP)/xdg/xfce4/xfconf/xfce-perchannel-xml
 UNITS    := ozwell-computer.service ozwell-computer-dbus.service ozwell-computer-xvfb.service ozwell-computer-session.service \
             ozwell-computer-upgrade.service ozwell-computer-upgrade.path
 
@@ -59,6 +61,8 @@ install: build
 	$(INSTALL_DATA) contrib/default/ozwell-computer $(DESTDIR)/etc/default/ozwell-computer
 	$(INSTALL_DATA) contrib/xfce/mimeapps.list $(DESTDIR)/etc/xdg/mimeapps.list
 	$(INSTALL_DATA) contrib/xfce/xfconf/*.xml $(XFCONF)/
+	$(INSTALL) -d $(APP_XFCONF)
+	$(INSTALL_DATA) contrib/xfce/xfce4-session.xml $(APP_XFCONF)/
 	$(INSTALL_DATA) contrib/xfce/applications/*.desktop $(DESTDIR)/usr/share/applications/
 
 deb:

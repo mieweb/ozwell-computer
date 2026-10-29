@@ -1,9 +1,12 @@
 [Unit]
 Description=ozwell-computer session D-Bus (shared by the desktop session and the server)
-PartOf=ozwell-computer.service
+# Not PartOf= the server: restarting the bus would restart the session and reset the desktop.
 
 [Service]
 User=desktop
+# For the xfconfd it activates: our xfce4-session.xml (the one in /etc/xdg belongs to the
+# xfce4-session package) takes precedence over the defaults.
+Environment=XDG_CONFIG_DIRS=@PREFIX@/xdg:/etc/xdg
 RuntimeDirectory=desktop-bus
 RuntimeDirectoryMode=0700
 ExecStart=/usr/bin/dbus-daemon --session --nofork --nopidfile --address=unix:path=/run/desktop-bus/bus

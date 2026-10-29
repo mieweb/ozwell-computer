@@ -24,3 +24,39 @@ describe('maintainer scripts', () => {
     expect(sh).toContain('DPkg::Lock::Timeout');
   });
 });
+
+describe('desktop session', () => {
+  const unit = (u: string) => read(`contrib/systemd/${u}.service`);
+
+  // Restarting the server (upgrades, crashes, `systemctl restart`) must not take the
+  // desktop down with it; the session Requires= the bus and Xvfb.
+  it.each(['ozwell-computer-dbus', 'ozwell-computer-xvfb', 'ozwell-computer-session'])('%s is not bound to the server', (u) => {
+    expect(unit(u)).not.toMatch(/^(PartOf|BindsTo|Requires|Requisite)=.*ozwell-computer\.service/m);
+  });
+
+  it('postinst restarts only the server on upgrade', () => {
+    const restarts = [...read('contrib/postinst').matchAll(/systemctl (?:try-)?restart (.*)/g)].map((m) => m[1]);
+    expect(restarts).toEqual(['ozwell-computer.service', 'ozwell-computer-upgrade.path']);
+  });
+
+  it('xfce4-session restores the saved session, and starts the default apps only without one', () => {
+    const sh = read('contrib/xfce/session.sh');
+    expect(sh).toMatch(/^exec xfce4-session$/m);
+    expect(sh).not.toMatch(/^\s*(xfwm4|xfce4-panel|xfce4-terminal)\b/m);
+    const xml = read('contrib/xfce/xfce4-session.xml');
+    expect(xml).toMatch(/name="SaveOnExit" type="bool" value="true"/);
+    const failsafe = /name="FailsafeSessionName" type="string" value="(\w+)"/.exec(xml)![1];
+    expect(xml).toMatch(new RegExp(`name="${failsafe}" type="empty">\\s*<property name="IsFailsafe" type="bool" value="true"/>`));
+    expect(unit('ozwell-computer-session')).toMatch(/^ExecStop=.*ozwell-computer-session stop$/m);
+  });
+
+  it('xfconfd reads the session config from where make install puts it', () => {
+    expect(unit('ozwell-computer-dbus')).toMatch(/^Environment=XDG_CONFIG_DIRS=@PREFIX@\/xdg:\/etc\/xdg$/m);
+    expect(read('Makefile')).toMatch(/^APP_XFCONF := \$\(DESTAPP\)\/xdg\/xfce4\/xfconf\/xfce-perchannel-xml$/m);
+    expect(read('.fpm')).toMatch(/^--depends xfce4-session$/m);
+  });
+
+  it('Firefox restores the previous session', () => {
+    expect(JSON.parse(read('docker/firefox/policies.json')).policies.Homepage.StartPage).toBe('previous-session');
+  });
+});
