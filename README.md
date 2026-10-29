@@ -13,9 +13,12 @@ wire-compatible with it.
 
 ## Architecture
 
-The suite has four layers. Each one only talks to the layer below it, and the lower
-layers work on their own: you can run the container (layer 3) without an orchestrator,
-or the server (layer 4) without the container.
+The suite has four layers. The orchestrator manages a computer's lifecycle (create,
+list, destroy) through the provider, but talks to the ozwell-computer server directly
+for readiness checks (`GET /health`) and proxied MCP tool calls. A deployment therefore
+needs network access from the orchestrator to both the provider API and every computer.
+The lower layers work on their own: you can run the container (layer 3) without an
+orchestrator, or the server (layer 4) without the container.
 
 ```mermaid
 flowchart TB

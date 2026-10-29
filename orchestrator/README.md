@@ -144,7 +144,12 @@ sequenceDiagram
 ```
 
 The session's client name is the user's name, so the agent appears under it in the
-viewer. A call may run up to 11 minutes (`run_command` allows 10).
+viewer.
+
+Each proxied call has an 11-minute HTTP timeout; that is not a command limit.
+`run_command` waits at most 50 s (`wait_ms`, default 25 s), then returns the still-running
+job, which the agent follows with `command_output`. The command itself may run for up
+to 24 hours (`timeout_ms`, default 1 hour).
 
 ### destroy_computer
 
@@ -271,6 +276,9 @@ The API key comes from `OPENSOURCE_SERVER_API_KEY`.
   site's network.
 - **Note:** an admin key lists every container on the site; non-orchestrator containers
   are ignored.
+
+The paths below are relative to the API base `/api/v1`, e.g. `GET /users` is
+`GET /api/v1/users`.
 
 ```mermaid
 sequenceDiagram
