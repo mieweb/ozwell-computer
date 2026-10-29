@@ -156,7 +156,7 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
   // A normal focus stop: Enter or Space hands the keyboard to the remote desktop, Shift+Esc takes it back.
   const desktopFocus = {
     tabIndex: 0,
-    title: 'Remote desktop: press Enter to type into it, Shift+Esc to leave',
+    'aria-describedby': 'desktop-keys',
     onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
       if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
       e.preventDefault();
@@ -167,11 +167,16 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
   const desktop = (
     <div id="screen-wrap" className="relative flex-1 overflow-hidden [&:fullscreen]:size-full [&:fullscreen]:bg-background" ref={wrapRef}
       onKeyDownCapture={(e) => {
-        if (e.key !== 'Escape' || !e.shiftKey) return;
+        if (e.key !== 'Escape' || !e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
         e.preventDefault();
         e.stopPropagation();
-        e.currentTarget.parentElement!.focus();
+        const panel = e.currentTarget.parentElement!;
+        // In fullscreen the panel is outside the visible subtree, so leave fullscreen first.
+        void (document.fullscreenElement ? document.exitFullscreen() : Promise.resolve()).catch(() => undefined).then(() => panel.focus());
       }}>
+      <div id="desktop-keys" className="pointer-events-none absolute top-1 right-1 z-10 hidden rounded-sm bg-neutral-900/80 px-1.5 py-0.5 text-[11px] text-neutral-50 group-focus-within:block">
+        Enter: type into the desktop · Shift+Esc: leave it
+      </div>
       <div id="screen" className="absolute inset-0" ref={screenRef} />
       <div id="overlay" className="pointer-events-none absolute inset-0" ref={overlayRef}>
         {[...cursors.values()].map((p) => (
@@ -240,11 +245,11 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
         </div>
       )}
       {/* Without exec there is only the desktop, so no tab semantics. */}
-      {!exec && <div className="flex min-h-0 flex-1 flex-col" {...desktopFocus}>{desktop}</div>}
+      {!exec && <div className="group flex min-h-0 flex-1 flex-col" {...desktopFocus}>{desktop}</div>}
       {/* Kept mounted while hidden so the VNC session stays connected; noVNC rescales when it is shown again. */}
       {exec && (
         <TabsContent value="desktop" forceMount {...desktopFocus}
-          className={`mt-0 min-h-0 flex-1 flex-col rounded-none ${tab === 'desktop' ? 'flex' : 'hidden'}`}>
+          className={`group mt-0 min-h-0 flex-1 flex-col rounded-none ${tab === 'desktop' ? 'flex' : 'hidden'}`}>
           {desktop}
         </TabsContent>
       )}
