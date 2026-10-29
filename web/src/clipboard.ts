@@ -13,6 +13,7 @@ import type RFB from '/novnc/core/rfb.js';
 import { useEffect, useRef, type RefObject } from 'react';
 import { api } from './api';
 import { useServerEvent } from './events';
+import { remoteHolds } from './keyboard';
 
 type Key = readonly [keysym: number, code: string];
 type ClipboardChanged = { generation: number; owner_is_self: boolean };
@@ -54,7 +55,8 @@ function createClipboardSync(target: HTMLElement, getRfb: () => RFB | null, toas
     const rfb = getRfb();
     if (!rfb) return;
     for (const [sym, code] of keys) rfb.sendKey(sym, code, true);
-    for (const [sym, code] of [...keys].reverse()) rfb.sendKey(sym, code, false);
+    // Leave a key down that the user still holds, physically or via a remapped Caps Lock.
+    for (const [sym, code] of [...keys].reverse()) if (!remoteHolds(code)) rfb.sendKey(sym, code, false);
   }
   function releaseSuper() {
     const rfb = getRfb();
@@ -114,6 +116,8 @@ function createClipboardSync(target: HTMLElement, getRfb: () => RFB | null, toas
   // textarea during keydown sends the browser's paste (either form) here instead.
   const sink = document.createElement('textarea');
   sink.setAttribute('aria-hidden', 'true');
+  // Keys typed while it briefly has focus still belong to the desktop (see keyboard.ts).
+  sink.dataset.screenKeys = '';
   sink.tabIndex = -1;
   sink.className = 'fixed top-0 -left-[9999px] size-px opacity-0';
   document.body.appendChild(sink);

@@ -9,6 +9,7 @@ import { api } from './api';
 import { clipboardSupported, useClipboardSync } from './clipboard';
 import { openServerEvents, useServerEvent } from './events';
 import { JobsPanel, useJobs } from './jobs';
+import { useCapsLockRemap } from './keyboard';
 import { Perf, UpdateControls } from './status';
 import { ThemeToggle } from './theme';
 
@@ -84,6 +85,7 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
     };
     void connect();
   }, []);
+  useCapsLockRemap(screenRef, () => rfbRef.current);
   useClipboardSync(screenRef, () => rfbRef.current, showToast);
 
   useEffect(() => {
