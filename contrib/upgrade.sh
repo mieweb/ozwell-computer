@@ -59,8 +59,9 @@ from_git() {
     if ! { make -C "$SRC" install PREFIX="$PREFIX" && systemctl daemon-reload \
         && systemctl start ozwell-computer.service && healthy \
         && systemctl try-restart ozwell-computer-upgrade.path; }; then
-        # No REVISION, so the next run installs again instead of reporting "unchanged".
-        rm -f "$PREFIX/REVISION"
+        # A commit no branch head has: the server keeps offering the update and a retry reinstalls
+        # (removing REVISION would make it report updates as unsupported).
+        echo 0000000000000000000000000000000000000000 > "$PREFIX/REVISION"
         systemctl start ozwell-computer.service
         fail
     fi

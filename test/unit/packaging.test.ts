@@ -1,8 +1,9 @@
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { readInstalled } from '../../src/update.js';
 
 const read = (p: string) => readFileSync(new URL(`../../${p}`, import.meta.url), 'utf8');
 
@@ -54,7 +55,7 @@ describe('git update channel', () => {
       spawnSync('sh', [join(dir, 'upgrade')], { env: { ...process.env, PATH: `${dir}/bin:${process.env.PATH}`, FAIL_ON: failOn, OZWELL_COMPUTER_UPDATE_URL: 'git+https://example.invalid/repo#main' }, stdio: 'ignore' });
       return {
         status: readFileSync(join(dir, 'state/upgrade.status'), 'utf8').split(' ')[0],
-        revision: existsSync(join(dir, 'prefix/REVISION')) ? readFileSync(join(dir, 'prefix/REVISION'), 'utf8').trim() : null,
+        revision: readFileSync(join(dir, 'prefix/REVISION'), 'utf8').trim(),
         calls: readFileSync(join(dir, 'calls'), 'utf8').split('\n').filter((l) => /^(make|systemctl)/.test(l)),
       };
     }
@@ -62,6 +63,7 @@ describe('git update channel', () => {
       const dir = mkdtempSync(join(tmpdir(), 'oz-upgrade-'));
       for (const d of ['state', 'prefix', 'src/.git', 'bin']) mkdirSync(join(dir, d), { recursive: true });
       writeFileSync(join(dir, 'prefix/REVISION'), 'old\n');
+      writeFileSync(join(dir, 'prefix/package.json'), '{"version":"1.0.0"}');
       writeFileSync(join(dir, 'upgrade'), sh.replace(/^STATE=.*$/m, `STATE=${dir}/state`).replace('@PREFIX@', `${dir}/prefix`).replace(/^SRC=.*$/m, `SRC=${dir}/src`));
       for (const c of ['git', 'make', 'systemctl', 'node', 'sleep']) {
         writeFileSync(join(dir, 'bin', c), `#!/bin/sh
@@ -99,11 +101,13 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
 
     it.each(['make*install*', 'systemctl daemon-reload', 'systemctl start*', 'node*', 'systemctl try-restart*'])(
       'when %s fails it reports failed, starts the server again, and a retry reinstalls',
-      (failOn) => {
+      async (failOn) => {
         const dir = fresh();
         const r = run(dir, failOn);
         expect(r.status).toBe('failed');
-        expect(r.revision).toBeNull();
+        expect(r.revision).toBe('0'.repeat(40));
+        // Still a valid install to the server, so it keeps offering the update.
+        expect(await readInstalled(join(dir, 'prefix'))).toEqual({ version: '1.0.0', revision: '0'.repeat(40) });
         expect(r.calls.at(-1)).toBe('systemctl start ozwell-computer.service');
         const retry = run(dir);
         expect(retry).toMatchObject({ status: 'succeeded', revision: 'new' });
@@ -121,8 +125,6 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
     const mk = read('Makefile');
     const recipe = /^install: .*\n((?:\t.*\n)+)/m.exec(mk)?.[1].trimEnd().split('\n') ?? [];
     expect(recipe.at(-1)).toMatch(/^\tgit rev-parse --verify -q HEAD > \$\(DESTAPP\)\/REVISION/);
-    // Cleared first, so a partial install never carries the marker.
-    expect(recipe.findIndex((l) => l.includes('rm -f $(DESTAPP)/REVISION'))).toBeLessThan(recipe.findIndex((l) => l.includes('cp -a dist')));
     // From the source checkout: the installed tree (e.g. /opt) has no git history.
     expect(mk).toContain('npm pkg set version="$$(cd "$(CURDIR)" && ./package-version node)"');
     expect(mk).toContain('$(call conffile,contrib/default/ozwell-computer,');

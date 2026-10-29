@@ -44,7 +44,6 @@ test:
 
 install: build
 	$(INSTALL) -d $(DESTAPP) $(DESTAPP)/bin
-	rm -f $(DESTAPP)/REVISION
 	cp -a dist package.json package-lock.json node_modules $(DESTAPP)/
 	# Runtime dependencies only, and the release version (the installed app has no git checkout).
 	cd $(DESTAPP) && npm prune --omit=dev --no-audit --no-fund >/dev/null \
