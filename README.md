@@ -11,6 +11,67 @@ The VNC server is written in TypeScript and runs in-process; it talks to X throu
 xdotool. The design takes ideas from [CUA](https://github.com/trycua/cua) but is not
 wire-compatible with it.
 
+## Architecture
+
+The suite has four layers. Each one only talks to the layer below it, and the lower
+layers work on their own: you can run the container (layer 3) without an orchestrator,
+or the server (layer 4) without the container.
+
+```mermaid
+flowchart TB
+    agent["MCP client<br/>(Ozwell workspace, agents)"]
+    human["Person<br/>(browser)"]
+
+    subgraph L1["Layer 1: Orchestrator"]
+        orch["ozwell-computer-orchestrator<br/>POST /mcp"]
+    end
+
+    subgraph L2["Layer 2: Provider"]
+        prov["docker | opensource-server<br/>list, get, create, destroy"]
+    end
+
+    runtime[("Docker Engine /<br/>opensource-server API")]
+
+    subgraph L3["Layer 3: Container (ghcr.io/mieweb/ozwell-computer)"]
+        systemd["systemd (PID 1)"]
+        desk["Xvfb :0, D-Bus,<br/>xfwm4 + xfce4-panel, AT-SPI"]
+        apps["apps: terminal, Thunar, Firefox"]
+        subgraph L4["Layer 4: ozwell-computer (this repo)"]
+            server["server on :8080<br/>/ viewer, /api/v1, /mcp, /websockify"]
+        end
+    end
+
+    agent -->|"MCP, PSK + X-Ozwell-User-*"| orch
+    orch --> prov
+    prov -->|"create / inspect / delete containers"| runtime
+    runtime -->|"runs"| systemd
+    systemd --> desk
+    systemd --> server
+    orch -->|"MCP tools/call, instance token"| server
+    human -->|"viewer_url (?token=)"| server
+    server <-->|"X11 (node-x11), AT-SPI"| desk
+    desk --- apps
+```
+
+1. **Orchestrator** ([orchestrator/](orchestrator/README.md)): the single MCP endpoint
+   most clients use. It is stateless and per user: it adds `list_computers`,
+   `create_computer`, `get_computer` and `destroy_computer`, and proxies every
+   ozwell-computer tool with an extra `instance_id`. It authenticates Ozwell with a
+   pre-shared key and scopes every call to `X-Ozwell-User-Id`.
+2. **Provider** ([orchestrator/src/providers/](orchestrator/src/providers/types.ts)): the
+   adapter to a computer runtime, selected by `PROVIDER_URI`'s scheme. It implements
+   `list(owner)`, `get(id)`, `create({ owner, displayName })` and `destroy(id)`, and keeps
+   all state (owner, metadata, URLs, token) on the containers themselves. `docker` and
+   `opensource-server` are built in.
+3. **Container** ([Dockerfile](Dockerfile)): the standard runtime for one computer.
+   systemd runs as PID 1 and starts the package's units: the session D-Bus, `Xvfb :0`,
+   the XFCE session (xfwm4, panels, AT-SPI) and the server, all as the `desktop` user.
+   The token arrives as `OZWELL_COMPUTER_TOKEN`; port 8080 is the only one exposed.
+4. **ozwell-computer** ([src/](src/server.ts)): the core of this repository. One HTTP
+   port serves the noVNC viewer for people, the JSON API and the MCP server for agents,
+   all behind one access token. It talks to X directly and runs the VNC server
+   in-process.
+
 ## Run the container
 
 For local macOS development, see [macOS with OrbStack](#macos-with-orbstack).

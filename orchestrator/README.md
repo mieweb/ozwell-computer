@@ -24,6 +24,146 @@ provider, and proxies every ozwell-computer tool with an extra `instance_id` arg
     catalog is generated from the computer (`npm run mcp-tools` at the repo root), so
     the orchestrator knows the tools without a running instance.
 
+## Computer lifecycle
+
+As the agent sees it. The orchestrator stores none of this: readiness is worked out on
+each call from the provider's status and the computer's `GET /health` (204 once its X
+display is connected).
+
+```mermaid
+stateDiagram-v2
+    [*] --> Starting: create_computer
+    Starting --> Starting: get_computer, ready false
+    Starting --> Ready: GET /health returns 204
+    Starting --> Stopped: status failed, exited, dead, missing or offline
+    Ready --> Ready: proxied tool calls
+    Ready --> Stopped: container stops
+    Starting --> [*]: destroy_computer
+    Ready --> [*]: destroy_computer
+    Stopped --> [*]: destroy_computer
+```
+
+Every request is a stateless `POST /mcp` with Ozwell's headers. The orchestrator checks
+them before any tool runs:
+
+```mermaid
+sequenceDiagram
+    participant C as MCP client (Ozwell)
+    participant O as Orchestrator
+    C->>O: POST /mcp<br/>Authorization: Bearer psk, X-Ozwell-User-Id/-Email/-Name
+    alt PSK missing or wrong
+        O-->>C: 401 unauthenticated
+    else no X-Ozwell-User-Id
+        O-->>C: 400 invalid_request
+    else
+        O->>O: fresh MCP server for this user (no session)
+        O-->>C: SSE response: tools/list or tools/call result
+    end
+```
+
+### create_computer and get_computer
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as MCP client
+    participant O as Orchestrator
+    participant P as Provider
+    participant I as ozwell-computer
+    C->>O: tools/call create_computer (display_name)
+    O->>P: create(owner = user, displayName)
+    P-->>O: Computer: id, status, internalUrl, externalUrl, token
+    loop every 1.5 s until ready, a dead status, or 40 s
+        O->>P: get(id)
+        P-->>O: Computer (URLs may only appear while it starts)
+        O->>I: GET internalUrl/health
+        I-->>O: 204 when ready, otherwise 503 or unreachable
+    end
+    O-->>C: instance_id, display_name, status, created_at, viewer_url, ready
+    opt ready is false
+        C->>O: tools/call get_computer (instance_id)
+        O->>P: get(instance_id)
+        alt missing, or owned by another user
+            O-->>C: error target_unavailable
+        else
+            O->>O: same 40 s wait loop
+            O-->>C: same fields as create_computer
+        end
+    end
+```
+
+`viewer_url` is `externalUrl/?token=...`: the user opens it to watch or take over.
+
+### list_computers
+
+```mermaid
+sequenceDiagram
+    participant C as MCP client
+    participant O as Orchestrator
+    participant P as Provider
+    C->>O: tools/call list_computers
+    O->>P: list(user id)
+    P-->>O: that user's computers
+    O-->>C: computers: instance_id, display_name, status, created_at, viewer_url
+```
+
+No readiness check: `status` is the provider's own.
+
+### Proxied tool calls
+
+Any tool from `docs/mcp-tools.json` (`screenshot`, `click`, `run_command`, ...):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as MCP client
+    participant O as Orchestrator
+    participant P as Provider
+    participant I as ozwell-computer
+    C->>O: tools/call screenshot (instance_id, args)
+    O->>P: get(instance_id)
+    P-->>O: Computer
+    alt missing, or owned by another user
+        O-->>C: error target_unavailable
+    else no internalUrl or token yet
+        O-->>C: error target_unavailable (not reachable)
+    else
+        opt no cached session for this computer and user
+            O->>I: POST /mcp initialize (Bearer instance token)
+            I-->>O: Mcp-Session-Id
+            O->>I: POST /mcp notifications/initialized
+        end
+        O->>I: POST /mcp tools/call screenshot (args without instance_id)
+        opt HTTP 400 or 404: session lost (computer restarted)
+            O->>I: initialize again, then retry tools/call once
+        end
+        I-->>O: CallToolResult
+        O-->>C: CallToolResult, unchanged
+    end
+    Note over O,I: Sessions idle for 5 min are closed with DELETE /mcp.
+```
+
+The session's client name is the user's name, so the agent appears under it in the
+viewer. A call may run up to 11 minutes (`run_command` allows 10).
+
+### destroy_computer
+
+```mermaid
+sequenceDiagram
+    participant C as MCP client
+    participant O as Orchestrator
+    participant P as Provider
+    C->>O: tools/call destroy_computer (instance_id)
+    O->>P: get(instance_id)
+    alt missing, or owned by another user
+        O-->>C: error target_unavailable
+    else
+        O->>P: destroy(id)
+        P-->>O: done (the computer and its storage are gone)
+        O-->>C: ok true, instance_id
+    end
+```
+
 ## Run
 
 ```bash
@@ -75,6 +215,36 @@ display name, email, user name, created). The token is in the container's enviro
 It's a reference implementation: it uses the same systemd settings as `compose.yml`,
 applies no resource limits, and anyone with the Docker socket can read every token.
 
+```mermaid
+sequenceDiagram
+    participant O as Orchestrator
+    participant D as Docker Engine API
+    participant K as Container ozc-xxxx
+    Note over O,D: create(owner, displayName)
+    O->>D: POST /containers/create?name=ozc-xxxx<br/>labels org.mieweb.ozwell-computer.*, env OZWELL_COMPUTER_TOKEN
+    opt HTTP 404: image not present
+        O->>D: POST /images/create?fromImage=...
+        O->>D: POST /containers/create (retry)
+    end
+    O->>D: POST /containers/ozc-xxxx/start
+    D->>K: start: systemd boots Xvfb, the session and the server
+    O->>D: GET /containers/ozc-xxxx/json
+    D-->>O: labels, token, container IP or published port
+    Note over O,D: list(owner)
+    O->>D: GET /containers/json?all=1, filtered on the managed and owner labels
+    O->>D: GET /containers/{id}/json for each (token and network)
+    Note over O,D: get(id)
+    O->>D: GET /containers/{id}/json
+    D-->>O: null unless it has the managed label
+    Note over O,D: destroy(id)
+    O->>D: GET /containers/{id}/json (must be managed)
+    O->>D: DELETE /containers/{id}?force=1&v=1
+    D->>K: kill, remove it and its anonymous volumes
+```
+
+`status` is Docker's container state (`created`, `running`, `exited`, ...). Both URLs
+are `http://<container IP>:8080`, or `http://<publish_host>:<host port>` with `publish=1`.
+
 ### `opensource-server`
 
 ```
@@ -101,3 +271,32 @@ The API key comes from `OPENSOURCE_SERVER_API_KEY`.
   site's network.
 - **Note:** an admin key lists every container on the site; non-orchestrator containers
   are ignored.
+
+```mermaid
+sequenceDiagram
+    participant O as Orchestrator
+    participant S as opensource-server API
+    participant K as Container ozc-xxxx
+    Note over O,S: create(owner, displayName)
+    opt owner=email
+        O->>S: GET /users
+        S-->>O: the uid whose mail is X-Ozwell-User-Email (else creation fails)
+    end
+    O->>S: POST /sites/{site}/containers<br/>hostname ozc-xxxx, template, username (owner=email),<br/>env OZWELL_ORCHESTRATOR_* and OZWELL_COMPUTER_TOKEN,<br/>http service 8080 as ozc-xxxx.{domain}, authRequired false
+    S->>K: create and start from the template image
+    O->>S: GET /sites/{site}/containers?hostname=ozc-xxxx
+    S-->>O: status, ipv4Address, externalUrl (may be empty while starting)
+    Note over O,S: list(owner)
+    O->>S: GET /sites/{site}/containers
+    S-->>O: all containers, kept if MANAGED and OWNER tags match
+    Note over O,S: get(id)
+    O->>S: GET /sites/{site}/containers?hostname={id}
+    Note over O,S: destroy(id)
+    O->>S: GET /sites/{site}/containers?hostname={id}
+    S-->>O: numeric container id
+    O->>S: DELETE /sites/{site}/containers/{numeric id}
+    S->>K: delete
+```
+
+`status` is opensource-server's. The orchestrator polls `/health` on the internal URL
+(`https://ozc-xxxx.<domain>` or `http://<ipv4>:8080`) until the computer answers.
