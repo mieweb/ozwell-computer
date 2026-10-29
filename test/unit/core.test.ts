@@ -6,6 +6,7 @@ import { safePath, signedUrl, verifySignature, parseRange } from '../../src/fs/i
 import { deriveKey } from '../../src/auth/token.js';
 import { addRect } from '../../src/x11/damage.js';
 import { Presence, EventBus, parsePrincipal } from '../../src/presence/index.js';
+import { pgm } from '../../src/ocr.js';
 import { checkResult, versionTitle, type UpdateStatus } from '../../web/src/version.js';
 
 describe('viewer version button', () => {
@@ -256,5 +257,16 @@ Architecture: arm64
     expect(loadConfig({ OZWELL_COMPUTER_UPDATE_URL: 'off' }).config.updateUrl).toBe('off');
     expect(loadConfig({}, ['--update-url', 'file:///srv/repo/Packages']).config.updateUrl).toBe('file:///srv/repo/Packages');
     expect(() => loadConfig({ OZWELL_COMPUTER_UPDATE_URL: 'nope' })).toThrow();
+  });
+});
+
+describe('ocr', () => {
+  it('converts a BGRX frame to grayscale PGM', () => {
+    // white, black, pure red, pure blue (BGRX)
+    const data = Buffer.from([255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 255, 0, 255, 0, 0, 0]);
+    const out = pgm({ width: 2, height: 2, data });
+    const header = 'P5\n2 2\n255\n';
+    expect(out.subarray(0, header.length).toString('ascii')).toBe(header);
+    expect([...out.subarray(header.length)]).toEqual([255, 0, 76, 28]);
   });
 });

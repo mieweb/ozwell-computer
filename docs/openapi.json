@@ -113,6 +113,7 @@
         "tags": [
           "screen"
         ],
+        "description": "Returns the image bytes, or JSON with image_base64 when Accept includes application/json or ocr is set.",
         "parameters": [
           {
             "schema": {
@@ -171,6 +172,15 @@
             "in": "query",
             "name": "cursor",
             "required": false
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "query",
+            "name": "ocr",
+            "required": false,
+            "description": "true or 1: extract text from the captured region/window with tesseract and return JSON with a text field"
           }
         ],
         "responses": {

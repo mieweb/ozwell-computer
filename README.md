@@ -330,6 +330,7 @@ access is appropriate.
 ```bash
 T="Authorization: Bearer $TOKEN"; B=http://localhost:8080/api/v1
 curl -H "$T" "$B/screenshot?max_dimension=1280" -D - -o s.png     # note X-Screenshot-Id
+curl -H "$T" "$B/screenshot?window=0x1a00004&ocr=true"             # JSON with image_base64 and OCR text
 curl -H "$T" -H 'content-type: application/json' \
   -d '{"action":"click","x":640,"y":360,"screenshot_id":"<id>"}' $B/input/pointer
 curl -H "$T" -H 'content-type: application/json' \

@@ -63,6 +63,7 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
     schema: {
       tags: ['screen'],
       summary: 'Capture the screen',
+      description: 'Returns the image bytes, or JSON with image_base64 when Accept includes application/json or ocr is set.',
       querystring: {
         type: 'object',
         properties: {
@@ -72,6 +73,7 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
           region: { type: 'string', pattern: '^\\d+,\\d+,\\d+,\\d+$' },
           window: { type: 'string' },
           cursor: { type: 'string' },
+          ocr: { type: 'string', description: 'true or 1: extract text from the captured region/window with tesseract and return JSON with a text field' },
         },
       },
     },
@@ -82,9 +84,10 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
       const [x, y, w, h] = String(q.region).split(',').map(Number);
       region = { x, y, w, h };
     }
+    const flag = (v: unknown) => v === '1' || v === 'true';
     const r = await desktop.screenshot({
       format: q.format as ImageFormat, quality: q.quality, max_dimension: q.max_dimension, region, window: q.window,
-      cursor: q.cursor === '1' || q.cursor === 'true',
+      cursor: flag(q.cursor), ocr: flag(q.ocr),
     });
     const e = r.entry;
     const meta = {
@@ -93,8 +96,8 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
       window: e.window ? '0x' + e.window.wid.toString(16) : null,
     };
     reply.header('cache-control', 'no-store');
-    if ((req.headers.accept ?? '').includes('application/json')) {
-      return { ...meta, image_base64: r.data.toString('base64') };
+    if (r.text !== undefined || (req.headers.accept ?? '').includes('application/json')) {
+      return { ...meta, image_base64: r.data.toString('base64'), ...(r.text !== undefined ? { text: r.text } : {}) };
     }
     return reply
       .header('content-type', r.contentType)

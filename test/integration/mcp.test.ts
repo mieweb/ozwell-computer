@@ -110,6 +110,16 @@ describe('MCP tools', () => {
     expect((await tool('command_output', { job_id: long.job_id, cancel: true })).state).toBe('cancelled');
   });
 
+  it('screenshot with ocr adds the extracted text', async () => {
+    const id = await zenity(['--info', '--text=Ozwell MCP Probe'], '/tmp/oz-mcp-ocr.txt', 'oz-mcp-ocr');
+    const r: any = await client.callTool({ name: 'screenshot', arguments: { window: id, ocr: true } });
+    expect(r.isError).toBeFalsy();
+    expect(r.content.map((c: any) => c.type)).toEqual(['image', 'text', 'text']);
+    expect(JSON.parse(r.content[1].text).screenshot_id).toBeTruthy();
+    expect(r.content[2].text).toContain('Ozwell MCP Probe');
+    await api('POST', `/api/v1/windows/${id}/close`);
+  });
+
   it('write_file and read_file round-trip', async () => {
     const w = await tool('write_file', { path: '/tmp/oz-mcp-dir/note.txt', content: 'hello ✓\nline 2\n' });
     expect(w).toMatchObject({ ok: true, path: '/tmp/oz-mcp-dir/note.txt' });
