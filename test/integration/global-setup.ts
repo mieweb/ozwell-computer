@@ -74,7 +74,7 @@ async function checkCoverage(url: string, token: string) {
     }
   }
 
-  const spec = await (await fetch(`${url}/api/v1/openapi.json`, { headers: { authorization: `Bearer ${token}` } })).json();
+  const spec = await (await fetch(`${url}/api/docs/json`, { headers: { authorization: `Bearer ${token}` } })).json();
   const missingRoutes: string[] = [];
   for (const [path, ops] of Object.entries<Record<string, unknown>>(spec.paths)) {
     for (const method of Object.keys(ops)) {
