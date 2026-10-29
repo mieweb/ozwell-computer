@@ -1,7 +1,10 @@
-// Toolbar: container resource use (from the Prometheus endpoint) and update notices.
+// Toolbar: container resource use (from the Prometheus endpoint), the installed version
+// and update notices.
 import { Fragment, useEffect, useState } from 'react';
 import { Button, type ButtonProps } from '@mieweb/ui/components/Button';
+import { api } from './api';
 import { useServerEvent } from './events';
+import { checkResult, versionTitle, type UpdateStatus } from './version';
 
 type Metrics = { cpu?: number; mem?: number; limit?: number; vnc?: number };
 type Sample = Metrics & { t: number };
@@ -72,16 +75,9 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
   );
 }
 
-type UpdateStatus = {
-  supported: boolean;
-  available?: boolean;
-  current: string;
-  latest?: string;
-  upgrade?: { state: string; log: string };
-};
-
 const updateApi = (path: string, method = 'GET'): Promise<UpdateStatus> =>
-  fetch(path, { method, credentials: 'same-origin' }).then((r) => r.json());
+  fetch(path, { method, credentials: 'same-origin' })
+    .then(async (r) => { const body = await r.json(); if (!r.ok) throw new Error(body.error?.message || r.statusText); return body; });
 const tail = (log: string, n: number) => log.split('\n').filter(Boolean).slice(-n).join('\n');
 const isBusy = (s: UpdateStatus | null) => s?.upgrade?.state === 'requested' || s?.upgrade?.state === 'running';
 
@@ -97,13 +93,19 @@ function updateView(s: UpdateStatus | null): { label: string; title: string; var
   };
 }
 
-export function UpdateButton() {
+/** The installed version, always shown (click to check for a release now), and the upgrade button. */
+export function UpdateControls({ toast }: { toast: (text: string) => void }) {
   const [status, setStatus] = useState<UpdateStatus | null>(null);
+  const [version, setVersion] = useState('');
+  const [checking, setChecking] = useState(false);
   const busy = isBusy(status);
 
   useServerEvent<UpdateStatus>('update.status', setStatus);
   // After an upgrade the server restarts: refresh on reconnect.
-  useServerEvent('hello', () => updateApi('/api/v1/update').then(setStatus, () => setStatus(null)));
+  useServerEvent('hello', () => {
+    updateApi('/api/v1/update').then(setStatus, () => setStatus(null));
+    api<{ version: string }>('/api/v1/capabilities').then((c) => setVersion(c.version), () => undefined);
+  });
 
   useEffect(() => {
     if (!busy) return;
@@ -111,16 +113,42 @@ export function UpdateButton() {
     return () => clearInterval(timer);
   }, [busy]);
 
-  const view = updateView(status);
-  if (!status || !view) return null;
-
+  const check = async () => {
+    setChecking(true);
+    try {
+      const s = await updateApi('/api/v1/update/check', 'POST');
+      setStatus(s);
+      toast(checkResult(s));
+    } catch (e) {
+      toast(`Update check failed: ${(e as Error).message}`);
+    } finally {
+      setChecking(false);
+    }
+  };
   const apply = async () => {
-    if (!confirm(`Upgrade ozwell-computer ${status.current} → ${status.latest ?? 'latest'}?\nThe viewer reconnects when the server restarts.`)) return;
+    if (!confirm(`Upgrade ozwell-computer ${status!.current} → ${status!.latest ?? 'latest'}?\nThe viewer reconnects when the server restarts.`)) return;
     try { setStatus(await updateApi('/api/v1/update/apply', 'POST')); } catch (e) { alert(`Could not start the upgrade: ${(e as Error).message}`); }
   };
+
+  const current = status?.current ?? version;
+  const title = versionTitle(status);
+  const view = updateView(status);
   return (
-    <Button id="btn-update" size="sm" variant={view.variant} disabled={view.busy} title={view.title} onClick={apply}>
-      {view.label}
-    </Button>
+    <>
+      {current && (
+        // Disabled buttons get no hover events, so the wrapper carries the tooltip too.
+        <span title={title}>
+          <Button id="btn-version" size="sm" variant="ghost" className={`font-mono text-[11px] text-muted-foreground ${checking ? 'cursor-progress' : ''}`}
+            disabled={checking || !status?.supported} title={title} onClick={check}>
+            v{current}
+          </Button>
+        </span>
+      )}
+      {view && (
+        <Button id="btn-update" size="sm" variant={view.variant} disabled={view.busy} title={view.title} onClick={apply}>
+          {view.label}
+        </Button>
+      )}
+    </>
   );
 }
