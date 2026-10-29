@@ -44,7 +44,8 @@ describe('updates', () => {
   it('reports versions, checks on demand, and runs an upgrade request to completion', async () => {
     const s = (await api('GET', '/api/v1/update')).body;
     expect(s).toMatchObject({ supported: true, url: expect.any(String) });
-    expect(s.current).toMatch(/^\d+\.\d+\.\d+/); // the installed .deb
+    expect(s.current).toMatch(/^\d+\.\d+\.\d+/); // the installed .deb (or build, on the git channel)
+    if (s.url.startsWith('git+')) expect(s.revision.current).toMatch(/^[0-9a-f]{40}$/);
     const c = await api('POST', '/api/v1/update/check');
     expect(c.status).toBe(200);
     expect(c.body.checked_at).toBeTruthy();
@@ -54,13 +55,14 @@ describe('updates', () => {
     expect(r.status).toBe(202);
     expect(['requested', 'running']).toContain(r.body.upgrade.state);
     // The root upgrade unit picks the request up and finishes (no newer version here,
-    // so "unchanged"; "failed" if apt can't reach a source).
+    // so "unchanged"; "failed" if apt can't reach a source). On the git channel a main
+    // that moved since the image was built means a full build, hence the long wait.
     const done = await waitFor(async () => {
       const u = (await api('GET', '/api/v1/update')).body.upgrade;
       return ['unchanged', 'succeeded', 'failed'].includes(u.state) ? u : null;
-    }, 120000);
+    }, 600000);
     expect(done.log).toContain('installed: ');
-  }, 150000);
+  }, 630000);
 });
 
 describe('pointer actions', () => {
