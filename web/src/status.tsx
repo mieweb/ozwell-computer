@@ -11,9 +11,11 @@ import { PLACEHOLDER, perfParts, readMetrics, type Sample } from './perf';
 const WIDTH: Record<number, string> = { 3: 'w-[3ch]', 4: 'w-[4ch]', 5: 'w-[5ch]' };
 
 export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
-  const [parts, setParts] = useState(() => perfParts(null, null));
+  const [parts, setParts] = useState(() => perfParts(null, null, undefined));
   useEffect(() => {
     let prev: Sample | null = null;
+    // Static per container, so it survives failed fetches and keeps its slot.
+    let limit: number | null | undefined;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let stopped = false;
     const tick = async (next: number) => {
@@ -21,10 +23,11 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
         const res = await fetch('/api/v1/metrics', { credentials: 'same-origin' });
         if (!res.ok) throw new Error(res.statusText);
         const now = { ...readMetrics(await res.text()), t: performance.now() };
-        setParts(perfParts(prev, now));
+        limit = now.limit || null;
+        setParts(perfParts(prev, now, limit));
         prev = now;
       } catch {
-        setParts(perfParts(null, null));
+        setParts(perfParts(null, null, limit));
         prev = null;
       }
       if (stopped) return;
@@ -43,6 +46,13 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
             {`${p.label} `}
             <span className={`inline-block text-right tabular-nums ${WIDTH[p.width]}`}>{p.value ?? PLACEHOLDER}</span>
             {p.unit}
+            {'limit' in p && p.limit !== null && (
+              <>
+                {' / '}
+                <span className={`inline-block text-right tabular-nums ${WIDTH[p.width]}`}>{p.limit ?? PLACEHOLDER}</span>
+                {' MiB'}
+              </>
+            )}
           </span>
         </Fragment>
       ))}
