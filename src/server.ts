@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifySwagger from '@fastify/swagger';
@@ -37,6 +37,39 @@ export interface AppContext {
   log: Logger;
 }
 
+const show = (v: unknown) => (v === undefined ? 'nothing' : JSON.stringify(v).slice(0, 80));
+
+/** Path and values of the first difference between two JSON values, or null when equal. */
+function difference(sent: unknown, returned: unknown, path = ''): string | null {
+  if (sent === returned) return null;
+  const isObj = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
+  if (!isObj(sent) || !isObj(returned) || Array.isArray(sent) !== Array.isArray(returned)) {
+    return `${path || '(root)'}: sent ${show(sent)}, handler returned ${show(returned)}`;
+  }
+  for (const k of new Set([...Object.keys(sent), ...Object.keys(returned)])) {
+    const d = difference(sent[k], returned[k], `${path}.${k}`);
+    if (d) return d;
+  }
+  return null;
+}
+
+/** Fail (500) any JSON reply that its response schema serialized differently from what the handler returned. */
+export function strictResponses(app: FastifyInstance) {
+  const returned = new WeakMap<FastifyRequest, unknown>();
+  app.addHook('preSerialization', async (req, _reply, payload) => {
+    returned.set(req, JSON.parse(JSON.stringify(payload)));
+    return payload;
+  });
+  app.addHook('onSend', async (req, _reply, payload) => {
+    if (!returned.has(req) || typeof payload !== 'string') return payload;
+    const want = returned.get(req);
+    returned.delete(req);
+    const d = difference(JSON.parse(payload), want);
+    if (d) throw new Error(`${req.method} ${req.routeOptions.url}: the response schema changed the reply at ${d}`);
+    return payload;
+  });
+}
+
 export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   const app: FastifyInstance = Fastify({
     loggerInstance: ctx.log as any,
@@ -44,8 +77,7 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
     trustProxy: true,
     ajv: { customOptions: { coerceTypes: 'array', removeAdditional: false, allErrors: false } },
   });
-  // Response schemas only document the API; never let them filter or coerce a reply.
-  app.setSerializerCompiler(() => (data) => JSON.stringify(data));
+  if (ctx.config.strictResponses) strictResponses(app);
 
   app.setErrorHandler((err, req, reply) => {
     const e = toApiError(err);

@@ -44,6 +44,8 @@ export const ConfigSchema = z.object({
   open: bool,
   /** Extra origins allowed to embed the viewer in a frame (CSP frame-ancestors). */
   frameAncestors: origins,
+  /** Fail replies that their response schema would change (tests and the dev container). */
+  strictResponses: bool,
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
@@ -69,6 +71,7 @@ export function defaults(): Config {
     updateUrl: 'https://github.com/mieweb/ozwell-computer/releases/latest/download/Packages',
     open: false,
     frameAncestors: [],
+    strictResponses: false,
   };
 }
 
@@ -91,6 +94,7 @@ const ENV_MAP: Record<string, keyof Config> = {
   OZWELL_COMPUTER_UPDATE_URL: 'updateUrl',
   OZWELL_COMPUTER_OPEN: 'open',
   OZWELL_COMPUTER_FRAME_ANCESTORS: 'frameAncestors',
+  OZWELL_COMPUTER_STRICT_RESPONSES: 'strictResponses',
 };
 
 const FLAG_MAP: Record<string, keyof Config> = {

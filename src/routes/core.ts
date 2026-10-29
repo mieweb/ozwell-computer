@@ -32,6 +32,18 @@ const capabilities = record('What this server can do right now', {
 
 const geometryHeader = (description: string) => prop('string', description);
 const screenshotImage = media('The encoded image', ['image/png', 'image/jpeg', 'image/webp']);
+const screenshotMeta = {
+  screenshot_id: prop('string', 'Id to pass as screenshot_id with coordinates from this image'),
+  format: prop('string', 'Image encoding', { enum: ['png', 'jpeg', 'webp'] }),
+  width: prop('integer', 'Image width'),
+  height: prop('integer', 'Image height'),
+  native_width: prop('integer', 'Captured region width in screen pixels'),
+  native_height: prop('integer', 'Captured region height in screen pixels'),
+  scale: prop('number', 'Screen pixels per image pixel (>= 1 when downscaled)'),
+  origin: { ...point, description: 'Top-left of the captured region in screen pixels' },
+  window: prop(['string', 'null'], 'Captured window (hex id), or null for the screen'),
+  image_base64: prop('string', 'The encoded image, base64'),
+};
 const screenshotResponse = {
   ...screenshotImage,
   description: 'The encoded image, or JSON with image_base64 when Accept includes application/json',
@@ -45,18 +57,10 @@ const screenshotResponse = {
   content: {
     ...screenshotImage.content,
     'application/json': {
-      schema: record('Screenshot with geometry', {
-        screenshot_id: prop('string', 'Id to pass as screenshot_id with coordinates from this image'),
-        format: prop('string', 'Image encoding', { enum: ['png', 'jpeg', 'webp'] }),
-        width: prop('integer', 'Image width'),
-        height: prop('integer', 'Image height'),
-        native_width: prop('integer', 'Captured region width in screen pixels'),
-        native_height: prop('integer', 'Captured region height in screen pixels'),
-        scale: prop('number', 'Screen pixels per image pixel (>= 1 when downscaled)'),
-        origin: { ...point, description: 'Top-left of the captured region in screen pixels' },
-        window: prop(['string', 'null'], 'Captured window (hex id), or null for the screen'),
-        image_base64: prop('string', 'The encoded image, base64'),
-      }),
+      schema: obj('Screenshot with geometry', {
+        ...screenshotMeta,
+        text: prop('string', 'Text recognized in the image (only with ocr)'),
+      }, { required: Object.keys(screenshotMeta) }),
     },
   },
 };

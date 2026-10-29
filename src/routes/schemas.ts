@@ -1,7 +1,7 @@
 import { REASON_STATUS } from '../errors.js';
 
-// OpenAPI fragments shared by the route schemas. Responses are documentation only:
-// buildServer serializes with JSON.stringify, so these never reshape a reply.
+// OpenAPI fragments shared by the route schemas. Fastify also serializes replies with
+// them, so they must declare every field a handler returns (strictResponses checks this).
 
 type Schema = Record<string, unknown>;
 

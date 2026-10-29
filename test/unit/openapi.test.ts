@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance } from 'fastify';
 import { makeApp } from '../helpers.js';
+import { strictResponses } from '../../src/server.js';
 
 describe('OpenAPI document', () => {
   let app: FastifyInstance;
@@ -42,8 +43,26 @@ describe('OpenAPI document', () => {
     expect(paths['/api/v1/fs/content'].get.responses['206'].content['application/octet-stream'].schema.format).toBe('binary');
   });
 
-  it('serializes replies as returned, not through the response schema', async () => {
+  it('serializes replies through the response schema without losing fields', async () => {
     const r = await app.inject({ url: '/api/v1/capabilities', headers: { authorization: 'Bearer secret-token' } });
+    expect(r.statusCode).toBe(200);
     expect(r.json().display).toMatchObject({ connected: false, error: null });
+  });
+});
+
+describe('strict responses', () => {
+  it('fails a reply that its response schema would change', async () => {
+    const app = Fastify();
+    strictResponses(app);
+    const schema = { response: { 200: { type: 'object', properties: { a: { type: 'string' }, n: { type: 'string' } } } } };
+    app.get('/dropped', { schema }, async () => ({ a: 'x', b: 1 }));
+    app.get('/coerced', { schema }, async () => ({ a: 'x', n: null }));
+    app.get('/exact', { schema }, async () => ({ a: 'x' }));
+    const dropped = await app.inject({ url: '/dropped' });
+    expect(dropped.statusCode).toBe(500);
+    expect(dropped.json().message).toBe('GET /dropped: the response schema changed the reply at .b: sent nothing, handler returned 1');
+    expect((await app.inject({ url: '/coerced' })).json().message).toContain('.n: sent "", handler returned null');
+    expect((await app.inject({ url: '/exact' })).json()).toEqual({ a: 'x' });
+    await app.close();
   });
 });
