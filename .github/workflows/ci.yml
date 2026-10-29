@@ -59,6 +59,9 @@ jobs:
   image:
     env:
       OZWELL_COMPUTER_HOST_PORT: '18080'
+      # Release images update from releases with apt; :main images (nightly / manual
+      # runs) build each new commit on main from git.
+      UPDATE_CHANNEL: ${{ github.event_name == 'release' && 'release' || 'main' }}
     # Self-hosted (more reliable for the desktop/VNC/browser suite). Only trusted events
     # reach this job; see the README before allowing PRs from forks to run workflows.
     runs-on: [self-hosted, Linux, X64]
@@ -90,7 +93,7 @@ jobs:
       - name: Build image for tests
         run: |
           docker build --target build -t ozwell-computer:build .   # the .deb, for the release
-          docker build -t ozwell-computer:dev .                    # reuses that stage from cache
+          docker build --build-arg UPDATE_CHANNEL -t ozwell-computer:dev .  # reuses that stage from cache
       - name: Start the compose dev container
         run: |
           docker compose down -v --remove-orphans || true   # leftovers from an earlier run
