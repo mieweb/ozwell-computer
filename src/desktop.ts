@@ -152,10 +152,11 @@ export class Desktop {
       if (c) compositeCursor(frame, c);
     }
     const fit = fitSize(frame.width, frame.height, o.max_dimension);
-    const image = encodeFrame(frame, format, { quality: o.quality, width: fit.width, height: fit.height });
     // OCR reads the native-resolution capture, not the possibly downscaled image.
-    const ocrText = () => (format === 'png' && fit.scale === 1 ? image : encodeFrame(frame, 'png')).then((p) => ocr(p.data));
-    const [enc, text] = await Promise.all([image, o.ocr ? ocrText() : undefined]);
+    const [enc, text] = await Promise.all([
+      encodeFrame(frame, format, { quality: o.quality, width: fit.width, height: fit.height }),
+      o.ocr ? ocr(frame) : undefined,
+    ]);
     const entry = this.registry.add({
       origin: { x: frame.x, y: frame.y },
       scale: fit.scale,
