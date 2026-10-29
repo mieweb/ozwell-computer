@@ -173,7 +173,7 @@ export function JobsPanel({ jobs, refresh, canCancel, toast }: {
   const outRef = useRef<HTMLPreElement>(null);
   const atBottom = useRef(true);
 
-  // The list may be stale when the panel opens; pick the default only once it is refreshed.
+  // The list may be stale when the tab opens; pick the default only once it is refreshed.
   useEffect(() => { void refresh().catch(() => undefined).finally(() => setFresh(true)); }, [refresh]);
   // Also moves off a job that was pruned while selected.
   useEffect(() => {
@@ -192,7 +192,7 @@ export function JobsPanel({ jobs, refresh, canCancel, toast }: {
   };
 
   return (
-    <div id="jobs-panel" className="flex h-[35vh] min-h-[120px] flex-none border-b border-border bg-muted">
+    <div id="jobs-panel" className="flex min-h-0 flex-1 bg-muted">
       <ul id="jobs-list" className="m-0 w-[35%] max-w-[420px] list-none overflow-y-auto border-r border-border p-0">
         {!jobs.length && <li className="empty px-2 py-1 text-muted-foreground">No background commands</li>}
         {jobs.map((j) => (

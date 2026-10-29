@@ -137,14 +137,16 @@ describe('noVNC viewer', () => {
     await exec('rm -f ~/.config/ozwell-computer/color-scheme');
   });
 
-  it('the jobs panel streams a background command\'s output and cancels it', async () => {
+  it('the jobs tab streams a background command\'s output and cancels it', async () => {
     const start = await (await fetch(`${URL_}/api/v1/exec`, {
       method: 'POST', headers: { ...auth, 'content-type': 'application/json' },
       body: JSON.stringify({ cmd: 'echo first; sleep 1; echo second >&2; sleep 60', wait_ms: 0 }),
     })).json();
     const page = await openViewer();
-    await page.locator('#btn-jobs').waitFor({ state: 'visible', timeout: 10000 });
-    await page.click('#btn-jobs');
+    await page.locator('#tab-jobs').waitFor({ state: 'visible', timeout: 10000 });
+    await page.click('#tab-jobs');
+    expect(await page.locator('#tab-jobs').getAttribute('aria-selected')).toBe('true');
+    expect(await page.locator('#screen-wrap').isHidden()).toBe(true);
     await page.waitForFunction(() => document.getElementById('jobs-cmd')?.textContent?.includes('sleep 60'), null, { timeout: 10000 });
     expect(await page.locator('#jobs-list li.sel button').getAttribute('aria-pressed')).toBe('true');
     await page.waitForFunction(() => {
@@ -157,6 +159,11 @@ describe('noVNC viewer', () => {
     expect(await page.locator('#jobs-cancel').isHidden()).toBe(true);
     const v = await (await fetch(`${URL_}/api/v1/exec/jobs/${start.job_id}`, { headers: auth })).json();
     expect(v.state).toBe('cancelled');
+    // Back on the desktop the same connection is shown again, rescaled to the visible area.
+    await page.click('#tab-desktop');
+    expect(await page.locator('#jobs-panel').count()).toBe(0);
+    expect(await page.locator('#status').textContent()).toBe('connected');
+    await page.waitForFunction(() => (document.querySelector('#screen canvas')?.getBoundingClientRect().width ?? 0) > 100, null, { timeout: 5000 });
     await page.context().close();
   });
 
