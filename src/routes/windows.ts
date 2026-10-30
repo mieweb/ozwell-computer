@@ -35,7 +35,7 @@ export function launchDetached(display: string, command: string, args: string[] 
   });
 }
 
-export default async function windowRoutes(app: FastifyInstance, ctx: AppContext, build: string) {
+export default async function windowRoutes(app: FastifyInstance, ctx: AppContext, build: string | null) {
   const { desktop, config } = ctx;
   const wm = () => desktop.ctl().windows;
 

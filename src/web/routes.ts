@@ -1,11 +1,13 @@
-import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppContext } from '../server.js';
 
-/** Identifies the viewer build: index.html names Vite's content-hashed assets. Falls back when the viewer isn't built. */
-export const webBuild = (indexHtml: string, fallback: string) =>
-  existsSync(indexHtml) ? createHash('sha256').update(readFileSync(indexHtml)).digest('base64url').slice(0, 16) : fallback;
+/** The viewer build id that web/vite.config.ts wrote next to the assets, or null when the viewer isn't built. */
+export const webBuild = (staticDir: string) => {
+  const file = join(staticDir, 'build-id');
+  return existsSync(file) ? readFileSync(file, 'utf8').trim() : null;
+};
 
 export function contentSecurityPolicy(frameAncestors: string[]) {
   return "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:; "

@@ -134,7 +134,7 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   });
 
   await app.register(async (s) => coreRoutes(s, ctx));
-  const build = webBuild(join(staticDir, 'index.html'), ctx.version);
+  const build = webBuild(staticDir);
   await app.register(async (s) => windowRoutes(s, ctx, build));
   await app.register(async (s) => execRoutes(s, ctx));
   await app.register(async (s) => a11yRoutes(s, ctx));

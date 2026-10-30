@@ -1,3 +1,8 @@
+// The viewer build id, defined by web/vite.config.ts.
+declare global {
+  const __VIEWER_BUILD__: string;
+}
+
 // noVNC is served unmodified from /novnc and loaded at runtime, not bundled (see paths in tsconfig.json).
 export default class RFB {
   constructor(target: HTMLElement, url: string, options?: { shared?: boolean });

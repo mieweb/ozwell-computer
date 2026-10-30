@@ -24,7 +24,7 @@ describe('viewer version button', () => {
     expect(checkResult({ ...s, error: 'offline' })).toBe('Update check failed: offline');
   });
   it('reloads only when a reconnect reaches a different build', () => {
-    expect(isNewBuild(undefined, 'a')).toBe(false);
+    expect(isNewBuild('a', null)).toBe(false);
     expect(isNewBuild('a', 'a')).toBe(false);
     expect(isNewBuild('a', 'b')).toBe(true);
   });

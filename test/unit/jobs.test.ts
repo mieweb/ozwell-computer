@@ -165,15 +165,10 @@ describe('background jobs (wait, then hand off)', () => {
 });
 
 describe('viewer build id', () => {
-  it('identifies the viewer build by its index.html', () => {
-    const page = join(root, 'index.html');
-    expect(webBuild(page, '1.2.3')).toBe('1.2.3');
-    writeFileSync(page, '<script src="/static/assets/index-AAAA.js"></script>');
-    const a = webBuild(page, '1.2.3');
-    expect(a).toMatch(/^[\w-]{16}$/);
-    expect(webBuild(page, '1.2.3')).toBe(a);
-    writeFileSync(page, '<script src="/static/assets/index-BBBB.js"></script>');
-    expect(webBuild(page, '1.2.3')).not.toBe(a);
+  it('reads the build id the viewer build wrote, or null when unbuilt', () => {
+    expect(webBuild(root)).toBeNull();
+    writeFileSync(join(root, 'build-id'), 'abc123\n');
+    expect(webBuild(root)).toBe('abc123');
   });
 });
 
@@ -223,7 +218,7 @@ describe('job events and the output stream route', () => {  const events = (stre
     const next = async (type: string) => { for (;;) { const e = (await stream.next()).value!; if (e.type === type) return e; } };
     const { stream_id, build } = (await next('hello')).data;
     expect(stream_id).toMatch(/^[\w-]{22}$/);
-    expect(build).toBe(webBuild(join(import.meta.dirname, '..', '..', 'dist', 'web', 'static', 'index.html'), '0.0.0-test'));
+    expect(build).toBe(webBuild(join(import.meta.dirname, '..', '..', 'dist', 'web', 'static')));
     const put = (body: object, sid = stream_id) => app.inject({ method: 'PUT', url: `/api/v1/events/${sid}/job`, headers, payload: body });
     const exec = async (cmd: string, wait_ms: number) => (await app.inject({ method: 'POST', url: '/api/v1/exec', headers, payload: { cmd, wait_ms } })).json().job_id;
 

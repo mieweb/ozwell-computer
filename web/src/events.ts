@@ -7,8 +7,6 @@ import { isNewBuild } from './version';
 const hub = new EventTarget();
 const types = new Set<string>();
 let source: EventSource | null = null;
-// The viewer build of the first `hello`, i.e. the server that served this page.
-let pageBuild: string | undefined;
 
 type StreamState = 'connecting' | 'open' | 'broken';
 let streamState: StreamState = 'connecting';
@@ -51,9 +49,8 @@ export function openServerEvents() {
   source = s;
   s.addEventListener('hello', (e) => {
     const { stream_id, build } = JSON.parse(e.data);
-    // Reconnected to an updated server: load its viewer.
-    if (isNewBuild(pageBuild, build)) { location.reload(); return; }
-    pageBuild = build;
+    // Even the first hello may come from an updated server; compare it with the build this page was loaded from.
+    if (isNewBuild(__VIEWER_BUILD__, build)) { location.reload(); return; }
     setStream('open', stream_id);
   });
   for (const type of types) forward(type);

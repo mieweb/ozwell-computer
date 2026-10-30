@@ -251,7 +251,7 @@ describe('exec and files', () => {
       return re.exec(text)!;
     };
     const hello = JSON.parse((await until(/event: hello\ndata: (.*)\n/))[1]);
-    expect(hello.build).toMatch(/^[\w-]{16}$/);
+    expect(hello.build).toMatch(/^[\w-]{16}$/); // web/vite.config.ts build-id
     const streamId = hello.stream_id;
     const job = await api('POST', '/api/v1/exec', { cmd: 'echo one; sleep 0.5; echo two', wait_ms: 0 });
     const r = await api('PUT', `/api/v1/events/${streamId}/job`, { job_id: job.body.job_id, tag: 't' });
