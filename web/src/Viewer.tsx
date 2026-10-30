@@ -250,7 +250,7 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
         <span id="roster" className="flex gap-1">
           {[...roster.values()].map((p) => (
             <Badge key={p.participant_id} data-participant={p.participant_id} className="text-neutral-950" size="sm" title={p.kind} style={{ background: p.color }}>
-              {`${p.kind === 'agent' ? 'agent: ' : ''}${p.name}`}
+              {p.kind === 'agent' && p.name !== 'agent' ? `agent: ${p.name}` : p.name}
             </Badge>
           ))}
         </span>

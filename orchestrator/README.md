@@ -12,7 +12,9 @@ provider, and proxies every ozwell-computer tool with an extra `instance_id` arg
 - **Per user.** Ozwell calls with one workspace-wide configuration, plus
   `X-Ozwell-User-Id` (required), `X-Ozwell-User-Email` and `X-Ozwell-User-Name`. Every
   tool is scoped to that user id: other users' computers are reported as not found.
-  These headers are only trusted on requests carrying the pre-shared key.
+  These headers are only trusted on requests carrying the pre-shared key. On the
+  computer, the agent's cursor and roster entry are labelled with the optional
+  `X-Ozwell-Agent-Name` header, or `agent`; never with the user's name.
 - **Tools.**
   - Management: `list_computers`, `create_computer`, `get_computer`, `start_computer`
     and `destroy_computer`. `create_computer` takes an optional `display_name`. It,
