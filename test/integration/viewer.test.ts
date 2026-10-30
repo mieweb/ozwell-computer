@@ -2,7 +2,7 @@
  * Browser tests of the "/" viewer with stock noVNC, in Playwright's Chromium
  * (installed by `npm test`). Set CHROME_PATH to use another Chrome build.
  */
-import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, inject, vi } from 'vitest';
 import { chromium, type Browser, type Page, type WebSocket } from 'playwright-core';
 
 const URL_ = inject('ozUrl');
@@ -50,15 +50,20 @@ describe('noVNC viewer', () => {
     // Each fake stream ends at once, so EventSource reconnects and takes the next one; then the real stream follows.
     const run = async (bodies: string[], wantLoads: number) => {
       const ctx = await browser.newContext();
-      const page = await ctx.newPage();
-      let loads = 0;
-      page.on('load', () => loads++);
-      await page.route('**/api/v1/events', (r) => r.fulfill({ contentType: 'text/event-stream', body: bodies.shift()! }), { times: bodies.length });
-      await page.goto(`${URL_}/?token=${TOKEN}`);
-      while (loads < wantLoads) await sleep(50);
-      await page.waitForFunction(() => document.getElementById('status')?.textContent === 'connected', null, { timeout: 15000 });
-      await sleep(1500); // the real stream's hello has arrived by now
-      return { page, ctx, loads };
+      try {
+        const page = await ctx.newPage();
+        let loads = 0;
+        page.on('load', () => loads++);
+        await page.route('**/api/v1/events', (r) => r.fulfill({ contentType: 'text/event-stream', body: bodies.shift()! }), { times: bodies.length });
+        await page.goto(`${URL_}/?token=${TOKEN}`);
+        await vi.waitFor(() => expect(loads).toBeGreaterThanOrEqual(wantLoads), { timeout: 15000, interval: 50 });
+        await page.waitForFunction(() => document.getElementById('status')?.textContent === 'connected', null, { timeout: 15000 });
+        await sleep(1500); // the real stream's hello has arrived by now
+        return { page, ctx, loads };
+      } catch (e) {
+        await ctx.close();
+        throw e;
+      }
     };
     // The id bundled into the page is the one the server reports.
     const first = await run([], 1);

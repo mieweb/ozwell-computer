@@ -1,12 +1,17 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppContext } from '../server.js';
 
 /** The viewer build id that web/vite.config.ts wrote next to the assets, or null when the viewer isn't built. */
 export const webBuild = (staticDir: string) => {
-  const file = join(staticDir, 'build-id');
-  return existsSync(file) ? readFileSync(file, 'utf8').trim() : null;
+  try {
+    return readFileSync(join(staticDir, 'build-id'), 'utf8').trim();
+  } catch (e) {
+    // Not built, or removed by a rebuild in progress.
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw e;
+  }
 };
 
 export function contentSecurityPolicy(frameAncestors: string[]) {
