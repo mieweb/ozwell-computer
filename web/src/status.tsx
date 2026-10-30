@@ -36,7 +36,7 @@ export function Perf({ intervalMs = 5000 }: { intervalMs?: number }) {
     return () => { stopped = true; clearTimeout(timer); };
   }, [intervalMs]);
   return (
-    <span id="perf" className="font-mono text-[11px] whitespace-nowrap text-muted-foreground" title={perfTitle(cpus)}>
+    <span id="perf" className="font-mono text-[11px] text-muted-foreground lg:whitespace-nowrap" title={perfTitle(cpus)}>
       {parts.map((p, i) => (
         <Fragment key={i}>
           {i > 0 && ' · '}

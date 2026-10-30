@@ -264,7 +264,7 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
           <span className="max-sm:sr-only">More</span>
         </Button>
         <div id="toolbar-more"
-          className={`${more ? 'flex' : 'hidden'} absolute top-full right-1 z-20 mt-1 w-max max-w-[calc(100vw-1rem)] flex-col items-stretch gap-1.5 rounded-md border border-border bg-card p-2 shadow-lg max-lg:[&_button]:w-full lg:contents`}>
+          className={`${more ? 'flex' : 'hidden'} absolute top-full right-1 z-20 mt-1 w-max max-w-[calc(100vw-1rem)] max-h-[calc(100dvh-4rem)] overflow-y-auto overscroll-contain flex-col items-stretch gap-1.5 rounded-md border border-border bg-card p-2 shadow-lg max-lg:[&_button]:w-full lg:contents`}>
           <Perf />
           <UpdateControls toast={showToast} />
           <span className="hidden flex-1 lg:block" />
