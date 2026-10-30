@@ -45,7 +45,10 @@ export function usePinchZoom(wrapRef: RefObject<HTMLElement | null>, screenRef: 
     };
     const apply = (next: View) => {
       const s = size();
-      view = fit(next, s);
+      const measurable = s.w > 0 && s.h > 0;
+      // Hidden (e.g. on the Jobs tab): keep the zoom for when the desktop is shown again; only a reset applies.
+      if (!measurable && next.z > 1) return;
+      view = measurable ? fit(next, s) : { z: 1, x: 0, y: 0 };
       const zoomed = view.z > 1;
       const e = extent(view.z, s);
       Object.assign(screen.style, {
