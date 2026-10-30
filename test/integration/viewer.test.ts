@@ -249,6 +249,26 @@ describe('noVNC viewer', () => {
     expect(await page.locator('#btn-cad').isVisible()).toBe(false);
     expect(await page.evaluate(() => document.activeElement?.id)).toBe('btn-more');
 
+    // Two-finger pinch zooms the desktop locally (not the page, not the remote mouse) and pinching back restores it.
+    const cdp = await ctx.newCDPSession(page);
+    const y = box.y + box.height / 2;
+    const touch = async (type: 'touchStart' | 'touchMove' | 'touchEnd', gap: number) => {
+      const touchPoints = type === 'touchEnd' ? [] : [{ x: 187 - gap, y, id: 1 }, { x: 187 + gap, y, id: 2 }];
+      await cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+    };
+    const pinchTo = async (from: number, to: number) => {
+      await touch('touchStart', from);
+      for (let i = 1; i <= 8; i++) { await sleep(20); await touch('touchMove', from + (to - from) * i / 8); }
+      await touch('touchEnd', to);
+      await sleep(300);
+    };
+    await pinchTo(20, 110); // each finger moves past noVNC's 50 px gesture threshold
+    const zoomed = (await canvas.boundingBox())!;
+    expect(zoomed.width).toBeGreaterThan(box.width * 2);
+    expect(await noHorizontalScroll()).toBe(true);
+    await pinchTo(110, 15);
+    expect(Math.abs((await canvas.boundingBox())!.width - box.width)).toBeLessThan(2);
+
     // The jobs list stacks above the output instead of beside it.
     await page.click('#tab-jobs');
     const list = (await page.locator('#jobs-list').boundingBox())!;

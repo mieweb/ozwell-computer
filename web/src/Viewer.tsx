@@ -1,5 +1,5 @@
 import RFB from '/novnc/core/rfb.js';
-import { useEffect, useReducer, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState, type KeyboardEvent } from 'react';
 import { Badge } from '@mieweb/ui/components/Badge';
 import { Button } from '@mieweb/ui/components/Button';
 import { Checkbox } from '@mieweb/ui/components/Checkbox';
@@ -13,6 +13,7 @@ import { JobsPanel, useJobs } from './jobs';
 import { useCapsLockRemap } from './keyboard';
 import { Perf, UpdateControls } from './status';
 import { ThemeToggle } from './theme';
+import { usePinchZoom } from './zoom';
 
 type Participant = { participant_id: string; name: string; kind: string; color: string; cursor?: { x: number; y: number; visible: boolean } };
 type Cursor = Pick<Participant, 'participant_id' | 'name' | 'color'> & { x: number; y: number; visible: boolean };
@@ -101,6 +102,9 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
   }, []);
   useCapsLockRemap(screenRef, () => rfbRef.current);
   useClipboardSync(screenRef, () => rfbRef.current, showToast);
+  // Remote cursors follow the canvas once noVNC has rescaled it (next frame).
+  const relayoutSoon = useCallback(() => void requestAnimationFrame(() => relayout()), []);
+  usePinchZoom(wrapRef, screenRef, scale === 'fit', relayoutSoon);
 
   useEffect(() => {
     prefs.current = { viewOnly, fit: scale === 'fit' };
