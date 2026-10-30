@@ -192,21 +192,21 @@ export function JobsPanel({ jobs, refresh, canCancel, toast }: {
   };
 
   return (
-    <div id="jobs-panel" className="flex min-h-0 flex-1 bg-muted">
-      <ul id="jobs-list" className="m-0 w-[35%] max-w-[420px] list-none overflow-y-auto border-r border-border p-0">
+    <div id="jobs-panel" className="flex min-h-0 flex-1 flex-col bg-muted md:flex-row">
+      <ul id="jobs-list" className="m-0 max-h-[40%] list-none overflow-y-auto border-b border-border p-0 md:max-h-none md:w-[35%] md:max-w-[420px] md:border-r md:border-b-0">
         {!jobs.length && <li className="empty px-2 py-1 text-muted-foreground">No background commands</li>}
         {jobs.map((j) => (
           <li key={j.job_id} className={j.job_id === selected ? 'sel' : undefined}>
             <button type="button" aria-pressed={j.job_id === selected} onClick={() => setSelected(j.job_id)}
               title={`${j.job_id}, started ${new Date(j.started_at).toLocaleString()}`}
-              className={`flex w-full cursor-pointer items-center gap-1.5 px-2 py-1 text-left whitespace-nowrap hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset ${j.job_id === selected ? 'bg-accent' : ''}`}>
+              className={`flex w-full cursor-pointer items-center gap-1.5 px-2 py-2 text-left md:py-1 whitespace-nowrap hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none focus-visible:ring-inset ${j.job_id === selected ? 'bg-accent' : ''}`}>
               <StateBadge job={j} />
               <code className="truncate">{j.command}</code>
             </button>
           </li>
         ))}
       </ul>
-      <div id="jobs-detail" className="flex min-w-0 flex-1 flex-col">
+      <div id="jobs-detail" className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div id="jobs-head" className="flex min-h-8 items-center gap-2 border-b border-border px-2 py-1">
           {view && <StateBadge id="jobs-state" job={view} />}
           <code id="jobs-cmd" className="flex-1 truncate" title={view?.command}>{view?.command}</code>

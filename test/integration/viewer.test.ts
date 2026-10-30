@@ -218,6 +218,66 @@ describe('noVNC viewer', () => {
     await page.context().close();
   });
 
+  it('fits a phone screen: no horizontal scroll, the desktop fills the rest, other controls are under More', async () => {
+    const ctx = await browser.newContext({ viewport: { width: 375, height: 740 }, isMobile: true, hasTouch: true });
+    const page = await ctx.newPage();
+    page.on('pageerror', (e) => { throw e; });
+    await page.goto(`${URL_}/?token=${TOKEN}`);
+    await page.waitForFunction(() => document.getElementById('status')?.textContent === 'connected', null, { timeout: 15000 });
+    const noHorizontalScroll = () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth);
+    expect(await noHorizontalScroll()).toBe(true);
+    const canvas = page.locator('#screen canvas');
+    await canvas.waitFor({ state: 'visible', timeout: 10000 });
+    const box = (await canvas.boundingBox())!;
+    expect(box.width).toBeGreaterThan(300);
+    expect(box.x + box.width).toBeLessThanOrEqual(376);
+    expect(await page.locator('#btn-full').isVisible()).toBe(true);
+    const secondary = ['#btn-cad', '#btn-super', '#btn-alttab', '#sel-scale', '#btn-theme', '#btn-version', '#roster'];
+    for (const id of secondary) expect(await page.locator(id).isVisible()).toBe(false);
+
+    await page.click('#btn-more');
+    expect(await page.locator('#btn-more').getAttribute('aria-expanded')).toBe('true');
+    for (const id of secondary) {
+      const el = page.locator(id);
+      await el.waitFor({ state: 'visible', timeout: 10000 });
+      const b = (await el.boundingBox())!;
+      expect(b.x).toBeGreaterThanOrEqual(0);
+      expect(b.x + b.width).toBeLessThanOrEqual(376);
+    }
+    expect(await noHorizontalScroll()).toBe(true);
+    await page.keyboard.press('Escape');
+    expect(await page.locator('#btn-cad').isVisible()).toBe(false);
+    expect(await page.evaluate(() => document.activeElement?.id)).toBe('btn-more');
+
+    // Two-finger pinch zooms the desktop locally (not the page, not the remote mouse) and pinching back restores it.
+    const cdp = await ctx.newCDPSession(page);
+    const y = box.y + box.height / 2;
+    const touch = async (type: 'touchStart' | 'touchMove' | 'touchEnd', gap: number) => {
+      const touchPoints = type === 'touchEnd' ? [] : [{ x: 187 - gap, y, id: 1 }, { x: 187 + gap, y, id: 2 }];
+      await cdp.send('Input.dispatchTouchEvent', { type, touchPoints });
+    };
+    const pinchTo = async (from: number, to: number) => {
+      await touch('touchStart', from);
+      for (let i = 1; i <= 8; i++) { await sleep(20); await touch('touchMove', from + (to - from) * i / 8); }
+      await touch('touchEnd', to);
+      await sleep(300);
+    };
+    await pinchTo(20, 110); // each finger moves past noVNC's 50 px gesture threshold
+    const zoomed = (await canvas.boundingBox())!;
+    expect(zoomed.width).toBeGreaterThan(box.width * 2);
+    expect(await noHorizontalScroll()).toBe(true);
+    await pinchTo(110, 15);
+    expect(Math.abs((await canvas.boundingBox())!.width - box.width)).toBeLessThan(2);
+
+    // The jobs list stacks above the output instead of beside it.
+    await page.click('#tab-jobs');
+    const list = (await page.locator('#jobs-list').boundingBox())!;
+    const detail = (await page.locator('#jobs-detail').boundingBox())!;
+    expect(list.y + list.height).toBeLessThanOrEqual(detail.y + 1);
+    expect(await noHorizontalScroll()).toBe(true);
+    await ctx.close();
+  });
+
   it('keyboard users enter the desktop with Enter and leave it with Shift+Esc, also from fullscreen', async () => {
     const page = await openViewer();
     const where = () => page.evaluate(() => {
