@@ -21,3 +21,6 @@ export function versionTitle(s: UpdateStatus | null): string {
 
 export const checkResult = (s: UpdateStatus) =>
   s.error ? `Update check failed: ${s.error}` : s.available ? `ozwell-computer ${s.latest} is available` : 'Up to date';
+
+/** Whether a (re)connected stream's `hello` came from a different viewer build than the page was loaded with. */
+export const isNewBuild = (pageBuild: string | undefined, build: string) => pageBuild !== undefined && pageBuild !== build;

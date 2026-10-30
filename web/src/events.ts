@@ -2,10 +2,13 @@
 // opens the stream from its own effect, which React runs after its children's effects,
 // so every listener is attached before the first event (`hello`) can arrive.
 import { useEffect, useEffectEvent, useSyncExternalStore } from 'react';
+import { isNewBuild } from './version';
 
 const hub = new EventTarget();
 const types = new Set<string>();
 let source: EventSource | null = null;
+// The viewer build of the first `hello`, i.e. the server that served this page.
+let pageBuild: string | undefined;
 
 type StreamState = 'connecting' | 'open' | 'broken';
 let streamState: StreamState = 'connecting';
@@ -46,7 +49,13 @@ export function useServerEvent<T>(type: string, handler: (data: T) => void) {
 export function openServerEvents() {
   const s = new EventSource('/api/v1/events');
   source = s;
-  s.addEventListener('hello', (e) => setStream('open', JSON.parse(e.data).stream_id));
+  s.addEventListener('hello', (e) => {
+    const { stream_id, build } = JSON.parse(e.data);
+    // Reconnected to an updated server: load its viewer.
+    if (isNewBuild(pageBuild, build)) { location.reload(); return; }
+    pageBuild = build;
+    setStream('open', stream_id);
+  });
   for (const type of types) forward(type);
   s.onopen = () => setStream('open', streamId);
   s.onerror = () => setStream('broken', null);

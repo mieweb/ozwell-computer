@@ -35,7 +35,7 @@ export function launchDetached(display: string, command: string, args: string[] 
   });
 }
 
-export default async function windowRoutes(app: FastifyInstance, ctx: AppContext) {
+export default async function windowRoutes(app: FastifyInstance, ctx: AppContext, build: string) {
   const { desktop, config } = ctx;
   const wm = () => desktop.ctl().windows;
 
@@ -139,7 +139,8 @@ export default async function windowRoutes(app: FastifyInstance, ctx: AppContext
   app.get('/api/v1/events', {
     schema: {
       tags: ['events'], summary: 'Server-sent event stream',
-      description: 'Starts with a hello event carrying the presence roster and a `stream_id`, then window.*, clipboard.changed, display.*, '
+      description: 'Starts with a hello event carrying the presence roster, a `stream_id` and the viewer `build` (changes when the server '
+        + 'is updated to a new viewer), then window.*, clipboard.changed, display.*, '
         + 'presence, update, `job` and `job.removed` events as they happen, with a keepalive every 15 s. Each data line is JSON. With exec '
         + 'enabled, PUT /api/v1/events/{stream_id}/job makes this stream also carry one job\'s output.',
       response: { 200: media('An endless text/event-stream', ['text/event-stream'], { type: 'string' }), ...errors },
@@ -149,7 +150,7 @@ export default async function windowRoutes(app: FastifyInstance, ctx: AppContext
     if (sse.signal.aborted) return;
     const stream_id = randomBytes(16).toString('base64url');
     eventStreams.set(stream_id, sse);
-    sse.send('hello', { roster: desktop.presence.roster(), stream_id });
+    sse.send('hello', { roster: desktop.presence.roster(), stream_id, build });
     m.sseClients.inc();
     const unsub = desktop.bus.subscribe((ev) => sse.send(ev.type, ev.data, ev.id));
     sse.signal.addEventListener('abort', () => { unsub(); eventStreams.delete(stream_id); m.sseClients.dec(); });

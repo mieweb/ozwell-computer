@@ -15,7 +15,7 @@ import coreRoutes from './routes/core.js';
 import windowRoutes from './routes/windows.js';
 import execRoutes from './routes/exec.js';
 import a11yRoutes from './routes/a11y.js';
-import webRoutes from './web/routes.js';
+import webRoutes, { webBuild } from './web/routes.js';
 import vncRoutes from './vnc/routes.js';
 import mcpRoutes from './mcp/server.js';
 import type { A11y } from './a11y/atspi.js';
@@ -134,7 +134,8 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   });
 
   await app.register(async (s) => coreRoutes(s, ctx));
-  await app.register(async (s) => windowRoutes(s, ctx));
+  const build = webBuild(join(staticDir, 'index.html'), ctx.version);
+  await app.register(async (s) => windowRoutes(s, ctx, build));
   await app.register(async (s) => execRoutes(s, ctx));
   await app.register(async (s) => a11yRoutes(s, ctx));
   await app.register(async (s) => vncRoutes(s, ctx));
