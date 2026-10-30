@@ -58,6 +58,9 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
   const [roster, setRoster] = useState(new Map<string, Participant>());
   const [cursors, setCursors] = useState(new Map<string, Cursor>());
   const [fullscreen, setFullscreen] = useState(false);
+  const [more, setMore] = useState(false);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLButtonElement>(null);
   const [, relayout] = useReducer((n: number) => n + 1, 0);
 
   const showToast = (text: string) => {
@@ -144,6 +147,16 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
       if (!full && panel) panel.focus(); else rfbRef.current?.focus();
     });
   }, []);
+  useEffect(() => {
+    if (!more) return;
+    // The scale Select's options are portaled out of the toolbar.
+    const close = (e: PointerEvent) => {
+      const t = e.target as Element;
+      if (!toolbarRef.current?.contains(t) && !t.closest('[role=listbox]')) setMore(false);
+    };
+    document.addEventListener('pointerdown', close, true);
+    return () => document.removeEventListener('pointerdown', close, true);
+  }, [more]);
   // Last: every useServerEvent above and in the children is subscribed by now.
   useEffect(openServerEvents, []);
 
@@ -215,49 +228,73 @@ export function Viewer({ serverViewOnly, exec }: { serverViewOnly: boolean; exec
   );
 
   return (
-    <Tabs value={tab} onValueChange={setTab} variant="pills" className="flex min-h-0 flex-1 flex-col">
-      <div id="toolbar" className="flex flex-none items-center gap-1.5 border-b border-border bg-card px-2 py-1">
+    <Tabs value={tab} onValueChange={setTab} variant="pills" className="flex min-h-0 min-w-0 flex-1 flex-col">
+      {/* Below lg the secondary controls move into the More panel; at lg it is display: contents, so they sit inline as before. */}
+      <div id="toolbar" ref={toolbarRef}
+        className="relative flex flex-none items-center gap-1 border-b border-border bg-card px-1.5 py-1 max-lg:[&_button]:min-h-10 sm:gap-1.5 sm:px-2 lg:flex-wrap"
+        onKeyDown={(e) => {
+          // An open scale Select takes Escape for itself.
+          if (e.key !== 'Escape' || !more || document.querySelector('[role=listbox]')) return;
+          setMore(false);
+          moreRef.current?.focus();
+        }}>
         {exec && (
-          <TabsList aria-label="View" className="p-0.5">
+          <TabsList aria-label="View" className="shrink-0 p-0.5">
             <TabsTrigger value="desktop" className="px-2 py-0.5">Desktop</TabsTrigger>
             <TabsTrigger value="jobs" className="px-2 py-0.5" title="Background commands started through the API or MCP">
               {running ? `Jobs (${running})` : 'Jobs'}
             </TabsTrigger>
           </TabsList>
         )}
-        <span id="status" className={status.cls}>{status.text}</span>
-        <Perf />
-        <UpdateControls toast={showToast} />
-        <span className="flex-1" />
-        <Button id="btn-cad" size="sm" variant="outline" title="Send Ctrl+Alt+Del" onClick={() => rfbRef.current?.sendCtrlAltDel()}>Ctrl+Alt+Del</Button>
-        <Button id="btn-super" size="sm" variant="outline" title="Send Super" onClick={() => rfbRef.current?.sendKey(0xffeb, 'MetaLeft')}>Super</Button>
-        <Button id="btn-alttab" size="sm" variant="outline" title="Send Alt+Tab" onClick={altTab}>Alt+Tab</Button>
-        {/* With the Clipboard API, copy/paste shortcuts just work; the panel is a fallback for insecure origins. */}
-        {!clipboardSupported && (
-          <Button id="btn-clip" size="sm" variant="outline" onClick={toggleClip}
-            title="Clipboard sharing needs HTTPS (or localhost); edit the desktop clipboard here instead">Clipboard</Button>
-        )}
-        <Checkbox id="chk-viewonly" size="sm" label="view only" title="Ignore my input"
-          checked={viewOnly} disabled={serverViewOnly} onChange={(e) => setViewOnly(e.target.checked)} />
-        <div className="w-24">
-          <Select id="sel-scale" size="sm" aria-label="Scaling" value={scale} onValueChange={setScale}
-            options={[{ value: 'fit', label: 'fit' }, { value: 'remote', label: '1:1' }]} />
-        </div>
+        <span id="status" className={`min-w-0 truncate ${status.cls}`}>{status.text}</span>
+        <span className="flex-1 lg:hidden" />
         <Button id="btn-full" size="sm" variant={fullscreen ? 'primary' : 'outline'} aria-pressed={fullscreen} disabled={tab !== 'desktop'}
-          title="Show only the remote desktop, fullscreen (hold Esc to exit)"
-          onClick={() => void (document.fullscreenElement ? document.exitFullscreen() : wrapRef.current!.requestFullscreen()).catch(() => undefined)}>Fullscreen</Button>
-        <ThemeToggle viewOnly={serverViewOnly} toast={showToast} />
-        <span id="roster" className="flex gap-1">
-          {[...roster.values()].map((p) => (
-            <Badge key={p.participant_id} data-participant={p.participant_id} className="text-neutral-950" size="sm" title={p.kind} style={{ background: p.color }}>
-              {p.kind === 'agent' && p.name !== 'agent' ? `agent: ${p.name}` : p.name}
-            </Badge>
-          ))}
-        </span>
+          className="shrink-0 lg:order-1" title="Show only the remote desktop, fullscreen (hold Esc to exit)"
+          onClick={() => void (document.fullscreenElement ? document.exitFullscreen() : wrapRef.current!.requestFullscreen()).catch(() => undefined)}>
+          <svg aria-hidden="true" className="size-4 sm:hidden" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
+            <path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" />
+          </svg>
+          <span className="max-sm:sr-only">Fullscreen</span>
+        </Button>
+        <Button id="btn-more" ref={moreRef} size="sm" variant="outline" className="shrink-0 lg:hidden"
+          aria-expanded={more} aria-controls="toolbar-more" onClick={() => setMore(!more)}>
+          <svg aria-hidden="true" className="size-4 sm:hidden" viewBox="0 0 16 16" fill="currentColor">
+            <circle cx="3" cy="8" r="1.5" /><circle cx="8" cy="8" r="1.5" /><circle cx="13" cy="8" r="1.5" />
+          </svg>
+          <span className="max-sm:sr-only">More</span>
+        </Button>
+        <div id="toolbar-more"
+          className={`${more ? 'flex' : 'hidden'} absolute top-full right-1 z-20 mt-1 w-max max-w-[calc(100vw-1rem)] flex-col items-stretch gap-1.5 rounded-md border border-border bg-card p-2 shadow-lg max-lg:[&_button]:w-full lg:contents`}>
+          <Perf />
+          <UpdateControls toast={showToast} />
+          <span className="hidden flex-1 lg:block" />
+          <Button id="btn-cad" size="sm" variant="outline" title="Send Ctrl+Alt+Del" onClick={() => rfbRef.current?.sendCtrlAltDel()}>Ctrl+Alt+Del</Button>
+          <Button id="btn-super" size="sm" variant="outline" title="Send Super" onClick={() => rfbRef.current?.sendKey(0xffeb, 'MetaLeft')}>Super</Button>
+          <Button id="btn-alttab" size="sm" variant="outline" title="Send Alt+Tab" onClick={altTab}>Alt+Tab</Button>
+          {/* With the Clipboard API, copy/paste shortcuts just work; the panel is a fallback for insecure origins. */}
+          {!clipboardSupported && (
+            <Button id="btn-clip" size="sm" variant="outline" onClick={toggleClip}
+              title="Clipboard sharing needs HTTPS (or localhost); edit the desktop clipboard here instead">Clipboard</Button>
+          )}
+          <Checkbox id="chk-viewonly" size="sm" label="view only" title="Ignore my input"
+            checked={viewOnly} disabled={serverViewOnly} onChange={(e) => setViewOnly(e.target.checked)} />
+          <div className="lg:w-24">
+            <Select id="sel-scale" size="sm" aria-label="Scaling" value={scale} onValueChange={setScale}
+              options={[{ value: 'fit', label: 'fit' }, { value: 'remote', label: '1:1' }]} />
+          </div>
+          <span className="flex lg:order-2"><ThemeToggle viewOnly={serverViewOnly} toast={showToast} /></span>
+          <span id="roster" className="flex flex-wrap gap-1 lg:order-2">
+            {[...roster.values()].map((p) => (
+              <Badge key={p.participant_id} data-participant={p.participant_id} className="text-neutral-950" size="sm" title={p.kind} style={{ background: p.color }}>
+                {p.kind === 'agent' && p.name !== 'agent' ? `agent: ${p.name}` : p.name}
+              </Badge>
+            ))}
+          </span>
+        </div>
       </div>
       {clipOpen && (
         <div id="clip-panel" className="flex flex-none items-start gap-1.5 bg-muted px-2 py-1.5">
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <Textarea id="clip-text" rows={4} label="Remote clipboard" hideLabel placeholder="Remote clipboard (edit and press Send)"
               value={clipText} onChange={(e) => setClipText(e.target.value)} />
           </div>
