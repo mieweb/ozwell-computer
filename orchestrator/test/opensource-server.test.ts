@@ -15,8 +15,10 @@ async function fakeOs() {
   });
   app.get('/api/v1/users', async () => ({ data: [{ uid: 'asmith', mail: 'Alice@Example.com' }, { uid: 'bob', mail: 'bob@example.com' }] }));
   app.get('/api/v1/sites/:site/containers', async (req) => {
-    const host = (req.query as any).hostname;
-    return { data: containers.filter((c) => c.site === (req.params as any).site && (!host || c.hostname === host)) };
+    const q = req.query as Record<string, string>;
+    // Like the real API: only the key's own containers unless `user[0]=*` asks for every owner (admin key).
+    const all = q['user[0]'] === '*';
+    return { data: containers.filter((c) => c.site === (req.params as any).site && (!q.hostname || c.hostname === q.hostname) && (all || c.owner === 'svc-account')) };
   });
   app.post('/api/v1/sites/:site/containers', async (req, reply) => {
     const b = req.body as any;
@@ -90,9 +92,13 @@ describe('opensource-server provider', () => {
     expect(await p.get('../../x')).toBeNull();
   });
 
-  it('owner=email attributes the container to the matching user', async () => {
-    const c = await make('owner=email').create({ owner: { id: 'u-3', email: 'alice@example.com' } });
+  it('owner=email attributes the container to the matching user and still finds it', async () => {
+    const p = make('owner=email');
+    const c = await p.create({ owner: { id: 'u-3', email: 'alice@example.com' } });
     expect(os.containers.find((x) => x.hostname === c.id).owner).toBe('asmith');
+    // Owned by asmith, not the API key's account: found only by asking for every owner.
+    expect((await p.get(c.id))?.id).toBe(c.id);
+    expect((await p.list('u-3')).map((x) => x.id)).toEqual([c.id]);
     await expect(make('owner=email').create({ owner: { id: 'u-4', email: 'nobody@example.com' } })).rejects.toThrow(/no opensource-server account/);
     await expect(make('owner=email').create({ owner: { id: 'u-5' } })).rejects.toThrow(/X-Ozwell-User-Email/);
   });

@@ -24,6 +24,9 @@ const TAG = {
   displayName: `${T}DISPLAY_NAME`, created: `${T}CREATED`, startRequested: `${T}START_REQUESTED`,
 };
 const PORT = 8080;
+// Lists default to the API key's own containers; `user[0]=*` asks for all it may see (every owner for an admin
+// key), which owner=email needs since its containers belong to other users.
+const ALL_OWNERS = 'user%5B0%5D=*';
 /** Longer than a restart job takes; within it, another start doesn't enqueue a second job. */
 const START_GRACE_MS = 3 * 60_000;
 
@@ -110,12 +113,12 @@ export class OpensourceServerProvider implements Provider {
 
   private async find(id: string): Promise<OsContainer | null> {
     if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(id)) return null;
-    const { data } = await this.api<OsContainer[]>('GET', `/sites/${this.site}/containers?hostname=${encodeURIComponent(id)}`);
+    const { data } = await this.api<OsContainer[]>('GET', `/sites/${this.site}/containers?hostname=${encodeURIComponent(id)}&${ALL_OWNERS}`);
     return (data ?? []).find((c) => c.hostname === id && this.managed(c)) ?? null;
   }
 
   async list(owner: string): Promise<Computer[]> {
-    const { data } = await this.api<OsContainer[]>('GET', `/sites/${this.site}/containers`);
+    const { data } = await this.api<OsContainer[]>('GET', `/sites/${this.site}/containers?${ALL_OWNERS}`);
     return (data ?? []).filter((c) => this.managed(c) && c.environmentVars?.[TAG.owner] === owner).map((c) => this.toComputer(c));
   }
 
