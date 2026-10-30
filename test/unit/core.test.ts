@@ -7,7 +7,7 @@ import { deriveKey } from '../../src/auth/token.js';
 import { addRect } from '../../src/x11/damage.js';
 import { Presence, EventBus, parsePrincipal } from '../../src/presence/index.js';
 import { pgm } from '../../src/ocr.js';
-import { checkResult, versionTitle, type UpdateStatus } from '../../web/src/version.js';
+import { checkResult, isNewBuild, versionTitle, type UpdateStatus } from '../../web/src/version.js';
 
 describe('viewer version button', () => {
   const s: UpdateStatus = { supported: true, current: '1.2.3', latest: '1.2.4', available: true, checked_at: null, error: null };
@@ -22,6 +22,13 @@ describe('viewer version button', () => {
     expect(checkResult(s)).toBe('ozwell-computer 1.2.4 is available');
     expect(checkResult({ ...s, available: false })).toBe('Up to date');
     expect(checkResult({ ...s, error: 'offline' })).toBe('Update check failed: offline');
+  });
+  it('reloads only when a reconnect reaches a different build', () => {
+    expect(isNewBuild('a', null)).toBe(false);
+    expect(isNewBuild('a', undefined)).toBe(false);
+    expect(isNewBuild('a', 1)).toBe(false);
+    expect(isNewBuild('a', 'a')).toBe(false);
+    expect(isNewBuild('a', 'b')).toBe(true);
   });
 });
 

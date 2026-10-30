@@ -7,6 +7,7 @@ import { afterAll, describe, expect, it, vi } from 'vitest';
 import { Jobs, type JobSummary, type JobView } from '../../src/process/jobs.js';
 import type { BusEvent } from '../../src/presence/index.js';
 import { openSse } from '../../src/routes/sse.js';
+import { webBuild } from '../../src/web/routes.js';
 import { makeApp } from '../helpers.js';
 
 const root = mkdtempSync(join(tmpdir(), 'oz-jobs-'));
@@ -163,8 +164,15 @@ describe('background jobs (wait, then hand off)', () => {
   });
 });
 
-describe('job events and the output stream route', () => {
-  const events = (stream: string) => [...stream.matchAll(/(?:id: (\S+)\n)?event: (\S+)\ndata: (.*)\n\n/g)]
+describe('viewer build id', () => {
+  it('reads the build id the viewer build wrote, or null when unbuilt', () => {
+    expect(webBuild(root)).toBeNull();
+    writeFileSync(join(root, 'build-id'), 'abc123\n');
+    expect(webBuild(root)).toBe('abc123');
+  });
+});
+
+describe('job events and the output stream route', () => {  const events = (stream: string) => [...stream.matchAll(/(?:id: (\S+)\n)?event: (\S+)\ndata: (.*)\n\n/g)]
     .map(([, id, type, data]) => ({ id, type, data: JSON.parse(data) }));
 
   it('publishes job events and streams output, resuming from Last-Event-ID', async () => {
@@ -208,8 +216,9 @@ describe('job events and the output stream route', () => {
       }
     })();
     const next = async (type: string) => { for (;;) { const e = (await stream.next()).value!; if (e.type === type) return e; } };
-    const { stream_id } = (await next('hello')).data;
+    const { stream_id, build } = (await next('hello')).data;
     expect(stream_id).toMatch(/^[\w-]{22}$/);
+    expect(build).toBe(webBuild(join(import.meta.dirname, '..', '..', 'dist', 'web', 'static')));
     const put = (body: object, sid = stream_id) => app.inject({ method: 'PUT', url: `/api/v1/events/${sid}/job`, headers, payload: body });
     const exec = async (cmd: string, wait_ms: number) => (await app.inject({ method: 'POST', url: '/api/v1/exec', headers, payload: { cmd, wait_ms } })).json().job_id;
 

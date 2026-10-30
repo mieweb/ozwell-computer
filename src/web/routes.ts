@@ -1,5 +1,18 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AppContext } from '../server.js';
+
+/** The viewer build id that web/vite.config.ts wrote next to the assets, or null when the viewer isn't built. */
+export const webBuild = (staticDir: string) => {
+  try {
+    return readFileSync(join(staticDir, 'build-id'), 'utf8').trim();
+  } catch (e) {
+    // Not built, or removed by a rebuild in progress.
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw e;
+  }
+};
 
 export function contentSecurityPolicy(frameAncestors: string[]) {
   return "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:; "

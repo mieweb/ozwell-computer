@@ -2,7 +2,7 @@
  * Browser tests of the "/" viewer with stock noVNC, in Playwright's Chromium
  * (installed by `npm test`). Set CHROME_PATH to use another Chrome build.
  */
-import { afterAll, beforeAll, describe, expect, it, inject } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, inject, vi } from 'vitest';
 import { chromium, type Browser, type Page, type WebSocket } from 'playwright-core';
 
 const URL_ = inject('ozUrl');
@@ -42,6 +42,43 @@ describe('noVNC viewer', () => {
     await page.waitForURL(`${URL_}/`);
     await page.waitForFunction(() => document.getElementById('status')?.textContent === 'connected', null, { timeout: 15000 });
     await ctx.close();
+  });
+
+  it('reloads only when a hello reports a different viewer build, on the first connect or a reconnect', async () => {
+    const build = (await (await fetch(`${URL_}/static/build-id`)).text()).trim();
+    const hello = (b?: unknown) => `retry: 100\nevent: hello\ndata: ${JSON.stringify({ roster: [], stream_id: 's', build: b })}\n\n`;
+    // Each fake stream ends at once, so EventSource reconnects and takes the next one; then the real stream follows.
+    const run = async (bodies: string[], wantLoads: number) => {
+      const ctx = await browser.newContext();
+      try {
+        const page = await ctx.newPage();
+        let loads = 0;
+        page.on('load', () => loads++);
+        await page.route('**/api/v1/events', (r) => r.fulfill({ contentType: 'text/event-stream', body: bodies.shift()! }), { times: bodies.length });
+        await page.goto(`${URL_}/?token=${TOKEN}`);
+        await vi.waitFor(() => expect(loads).toBeGreaterThanOrEqual(wantLoads), { timeout: 15000, interval: 50 });
+        await page.waitForFunction(() => document.getElementById('status')?.textContent === 'connected', null, { timeout: 15000 });
+        await sleep(1500); // the real stream's hello has arrived by now
+        return { page, ctx, loads };
+      } catch (e) {
+        await ctx.close();
+        throw e;
+      }
+    };
+    // The id bundled into the page is the one the server reports.
+    const first = await run([], 1);
+    const src = await first.page.evaluate(() => document.querySelector<HTMLScriptElement>('script[type="module"]')!.src);
+    expect(await (await first.page.request.get(src)).text()).toContain(build);
+    expect(first.loads).toBe(1);
+    await first.ctx.close();
+    // Matching, null and missing builds keep the page; a different one on a reconnect reloads it once.
+    const reconnect = await run([hello(build), hello(null), hello(), hello('other')], 2);
+    expect(reconnect.loads).toBe(2);
+    await reconnect.ctx.close();
+    // A different build on the very first hello reloads too, and the reloaded page then stays.
+    const initial = await run([hello('other')], 2);
+    expect(initial.loads).toBe(2);
+    await initial.ctx.close();
   });
 
   it('connects through /?token=, renders the desktop, and forwards input', async () => {
