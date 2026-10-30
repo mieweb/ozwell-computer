@@ -22,5 +22,5 @@ export function versionTitle(s: UpdateStatus | null): string {
 export const checkResult = (s: UpdateStatus) =>
   s.error ? `Update check failed: ${s.error}` : s.available ? `ozwell-computer ${s.latest} is available` : 'Up to date';
 
-/** Whether a (re)connected stream's `hello` came from a different viewer build than this page's own. */
-export const isNewBuild = (pageBuild: string, build: string | null) => build !== null && build !== pageBuild;
+/** Whether a (re)connected stream's `hello` came from a different viewer build than this page's own (servers without one send none). */
+export const isNewBuild = (pageBuild: string, build: unknown) => typeof build === 'string' && build !== pageBuild;

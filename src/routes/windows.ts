@@ -35,7 +35,7 @@ export function launchDetached(display: string, command: string, args: string[] 
   });
 }
 
-export default async function windowRoutes(app: FastifyInstance, ctx: AppContext, build: string | null) {
+export default async function windowRoutes(app: FastifyInstance, ctx: AppContext, build: () => string | null) {
   const { desktop, config } = ctx;
   const wm = () => desktop.ctl().windows;
 
@@ -150,7 +150,7 @@ export default async function windowRoutes(app: FastifyInstance, ctx: AppContext
     if (sse.signal.aborted) return;
     const stream_id = randomBytes(16).toString('base64url');
     eventStreams.set(stream_id, sse);
-    sse.send('hello', { roster: desktop.presence.roster(), stream_id, build });
+    sse.send('hello', { roster: desktop.presence.roster(), stream_id, build: build() });
     m.sseClients.inc();
     const unsub = desktop.bus.subscribe((ev) => sse.send(ev.type, ev.data, ev.id));
     sse.signal.addEventListener('abort', () => { unsub(); eventStreams.delete(stream_id); m.sseClients.dec(); });

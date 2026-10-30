@@ -134,8 +134,8 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   });
 
   await app.register(async (s) => coreRoutes(s, ctx));
-  const build = webBuild(staticDir);
-  await app.register(async (s) => windowRoutes(s, ctx, build));
+  // Read per hello, so a viewer rebuilt under a running server (dev compose) reports its new id.
+  await app.register(async (s) => windowRoutes(s, ctx, () => webBuild(staticDir)));
   await app.register(async (s) => execRoutes(s, ctx));
   await app.register(async (s) => a11yRoutes(s, ctx));
   await app.register(async (s) => vncRoutes(s, ctx));

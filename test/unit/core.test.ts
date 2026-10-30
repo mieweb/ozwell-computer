@@ -25,6 +25,8 @@ describe('viewer version button', () => {
   });
   it('reloads only when a reconnect reaches a different build', () => {
     expect(isNewBuild('a', null)).toBe(false);
+    expect(isNewBuild('a', undefined)).toBe(false);
+    expect(isNewBuild('a', 1)).toBe(false);
     expect(isNewBuild('a', 'a')).toBe(false);
     expect(isNewBuild('a', 'b')).toBe(true);
   });
