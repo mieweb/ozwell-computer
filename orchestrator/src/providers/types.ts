@@ -7,6 +7,8 @@ export interface Requester {
   id: string;
   email?: string;
   name?: string;
+  /** The calling agent's name (X-Ozwell-Agent-Name), if Ozwell sends one. */
+  agentName?: string;
 }
 
 export interface Computer {

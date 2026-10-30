@@ -16,19 +16,20 @@ const catalog: ToolDef[] = [
 /** Fake ozwell-computer MCP endpoint: records calls, checks its token. */
 async function fakeInstance(token: string) {
   const calls: Array<{ name: string; args: any; client: string }> = [];
-  let client = '';
+  const clients = new Map<string, string>();
   const app = Fastify();
   app.post('/mcp', async (req, reply) => {
     if (req.headers.authorization !== `Bearer ${token}`) return reply.code(401).send();
     const m = req.body as any;
     if (m.method === 'initialize') {
-      client = m.params.clientInfo.name;
-      return reply.header('mcp-session-id', 'sess-1').send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'fake', version: '1' } } });
+      const sid = `sess-${clients.size + 1}`;
+      clients.set(sid, m.params.clientInfo.name);
+      return reply.header('mcp-session-id', sid).send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-06-18', capabilities: {}, serverInfo: { name: 'fake', version: '1' } } });
     }
     if (m.method === 'notifications/initialized') return reply.code(202).send();
     if (m.method === 'tools/call') {
       if (m.params.name === 'slow') await new Promise((r) => setTimeout(r, 1500));
-      calls.push({ name: m.params.name, args: m.params.arguments, client });
+      calls.push({ name: m.params.name, args: m.params.arguments, client: clients.get(req.headers['mcp-session-id'] as string) ?? '' });
       return reply.send({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text: `did ${m.params.name}` }] } });
     }
     return reply.code(400).send();
@@ -88,13 +89,14 @@ let provider: ReturnType<typeof memoryProvider>;
 let app: FastifyInstance;
 let base: string;
 
-async function rpc(user: string | null, method: string, params: object = {}, auth = PSK) {
+async function rpc(user: string | null, method: string, params: object = {}, auth = PSK, extra: Record<string, string> = {}) {
   const r = await fetch(`${base}/mcp`, {
     method: 'POST',
     headers: {
       'content-type': 'application/json', accept: 'application/json, text/event-stream',
       ...(auth ? { authorization: `Bearer ${auth}` } : {}),
       ...(user ? { 'x-ozwell-user-id': user, 'x-ozwell-user-name': `Name of ${user}` } : {}),
+      ...extra,
     },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
   });
@@ -105,8 +107,8 @@ async function rpc(user: string | null, method: string, params: object = {}, aut
   try { body = JSON.parse(sse); } catch { /* text */ }
   return { status: r.status, body };
 }
-const tool = async (user: string, name: string, args: object = {}) => {
-  const r = await rpc(user, 'tools/call', { name, arguments: args });
+const tool = async (user: string, name: string, args: object = {}, extra: Record<string, string> = {}) => {
+  const r = await rpc(user, 'tools/call', { name, arguments: args }, PSK, extra);
   const res = r.body.result;
   return { isError: !!res.isError, data: (() => { try { return JSON.parse(res.content[0].text); } catch { return res.content[0].text; } })() };
 };
@@ -157,8 +159,16 @@ describe('tools', () => {
     const a = (await tool('alice', 'list_computers')).data.computers[0];
     const r = await tool('alice', 'click', { instance_id: a.instance_id, x: 10, y: 20 });
     expect(r).toEqual({ isError: false, data: 'did click' });
-    expect(instance.calls.at(-1)).toEqual({ name: 'click', args: { x: 10, y: 20 }, client: 'Name of alice' });
+    expect(instance.calls.at(-1)).toEqual({ name: 'click', args: { x: 10, y: 20 }, client: 'agent' });
     expect((await tool('alice', 'click', { x: 1, y: 2 })).data.error.reason).toBe('invalid_request');
+  });
+
+  it('names the agent on the computer by X-Ozwell-Agent-Name, never by the user name', async () => {
+    const a = (await tool('alice', 'list_computers')).data.computers[0];
+    await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 1 }, { 'x-ozwell-agent-name': 'Planner' });
+    expect(instance.calls.at(-1)?.client).toBe('Planner');
+    await tool('alice', 'click', { instance_id: a.instance_id, x: 1, y: 1 });
+    expect(instance.calls.at(-1)?.client).toBe('agent');
   });
 
   it('sends response headers before a slow tool finishes (clients enforce a header deadline)', async () => {

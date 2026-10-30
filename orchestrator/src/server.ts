@@ -19,7 +19,12 @@ function header(req: FastifyRequest, name: string): string | undefined {
 export function requesterOf(req: FastifyRequest): Requester | null {
   const id = header(req, 'x-ozwell-user-id');
   if (!id) return null;
-  return { id: id.slice(0, 256), email: header(req, 'x-ozwell-user-email')?.slice(0, 256), name: header(req, 'x-ozwell-user-name')?.slice(0, 128) };
+  return {
+    id: id.slice(0, 256),
+    email: header(req, 'x-ozwell-user-email')?.slice(0, 256),
+    name: header(req, 'x-ozwell-user-name')?.slice(0, 128),
+    agentName: header(req, 'x-ozwell-agent-name')?.slice(0, 64),
+  };
 }
 
 export interface ServerOptions extends OrchestratorDeps {

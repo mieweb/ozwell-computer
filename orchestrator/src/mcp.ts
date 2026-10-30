@@ -196,7 +196,9 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
           if (c.stopped) return stoppedError(c);
           if (!c.internalUrl || !c.token) return fail('target_unavailable', `computer ${c.id} is ${c.status} and not reachable`);
           const { instance_id: _drop, ...rest } = args;
-          return await client.callTool(`${c.id}\u0000${user.id}`, c.internalUrl, c.token, user.name || user.email || user.id, name, rest)
+          // The computer shows this as the agent's name, so never the user's.
+          const agent = user.agentName ?? 'agent';
+          return await client.callTool(`${c.id}\u0000${user.id}\u0000${agent}`, c.internalUrl, c.token, agent, name, rest)
             .catch(async (e) => {
               if (!(e instanceof InstanceError && e.unreachable)) throw e;
               // Best effort: a failed lookup keeps the original error.
