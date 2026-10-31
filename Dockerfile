@@ -62,7 +62,7 @@ COPY docker/firefox/policies.json /etc/firefox/policies/policies.json
 # ozwell-computer's output; the units also read `docker run -e` values from /etc/environment.
 COPY docker/systemd/system.conf.d/ /etc/systemd/system.conf.d/
 COPY docker/systemd/ozwell-computer.service.d/ /etc/systemd/system/ozwell-computer.service.d/
-COPY docker/systemd/ozwell-computer-xvfb.service.d/ /etc/systemd/system/ozwell-computer-xvfb.service.d/
+COPY docker/systemd/ozwell-computer-desktop.service.d/ /etc/systemd/system/ozwell-computer-desktop.service.d/
 COPY docker/systemd/ozwell-computer-upgrade.service.d/ /etc/systemd/system/ozwell-computer-upgrade.service.d/
 # Passwordless sudo for the desktop user (see docker/sudoers.d/ozwell-computer and the README).
 COPY --chmod=0440 docker/sudoers.d/ozwell-computer /etc/sudoers.d/ozwell-computer

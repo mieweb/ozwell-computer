@@ -2,7 +2,7 @@
 import pino from 'pino';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { existsSync, openSync, writeSync } from 'node:fs';
-import { HELP, loadConfig, type Config } from './config.js';
+import { HELP, loadConfig, sessionEnv, type Config } from './config.js';
 import { resolveToken } from './auth/token.js';
 import { redactUrl } from './auth/plugin.js';
 import { Desktop } from './desktop.js';
@@ -147,6 +147,8 @@ async function main() {
   const { config, args } = loaded;
   if (args.help) { process.stdout.write(HELP); return; }
   if (args.version) { process.stdout.write(VERSION + '\n'); return; }
+  // Before anything connects to the bus or spawns: children inherit process.env.
+  Object.assign(process.env, sessionEnv(process.env));
 
   const offline = args.printMcpTools;
   const log = createLogger(offline ? 'silent' : config.logLevel);

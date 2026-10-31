@@ -1,0 +1,34 @@
+[Unit]
+Description=ozwell-computer desktop (Xvfb :0 with the Xfce session of user desktop)
+After=systemd-user-sessions.service
+
+[Service]
+# exec: started once PAM has set up the session, so ozwell-computer.service (After=)
+# finds the user's bus.
+Type=exec
+User=desktop
+# A login session (pam_systemd through common-session): it starts the user's systemd
+# manager and its session bus (/run/user/UID/bus, dbus-user-session).
+PAMName=ozwell-computer
+Environment=XDG_SESSION_TYPE=x11 XDG_SESSION_CLASS=user DISPLAY=:0
+WorkingDirectory=~
+Environment=OZWELL_COMPUTER_SCREEN=1920x1080x24
+# Our xfce4-session.xml and xsettings.xml (the ones in /etc/xdg belong to xfce4-session
+# and xfce4-settings) take precedence over the defaults.
+Environment=XDG_CONFIG_DIRS=@PREFIX@/xdg:/etc/xdg
+# Apps expose AT-SPI (GNOME_ACCESSIBILITY=1: Firefox and others only do when told an AT
+# is present), as in ozwell-computer.service.
+Environment=GNOME_ACCESSIBILITY=1 GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 NO_AT_BRIDGE=0 QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+EnvironmentFile=-/etc/default/ozwell-computer
+# Xsession runs the distribution's session setup (D-Bus, accessibility modules, exporting
+# the environment to the user manager), then startxfce4. The first start runs the "Ozwell"
+# failsafe session from xfce4-session.xml; later starts restore the saved session.
+ExecStart=/usr/bin/xinit /etc/X11/Xsession startxfce4 -- /usr/bin/Xvfb :0 -screen 0 ${OZWELL_COMPUTER_SCREEN} -nolisten tcp +extension RANDR +extension DAMAGE -dpi 96
+# Log out, so xfce4-session saves the session (SaveOnExit), and wait for it to finish.
+ExecStop=/bin/sh -c 'xfce4-session-logout --logout || exit; while kill -0 "$MAINPID" 2>/dev/null; do sleep 0.2; done'
+TimeoutStopSec=30
+Restart=always
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target

@@ -1,7 +1,8 @@
 [Unit]
 Description=ozwell-computer (noVNC + HTTP API + MCP)
-After=ozwell-computer-session.service ozwell-computer-dbus.service network.target
-Wants=ozwell-computer-session.service
+# The desktop's login session provides X :0 and the user's session bus (/run/user/UID/bus).
+After=ozwell-computer-desktop.service network.target
+Requires=ozwell-computer-desktop.service
 StartLimitIntervalSec=0
 
 [Service]
@@ -12,7 +13,9 @@ StateDirectoryMode=0700
 Environment=DISPLAY=:0 OZWELL_COMPUTER_TOKEN_FILE=/var/lib/ozwell-computer/token
 # Apps launched through the API join the desktop's session bus and expose AT-SPI
 # GNOME_ACCESSIBILITY=1: Firefox (and others) only expose AT-SPI when told an AT is present.
-Environment=GNOME_ACCESSIBILITY=1 GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/desktop-bus/bus GTK_MODULES=gail:atk-bridge NO_AT_BRIDGE=0 QT_ACCESSIBILITY=1 QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
+# The server sets XDG_RUNTIME_DIR and DBUS_SESSION_BUS_ADDRESS (/run/user/UID) itself:
+# %U here would be root's UID, not desktop's.
+Environment=GNOME_ACCESSIBILITY=1 GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 GTK_MODULES=gail:atk-bridge NO_AT_BRIDGE=0 QT_ACCESSIBILITY=1 QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
 EnvironmentFile=-/etc/default/ozwell-computer
 ExecStart=/usr/bin/node @PREFIX@/dist/cli.js
 Restart=always

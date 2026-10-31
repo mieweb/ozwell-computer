@@ -4,6 +4,7 @@
     <property name="FailsafeSessionName" type="string" value="Ozwell"/>
     <property name="SaveOnExit" type="bool" value="true"/>
     <property name="PromptOnLogout" type="bool" value="false"/>
+    <property name="StartAssistiveTechnologies" type="bool" value="true"/>
   </property>
   <property name="startup" type="empty">
     <property name="ssh-agent" type="empty">
@@ -14,7 +15,7 @@
   <property name="sessions" type="empty">
     <property name="Ozwell" type="empty">
       <property name="IsFailsafe" type="bool" value="true"/>
-      <property name="Count" type="int" value="3"/>
+      <property name="Count" type="int" value="4"/>
       <property name="Client0_Command" type="array">
         <value type="string" value="xfwm4"/>
         <value type="string" value="--compositor=off"/>
@@ -25,10 +26,14 @@
       </property>
       <property name="Client1_Priority" type="int" value="25"/>
       <property name="Client2_Command" type="array">
+        <value type="string" value="xfdesktop"/>
+      </property>
+      <property name="Client2_Priority" type="int" value="20"/>
+      <property name="Client3_Command" type="array">
         <value type="string" value="xfce4-terminal"/>
         <value type="string" value="--geometry=100x30+60+60"/>
       </property>
-      <property name="Client2_Priority" type="int" value="35"/>
+      <property name="Client3_Priority" type="int" value="35"/>
     </property>
   </property>
 </channel>

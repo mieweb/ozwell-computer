@@ -5,7 +5,9 @@ set -e
 # Never stop or restart ozwell-computer-upgrade.service here (or in prerm): in-app
 # upgrades run apt/dpkg *inside* that service, so doing so would kill this very
 # transaction halfway. test/unit/packaging.test.ts enforces this.
-UNITS="ozwell-computer-dbus.service ozwell-computer-xvfb.service ozwell-computer-session.service ozwell-computer.service ozwell-computer-upgrade.path"
+UNITS="ozwell-computer-desktop.service ozwell-computer.service ozwell-computer-upgrade.path"
+# Replaced by ozwell-computer-desktop.service; dpkg has already removed their files.
+LEGACY_UNITS="ozwell-computer-session.service ozwell-computer-xvfb.service ozwell-computer-dbus.service"
 
 case "$1" in
     configure)
@@ -17,6 +19,15 @@ case "$1" in
 
         command -v systemctl >/dev/null 2>&1 || exit 0
 
+        # Drop the legacy units' links; the desktop unit inherits their being enabled.
+        legacy=
+        for u in $LEGACY_UNITS; do
+            if [ -L "/etc/systemd/system/multi-user.target.wants/$u" ]; then
+                rm -f "/etc/systemd/system/multi-user.target.wants/$u"; legacy=1
+            fi
+        done
+        if [ -n "$legacy" ]; then systemctl enable ozwell-computer-desktop.service >/dev/null; fi
+
         # Enable on first install only ($2 is the previously configured version),
         # so an administrator's `systemctl disable` survives upgrades. Enabling only
         # creates symlinks, so it also works during an image build.
@@ -26,12 +37,14 @@ case "$1" in
 
         # Starting needs a running systemd (not the case during an image build).
         if [ -d /run/systemd/system ]; then
+            # Still loaded from before: replacing them restarts the desktop, this once.
+            systemctl stop $LEGACY_UNITS 2>/dev/null || true
             systemctl daemon-reload
             if [ -z "$2" ]; then
                 systemctl start $UNITS
             else
-                # Upgrade: restart only the server. Restarting Xvfb or the session
-                # would close every application open on the desktop.
+                # Upgrade: restart only the server (it starts the desktop if the legacy
+                # units ran it). Restarting the desktop would close every application on it.
                 systemctl try-restart ozwell-computer.service
                 # Pick up a changed watch definition. Stopping a path unit doesn't
                 # stop the service it triggered (possibly the one running us).
