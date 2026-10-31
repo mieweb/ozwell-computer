@@ -43,18 +43,19 @@ user_systemctl() {
     systemctl --user -M desktop@ "$@"
 }
 
-# Without a desktop session, starting one starts the server too.
+# start_server [restart]. Without a desktop session, starting one starts the server too.
 start_server() {
     if systemctl is-active --quiet ozwell-computer-desktop.service; then
-        user_systemctl start ozwell-computer.service
+        user_systemctl "${1:-start}" ozwell-computer.service
     else
         systemctl start ozwell-computer-desktop.service
     fi
 }
 
 # Before ozwell-computer-desktop.service, Xvfb, the session bus, the session and the server
-# were separate system units, which make install leaves behind. Replace them (this once,
-# the desktop restarts).
+# were separate system units, which make install leaves behind (and the previous version
+# of this script, which installed this one, kept running). Replace them before installing:
+# this stops the legacy server too, and the desktop restarts this once.
 migrate() {
     legacy="ozwell-computer.service ozwell-computer-session.service ozwell-computer-xvfb.service ozwell-computer-dbus.service"
     [ -e /usr/lib/systemd/system/ozwell-computer-session.service ] || return 0
@@ -88,16 +89,16 @@ from_git() {
     make -C "$SRC" system-deps || fail
     # Stop only the server (the desktop and apps open on it keep running): replacing
     # its node_modules, native addons included, under the running process can crash it.
-    user_systemctl stop ozwell-computer.service || fail
+    { user_systemctl stop ozwell-computer.service && migrate; } || fail
     # -o: already done above; don't redo them while the server is down.
     if ! { make -C "$SRC" -o build -o system-deps install PREFIX="$PREFIX" && systemctl daemon-reload \
-        && user_systemctl daemon-reload && migrate && start_server && healthy \
+        && user_systemctl daemon-reload && start_server && healthy \
         && systemctl try-restart ozwell-computer-upgrade.path; }; then
         # A commit no branch head has: the server keeps offering the update and a retry reinstalls
         # (removing REVISION would make it report updates as unsupported).
         echo 0000000000000000000000000000000000000000 > "$PREFIX/REVISION"
         # Restart, not start: a server that already came up has the new revision cached.
-        user_systemctl restart ozwell-computer.service
+        start_server restart
         fail
     fi
     echo "installed now: $after"

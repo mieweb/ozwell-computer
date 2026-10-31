@@ -229,7 +229,9 @@ the systemd units, `/usr/bin/ozwell-computer`, and the desktop configuration
 - Installing it creates the `desktop` user, then enables and starts the services.
 - Upgrading restarts only the server, so applications open on the desktop survive.
   Upgrading from a version with separate Xvfb, D-Bus and session units replaces them
-  with `ozwell-computer-desktop.service`, which restarts the desktop once.
+  with `ozwell-computer-desktop.service`, which restarts the desktop once. (On the git
+  channel below, the previous version's updater installs the new one, so this happens
+  on the update after that.)
 - Removing it stops and disables the services; purging also deletes
   `/var/lib/ozwell-computer`.
 
