@@ -1,7 +1,8 @@
-# Settings for the ozwell-computer services (read by ozwell-computer.service,
-# ozwell-computer-xvfb.service and ozwell-computer-upgrade.service). See
+# Settings for the ozwell-computer services (read by ozwell-computer-desktop.service,
+# ozwell-computer-upgrade.service and the desktop user's ozwell-computer.service). See
 # `ozwell-computer --help` for every option.
-# Restart after editing: systemctl restart ozwell-computer-xvfb ozwell-computer
+# Restart after editing: systemctl --user -M desktop@ restart ozwell-computer
+# (the screen size: systemctl restart ozwell-computer-desktop, which restarts the session)
 
 # Access token. If unset, one is generated and kept in /var/lib/ozwell-computer/token.
 #OZWELL_COMPUTER_TOKEN=

@@ -35,6 +35,34 @@ healthy() {
     return 1
 }
 
+# The server is a user unit of "desktop", in the user manager its desktop session
+# (ozwell-computer-desktop.service) starts. `-M desktop@` would start that manager if
+# it isn't running: skip it then (the server isn't running either).
+user_systemctl() {
+    systemctl is-active --quiet "user@$(id -u desktop).service" || return 0
+    systemctl --user -M desktop@ "$@"
+}
+
+# Without a desktop session, starting one starts the server too.
+start_server() {
+    if systemctl is-active --quiet ozwell-computer-desktop.service; then
+        user_systemctl start ozwell-computer.service
+    else
+        systemctl start ozwell-computer-desktop.service
+    fi
+}
+
+# Before ozwell-computer-desktop.service, Xvfb, the session bus, the session and the server
+# were separate system units, which make install leaves behind. Replace them (this once,
+# the desktop restarts).
+migrate() {
+    legacy="ozwell-computer.service ozwell-computer-session.service ozwell-computer-xvfb.service ozwell-computer-dbus.service"
+    [ -e /usr/lib/systemd/system/ozwell-computer-session.service ] || return 0
+    systemctl disable --now $legacy || return
+    for u in $legacy; do rm -f "/usr/lib/systemd/system/$u"; done
+    systemctl daemon-reload && systemctl enable ozwell-computer-desktop.service
+}
+
 from_git() {
     url=${OZWELL_COMPUTER_UPDATE_URL#git+}
     repo=${url%%#*}
@@ -56,18 +84,18 @@ from_git() {
         && make -C "$SRC" deps build || fail
     # System packages the new commit depends on, before the server stops.
     make -C "$SRC" system-deps || fail
-    # Stop only the server (Xvfb and apps open on the desktop keep running): replacing
+    # Stop only the server (the desktop and apps open on it keep running): replacing
     # its node_modules, native addons included, under the running process can crash it.
-    systemctl stop ozwell-computer.service || fail
+    user_systemctl stop ozwell-computer.service || fail
     # -o: already done above; don't redo them while the server is down.
     if ! { make -C "$SRC" -o build -o system-deps install PREFIX="$PREFIX" && systemctl daemon-reload \
-        && systemctl start ozwell-computer.service && healthy \
+        && user_systemctl daemon-reload && migrate && start_server && healthy \
         && systemctl try-restart ozwell-computer-upgrade.path; }; then
         # A commit no branch head has: the server keeps offering the update and a retry reinstalls
         # (removing REVISION would make it report updates as unsupported).
         echo 0000000000000000000000000000000000000000 > "$PREFIX/REVISION"
         # Restart, not start: a server that already came up has the new revision cached.
-        systemctl restart ozwell-computer.service
+        user_systemctl restart ozwell-computer.service
         fail
     fi
     echo "installed now: $after"

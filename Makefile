@@ -8,11 +8,13 @@ STAGE := $(if $(filter command line,$(origin DESTDIR)),$(DESTDIR),$(CURDIR)/.pkg
 
 DESTAPP  := $(DESTDIR)$(PREFIX)
 UNIT_DIR := $(DESTDIR)/usr/lib/systemd/system
+USER_UNIT_DIR := $(DESTDIR)/usr/lib/systemd/user
 XFCONF   := $(DESTDIR)/etc/xdg/xfce4/xfconf/xfce-perchannel-xml
-# Read through XDG_CONFIG_DIRS (see ozwell-computer-dbus.service).
+# Read through XDG_CONFIG_DIRS (see ozwell-computer-desktop.service).
 APP_XFCONF := $(DESTAPP)/xdg/xfce4/xfconf/xfce-perchannel-xml
-UNITS    := ozwell-computer.service ozwell-computer-dbus.service ozwell-computer-xvfb.service ozwell-computer-session.service \
-            ozwell-computer-upgrade.service ozwell-computer-upgrade.path
+APP_AUTOSTART := $(DESTAPP)/xdg/autostart
+UNITS    := ozwell-computer-desktop.service ozwell-computer-upgrade.service ozwell-computer-upgrade.path
+USER_UNITS := ozwell-computer.service
 
 INSTALL      := install
 INSTALL_DATA := $(INSTALL) -m 0644
@@ -59,21 +61,26 @@ install: build $(if $(filter /,$(DESTDIR)),system-deps)
 	# Runtime dependencies only, and the release version (the installed app has no git checkout).
 	cd $(DESTAPP) && npm prune --omit=dev --no-audit --no-fund >/dev/null \
 		&& npm pkg set version="$$(cd "$(CURDIR)" && ./package-version node)"
-	$(INSTALL) -m 0755 contrib/xfce/session.sh $(DESTAPP)/bin/ozwell-computer-session
 	sed 's|@PREFIX@|$(PREFIX)|g' contrib/upgrade.sh > $(DESTAPP)/bin/ozwell-computer-upgrade
 	chmod 0755 $(DESTAPP)/bin/ozwell-computer-upgrade
 	$(INSTALL) -d $(DESTDIR)/usr/bin
 	ln -sf $(PREFIX)/dist/cli.js $(DESTDIR)/usr/bin/ozwell-computer
-	$(INSTALL) -d $(UNIT_DIR)
+	$(INSTALL) -d $(UNIT_DIR) $(USER_UNIT_DIR)
 	for u in $(UNITS); do \
 		sed 's|@PREFIX@|$(PREFIX)|g' contrib/systemd/$$u > $(UNIT_DIR)/$$u && chmod 0644 $(UNIT_DIR)/$$u || exit 1; \
 	done
-	$(INSTALL) -d $(DESTDIR)/etc/default $(XFCONF) $(DESTDIR)/usr/share/applications
+	for u in $(USER_UNITS); do \
+		sed 's|@PREFIX@|$(PREFIX)|g' contrib/systemd/user/$$u > $(USER_UNIT_DIR)/$$u && chmod 0644 $(USER_UNIT_DIR)/$$u || exit 1; \
+	done
+	$(INSTALL) -d $(DESTDIR)/etc/default $(DESTDIR)/etc/pam.d $(XFCONF) $(DESTDIR)/usr/share/applications
 	$(call conffile,contrib/default/ozwell-computer,$(DESTDIR)/etc/default/ozwell-computer)
+	$(call conffile,contrib/pam/ozwell-computer,$(DESTDIR)/etc/pam.d/ozwell-computer)
 	$(call conffile,contrib/xfce/mimeapps.list,$(DESTDIR)/etc/xdg/mimeapps.list)
 	for f in contrib/xfce/xfconf/*.xml; do $(call conffile,$$f,$(XFCONF)/$${f##*/}) || exit 1; done
 	$(INSTALL) -d $(APP_XFCONF)
 	$(INSTALL_DATA) contrib/xfce/xfce4-session.xml contrib/xfce/xsettings.xml $(APP_XFCONF)/
+	$(INSTALL) -d $(APP_AUTOSTART)
+	$(INSTALL_DATA) contrib/xfce/autostart/*.desktop $(APP_AUTOSTART)/
 	$(INSTALL_DATA) contrib/xfce/applications/*.desktop $(DESTDIR)/usr/share/applications/
 	# Last: the source commit marks a complete install for in-app updates from git (contrib/upgrade.sh).
 	rev=$$(git rev-parse --verify -q HEAD 2>/dev/null); if [ -n "$$rev" ]; then echo "$$rev" > $(DESTAPP)/REVISION; else rm -f $(DESTAPP)/REVISION; fi

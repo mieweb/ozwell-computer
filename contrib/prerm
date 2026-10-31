@@ -4,12 +4,20 @@ set -e
 
 # ozwell-computer-upgrade.service is deliberately absent: an in-app upgrade runs this
 # script from inside it. On removal it is a oneshot that isn't running anyway.
-UNITS="ozwell-computer-upgrade.path ozwell-computer.service ozwell-computer-session.service ozwell-computer-xvfb.service ozwell-computer-dbus.service"
+UNITS="ozwell-computer-upgrade.path ozwell-computer-desktop.service"
+
+# See postinst.
+user_systemctl() {
+    systemctl is-active --quiet "user@$(id -u desktop).service" || return 0
+    systemctl --user -M desktop@ "$@"
+}
 
 case "$1" in
     remove|deconfigure)
         command -v systemctl >/dev/null 2>&1 || exit 0
         if [ -d /run/systemd/system ]; then
+            # The server (in the desktop user's manager), then the desktop session.
+            user_systemctl stop ozwell-computer.service || true
             systemctl stop $UNITS || true
         fi
         systemctl disable $UNITS >/dev/null || true

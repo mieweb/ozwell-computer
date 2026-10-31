@@ -57,6 +57,32 @@ const readNum = (f: string): number | null => {
   }
 };
 
+const ls = (dir: string): string[] => {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return []; // not under systemd, or no such slice
+  }
+};
+
+/**
+ * [unit, cgroup directory] of the system services, plus each user's login sessions (the
+ * desktop session) and user-manager services (the server and the apps it launched).
+ */
+function unitCgroups(root: string): [string, string][] {
+  const out: [string, string][] = [];
+  const add = (dir: string, match: (u: string) => boolean) => {
+    for (const u of ls(dir)) if (match(u)) out.push([u, join(dir, u)]);
+  };
+  add(join(root, 'system.slice'), (u) => u.endsWith('.service'));
+  for (const user of ls(join(root, 'user.slice')).filter((d) => d.startsWith('user-') && d.endsWith('.slice'))) {
+    const dir = join(root, 'user.slice', user);
+    add(dir, (u) => u.startsWith('session-') && u.endsWith('.scope'));
+    for (const m of ls(dir).filter((d) => d.startsWith('user@') && d.endsWith('.service'))) add(join(dir, m, 'app.slice'), (u) => u.endsWith('.service'));
+  }
+  return out;
+}
+
 new client.Gauge({
   name: 'ozwell_cgroup_memory_bytes',
   help: 'cgroup v2 memory.current; scope="container" for the whole container, unit=<systemd unit> per service',
@@ -67,13 +93,10 @@ new client.Gauge({
     if (!cgroupRoot) return;
     const total = readNum(join(cgroupRoot, 'memory.current'));
     if (total !== null) this.set({ scope: 'container', unit: '' }, total);
-    try {
-      for (const u of readdirSync(join(cgroupRoot, 'system.slice'))) {
-        if (!u.endsWith('.service')) continue;
-        const v = readNum(join(cgroupRoot, 'system.slice', u, 'memory.current'));
-        if (v) this.set({ scope: 'unit', unit: u }, v);
-      }
-    } catch { /* no system.slice (not under systemd) */ }
+    for (const [u, dir] of unitCgroups(cgroupRoot)) {
+      const v = readNum(join(dir, 'memory.current'));
+      if (v) this.set({ scope: 'unit', unit: u }, v);
+    }
   },
 });
 
@@ -87,13 +110,10 @@ new client.Gauge({
     if (!cgroupRoot) return;
     const total = readNum(join(cgroupRoot, 'memory.peak'));
     if (total !== null) this.set({ scope: 'container', unit: '' }, total);
-    try {
-      for (const u of readdirSync(join(cgroupRoot, 'system.slice'))) {
-        if (!u.endsWith('.service')) continue;
-        const v = readNum(join(cgroupRoot, 'system.slice', u, 'memory.peak'));
-        if (v) this.set({ scope: 'unit', unit: u }, v);
-      }
-    } catch { /* ignore */ }
+    for (const [u, dir] of unitCgroups(cgroupRoot)) {
+      const v = readNum(join(dir, 'memory.peak'));
+      if (v) this.set({ scope: 'unit', unit: u }, v);
+    }
   },
 });
 

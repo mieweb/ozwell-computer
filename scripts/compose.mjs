@@ -27,7 +27,8 @@ export function up() {
 
 /** Restart only the Node server inside the container (picks up a new ./dist). */
 export function restartServer() {
-  compose(['exec', '-T', SERVICE, 'systemctl', 'restart', 'ozwell-computer.service']);
+  // A user unit of the desktop user (started by its desktop session).
+  compose(['exec', '-T', SERVICE, 'systemctl', '--user', '-M', 'desktop@', 'restart', 'ozwell-computer.service']);
 }
 
 export function url() {
@@ -67,7 +68,7 @@ export async function waitReady({ timeoutMs = 120_000 } = {}) {
       }
     } catch (e) { lastErr = e.message; }
     if (Date.now() > deadline) {
-      const logs = compose(['exec', '-T', SERVICE, 'journalctl', '-u', 'ozwell-computer', '--no-pager', '-n', '40'], { check: false }).out;
+      const logs = compose(['exec', '-T', SERVICE, 'journalctl', '_SYSTEMD_USER_UNIT=ozwell-computer.service', '--no-pager', '-n', '40'], { check: false }).out;
       throw new Error(`ozwell-computer did not become ready within ${timeoutMs / 1000}s (${lastErr})\n${logs}`);
     }
     await sleep(500);

@@ -100,23 +100,23 @@ how `docker compose up` shows it. A token you configure yourself is never printe
 
 The image is based on `ghcr.io/mieweb/opensource-server/nodejs`, with systemd as PID 1,
 and installs the `ozwell-computer` Debian package (below) plus a few sample apps. The
-package provides these units, all running as the `desktop` user:
+package runs the desktop like a regular login, as the `desktop` user:
 
 | Unit | Purpose |
 |---|---|
-| `ozwell-computer-dbus.service` | session D-Bus at the fixed address `unix:path=/run/desktop-bus/bus` |
-| `ozwell-computer-xvfb.service` | `Xvfb :0` at `$OZWELL_COMPUTER_SCREEN` |
-| `ozwell-computer-session.service` | xfce4-session running xfwm4 plus `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). It also starts the AT-SPI bus and, on first start, a terminal (xfce4-terminal); Thunar is the file manager. |
-| `ozwell-computer.service` | this server |
+| `ozwell-computer-desktop.service` (system) | `xinit /etc/X11/Xsession startxfce4 -- Xvfb :0 ...` at `$OZWELL_COMPUTER_SCREEN`, in a PAM login session (`/etc/pam.d/ozwell-computer`: Debian's `common-account` and `common-session`), so `pam_systemd` starts the user's systemd manager and session D-Bus. The session is xfce4-session running xfwm4 plus `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). It also starts the AT-SPI bus and, on first start, a terminal (xfce4-terminal); Thunar is the file manager. |
+| `ozwell-computer.service` (user, `systemctl --user -M desktop@ ...`) | this server, started by the session (an autostart entry) once it has passed its environment (`DISPLAY`, the session bus, the accessibility modules) to the user manager |
 
-Apps launched through the API share the session bus and have the GTK/Qt
-accessibility bridges enabled, so their UI shows up in `/api/v1/a11y/*`.
+Apps launched through the API inherit that environment: they share the session bus
+and have the GTK/Qt accessibility bridges enabled, so their UI shows up in
+`/api/v1/a11y/*`. The server's logs are in `journalctl _SYSTEMD_USER_UNIT=ozwell-computer.service`
+(or `journalctl --user -u ozwell-computer` as `desktop`).
 
-**The desktop persists.** Restarting, upgrading or crashing the server leaves Xvfb,
-the bus and the session running; the server reattaches to the display, and open apps
-stay open. When the session itself stops (container or machine restart, `systemctl
-restart ozwell-computer-session`) xfce4-session saves it, and it also checkpoints every
-minute. The next start restores session-aware apps (those started from the panel or
+**The desktop persists.** Restarting, upgrading or crashing the server leaves the
+desktop running; the server reattaches to the display, and open apps stay open. When
+the desktop itself stops (container or machine restart, `systemctl restart
+ozwell-computer-desktop`) it logs out, and xfce4-session saves the session
+(`SaveOnExit`). The next start restores session-aware apps (those started from the panel or
 dock, such as xfce4-terminal, Thunar and Firefox) with their window positions. Firefox
 reopens its previous tabs (`docker/firefox/policies.json`). Apps launched through the
 API aren't session clients and aren't restored. The session lives in the `desktop`
@@ -228,6 +228,8 @@ the systemd units, `/usr/bin/ozwell-computer`, and the desktop configuration
 - It needs Node.js 24 or newer from NodeSource, which provides the `nodejs` package.
 - Installing it creates the `desktop` user, then enables and starts the services.
 - Upgrading restarts only the server, so applications open on the desktop survive.
+  Upgrading from a version with separate Xvfb, D-Bus and session units replaces them
+  with `ozwell-computer-desktop.service`, which restarts the desktop once.
 - Removing it stops and disables the services; purging also deletes
   `/var/lib/ozwell-computer`.
 

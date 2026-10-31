@@ -4,6 +4,7 @@
     <property name="FailsafeSessionName" type="string" value="Ozwell"/>
     <property name="SaveOnExit" type="bool" value="true"/>
     <property name="PromptOnLogout" type="bool" value="false"/>
+    <property name="StartAssistiveTechnologies" type="bool" value="true"/>
   </property>
   <property name="startup" type="empty">
     <property name="ssh-agent" type="empty">

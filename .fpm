@@ -11,6 +11,10 @@
 --depends libstdc++6
 --depends adduser
 --depends xvfb
+--depends xinit
+--depends x11-common
+--depends libpam-runtime
+--depends libpam-systemd
 --depends xfwm4
 --depends xfce4-session
 --depends xfce4-panel
@@ -23,6 +27,7 @@
 --depends gnome-themes-extra-data
 --depends dbus-daemon
 --depends dbus-bin
+--depends dbus-user-session
 --depends at-spi2-core
 --depends libatk-adaptor
 --depends xdg-utils
@@ -35,6 +40,7 @@
 --deb-suggests xterm
 --deb-suggests zenity
 --config-files /etc/default/ozwell-computer
+--config-files /etc/pam.d/ozwell-computer
 --config-files /etc/xdg/mimeapps.list
 --config-files /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
 --config-files /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml

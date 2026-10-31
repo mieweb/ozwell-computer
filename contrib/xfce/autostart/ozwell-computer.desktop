@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=ozwell-computer
+Comment=Start the ozwell-computer server in the user manager with this session's environment
+Exec=sh -c "dbus-update-activation-environment --systemd GNOME_ACCESSIBILITY GSK_RENDERER LIBGL_ALWAYS_SOFTWARE NO_AT_BRIDGE QT_LINUX_ACCESSIBILITY_ALWAYS_ON; exec systemctl --user start ozwell-computer.service"
+NoDisplay=true
