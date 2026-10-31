@@ -58,8 +58,10 @@ start_server() {
 migrate() {
     legacy="ozwell-computer.service ozwell-computer-session.service ozwell-computer-xvfb.service ozwell-computer-dbus.service"
     [ -e /usr/lib/systemd/system/ozwell-computer-session.service ] || return 0
-    systemctl disable --now $legacy || return
-    for u in $legacy; do rm -f "/usr/lib/systemd/system/$u"; done
+    for u in $legacy; do
+        systemctl disable --now "$u" || true
+        rm -f "/usr/lib/systemd/system/$u"
+    done
     systemctl daemon-reload && systemctl enable ozwell-computer-desktop.service
 }
 
