@@ -104,7 +104,7 @@ package provides these units, both running as the `desktop` user:
 
 | Unit | Purpose |
 |---|---|
-| `ozwell-computer-desktop.service` | `xinit /etc/X11/Xsession startxfce4 -- Xvfb :0 ...` at `$OZWELL_COMPUTER_SCREEN`, in a PAM login session (`/etc/pam.d/ozwell-computer`: Debian's `common-account` and `common-session`), so `pam_systemd` starts the user's session D-Bus at `/run/user/<uid>/bus`. The session is xfce4-session running xfwm4 plus `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). It also starts the AT-SPI bus and, on first start, a terminal (xfce4-terminal); Thunar is the file manager. |
+| `ozwell-computer-desktop.service` | `xinit /etc/X11/Xsession startxfce4 -- Xvfb :0 ...` at `$OZWELL_COMPUTER_SCREEN`, in a PAM login session (`/etc/pam.d/ozwell-computer`: Debian's `common-account` and `common-session`), so `pam_systemd` starts the user's session D-Bus at `/run/user/<uid>/bus`. The session is xfce4-session running xfwm4, xfdesktop (a plain backdrop, set in `/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml`) and `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). It also starts the AT-SPI bus and, on first start, a terminal (xfce4-terminal); Thunar is the file manager. |
 | `ozwell-computer.service` | this server (`Requires=` the desktop) |
 
 Apps launched through the API share the session bus (`DISPLAY=:0`, and the server sets

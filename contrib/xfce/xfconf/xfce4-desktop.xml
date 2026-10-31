@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Plain #2e3440 backdrop and no desktop icons. Keys from xfdesktop 4.20 on Xvfb, whose
+     only monitor (connector) is named "screen"; xfwm4.xml sets a single workspace. -->
+<channel name="xfce4-desktop" version="1.0">
+  <property name="backdrop" type="empty">
+    <property name="screen0" type="empty">
+      <property name="monitorscreen" type="empty">
+        <property name="workspace0" type="empty">
+          <property name="color-style" type="int" value="0"/>
+          <property name="image-style" type="int" value="0"/>
+          <property name="rgba1" type="array">
+            <value type="double" value="0.180392"/>
+            <value type="double" value="0.203922"/>
+            <value type="double" value="0.250980"/>
+            <value type="double" value="1.000000"/>
+          </property>
+        </property>
+      </property>
+    </property>
+  </property>
+  <property name="desktop-icons" type="empty">
+    <property name="style" type="int" value="0"/>
+  </property>
+</channel>

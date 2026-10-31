@@ -240,11 +240,20 @@ describe('desktop session', () => {
     expect(desktop).toMatch(/^ExecStop=\/bin\/sh -c 'xfce4-session-logout --logout \|\| exit; while kill -0 "\$MAINPID"/m);
   });
 
-  it('the session reads its config and autostart entries from where make install puts them', () => {
+  it('the session reads its config from where make install puts it', () => {
     expect(desktop).toMatch(/^Environment=XDG_CONFIG_DIRS=@PREFIX@\/xdg:\/etc\/xdg$/m);
     expect(read('Makefile')).toMatch(/^APP_XFCONF := \$\(DESTAPP\)\/xdg\/xfce4\/xfconf\/xfce-perchannel-xml$/m);
-    expect(read('Makefile')).toMatch(/^APP_AUTOSTART := \$\(DESTAPP\)\/xdg\/autostart$/m);
     expect(read('.fpm')).toMatch(/^--depends xfce4-session$/m);
+  });
+
+  it('xfdesktop draws the backdrop from xfconf defaults (no autostart glue)', () => {
+    const xml = read('contrib/xfce/xfconf/xfce4-desktop.xml');
+    // Xvfb's only RandR output is "screen"; xfwm4.xml keeps one workspace.
+    expect(xml).toMatch(/<property name="backdrop" type="empty">\s*<property name="screen0" type="empty">\s*<property name="monitorscreen" type="empty">\s*<property name="workspace0" type="empty">/);
+    expect(read('contrib/xfce/xfconf/xfwm4.xml')).toMatch(/name="workspace_count" type="int" value="1"/);
+    expect(read('contrib/xfce/xfce4-session.xml')).toMatch(/_Command" type="array">\s*<value type="string" value="xfdesktop"\/>/);
+    expect(read('.fpm')).toMatch(/^--depends xfdesktop4$/m);
+    expect(read('.fpm')).toMatch(/^--config-files \/etc\/xdg\/xfce4\/xfconf\/xfce-perchannel-xml\/xfce4-desktop\.xml$/m);
   });
 
   it('the default themes are installed and light: Adwaita apps and panel, Greybird borders', () => {

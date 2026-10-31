@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=ozwell-computer background
-Comment=Desktop background colour
-# After xfwm4 starts, otherwise it clears the root to black.
-Exec=sh -c "sleep 3; exec xsetroot -solid '#2e3440'"
-NoDisplay=true

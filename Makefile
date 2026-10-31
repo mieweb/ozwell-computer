@@ -11,7 +11,6 @@ UNIT_DIR := $(DESTDIR)/usr/lib/systemd/system
 XFCONF   := $(DESTDIR)/etc/xdg/xfce4/xfconf/xfce-perchannel-xml
 # Read through XDG_CONFIG_DIRS (see ozwell-computer-desktop.service).
 APP_XFCONF := $(DESTAPP)/xdg/xfce4/xfconf/xfce-perchannel-xml
-APP_AUTOSTART := $(DESTAPP)/xdg/autostart
 UNITS    := ozwell-computer.service ozwell-computer-desktop.service ozwell-computer-upgrade.service ozwell-computer-upgrade.path
 # Replaced by ozwell-computer-desktop.service.
 LEGACY_UNITS := ozwell-computer-session.service ozwell-computer-xvfb.service ozwell-computer-dbus.service
@@ -83,8 +82,6 @@ install: build $(if $(filter /,$(DESTDIR)),system-deps)
 	for f in contrib/xfce/xfconf/*.xml; do $(call conffile,$$f,$(XFCONF)/$${f##*/}) || exit 1; done
 	$(INSTALL) -d $(APP_XFCONF)
 	$(INSTALL_DATA) contrib/xfce/xfce4-session.xml contrib/xfce/xsettings.xml $(APP_XFCONF)/
-	$(INSTALL) -d $(APP_AUTOSTART)
-	$(INSTALL_DATA) contrib/xfce/autostart/*.desktop $(APP_AUTOSTART)/
 	$(INSTALL_DATA) contrib/xfce/applications/*.desktop $(DESTDIR)/usr/share/applications/
 	# Last: the source commit marks a complete install for in-app updates from git (contrib/upgrade.sh).
 	rev=$$(git rev-parse --verify -q HEAD 2>/dev/null); if [ -n "$$rev" ]; then echo "$$rev" > $(DESTAPP)/REVISION; else rm -f $(DESTAPP)/REVISION; fi

@@ -14,7 +14,7 @@ Environment=XDG_SESSION_TYPE=x11 XDG_SESSION_CLASS=user DISPLAY=:0
 WorkingDirectory=~
 Environment=OZWELL_COMPUTER_SCREEN=1920x1080x24
 # Our xfce4-session.xml and xsettings.xml (the ones in /etc/xdg belong to xfce4-session
-# and xfce4-settings) and autostart entries take precedence over the defaults.
+# and xfce4-settings) take precedence over the defaults.
 Environment=XDG_CONFIG_DIRS=@PREFIX@/xdg:/etc/xdg
 # Apps expose AT-SPI (GNOME_ACCESSIBILITY=1: Firefox and others only do when told an AT
 # is present), as in ozwell-computer.service.

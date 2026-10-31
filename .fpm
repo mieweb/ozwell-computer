@@ -18,6 +18,7 @@
 --depends xfwm4
 --depends xfce4-session
 --depends xfce4-panel
+--depends xfdesktop4
 --depends xfconf
 --depends xfce4-settings
 --depends xfce4-terminal
@@ -44,6 +45,7 @@
 --config-files /etc/xdg/mimeapps.list
 --config-files /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
 --config-files /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml
+--config-files /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml
 --deb-no-default-config-files
 --after-install contrib/postinst
 --before-remove contrib/prerm
