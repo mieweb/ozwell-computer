@@ -270,6 +270,7 @@ are `http://<container IP>:8080`, or `http://<publish_host>:<host port>` with `p
 opensource-server://manager.os.mieweb.org?site=<id>&domain=<external domain id>
   &template=ghcr.io/mieweb/ozwell-computer:latest
   &owner=tag|email
+  &default_owner=<username>                     (owner=email only)
   &internal=external|ip
   &tls=0                                        (http, development only)
 ```
@@ -284,7 +285,9 @@ The API key comes from `OPENSOURCE_SERVER_API_KEY`.
   - `owner=tag` (default): containers belong to the API key's account.
   - `owner=email`: each container is also attributed to the opensource-server user whose
     email matches `X-Ozwell-User-Email`, so it appears in their dashboard. This needs an
-    admin key, and creation fails for users without an opensource-server account.
+    admin key, and creation fails for users without an opensource-server account,
+    unless `default_owner=<username>` is set: then containers of users whose email is
+    missing or matches no account are attributed to that opensource-server user instead.
 - **Internal URL:** `internal=external` (default) reaches computers through their public
   URL. `internal=ip` uses `http://<ipv4>:8080`, for an orchestrator running on the
   site's network.
@@ -308,7 +311,7 @@ sequenceDiagram
     Note over O,S: create(owner, displayName)
     opt owner=email
         O->>S: GET /users
-        S-->>O: the uid whose mail is X-Ozwell-User-Email (else creation fails)
+        S-->>O: the uid whose mail is X-Ozwell-User-Email (else default_owner, or creation fails)
     end
     O->>S: POST /sites/{site}/containers<br/>hostname ozc-xxxx, template, username (owner=email),<br/>env OZWELL_ORCHESTRATOR_* and OZWELL_COMPUTER_TOKEN,<br/>http service 8080 as ozc-xxxx.{domain}, authRequired false
     S->>K: create and start from the template image
