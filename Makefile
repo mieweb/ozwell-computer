@@ -8,13 +8,13 @@ STAGE := $(if $(filter command line,$(origin DESTDIR)),$(DESTDIR),$(CURDIR)/.pkg
 
 DESTAPP  := $(DESTDIR)$(PREFIX)
 UNIT_DIR := $(DESTDIR)/usr/lib/systemd/system
-USER_UNIT_DIR := $(DESTDIR)/usr/lib/systemd/user
 XFCONF   := $(DESTDIR)/etc/xdg/xfce4/xfconf/xfce-perchannel-xml
 # Read through XDG_CONFIG_DIRS (see ozwell-computer-desktop.service).
 APP_XFCONF := $(DESTAPP)/xdg/xfce4/xfconf/xfce-perchannel-xml
 APP_AUTOSTART := $(DESTAPP)/xdg/autostart
-UNITS    := ozwell-computer-desktop.service ozwell-computer-upgrade.service ozwell-computer-upgrade.path
-USER_UNITS := ozwell-computer.service
+UNITS    := ozwell-computer.service ozwell-computer-desktop.service ozwell-computer-upgrade.service ozwell-computer-upgrade.path
+# Replaced by ozwell-computer-desktop.service.
+LEGACY_UNITS := ozwell-computer-session.service ozwell-computer-xvfb.service ozwell-computer-dbus.service
 
 INSTALL      := install
 INSTALL_DATA := $(INSTALL) -m 0644
@@ -65,13 +65,17 @@ install: build $(if $(filter /,$(DESTDIR)),system-deps)
 	chmod 0755 $(DESTAPP)/bin/ozwell-computer-upgrade
 	$(INSTALL) -d $(DESTDIR)/usr/bin
 	ln -sf $(PREFIX)/dist/cli.js $(DESTDIR)/usr/bin/ozwell-computer
-	$(INSTALL) -d $(UNIT_DIR) $(USER_UNIT_DIR)
+	$(INSTALL) -d $(UNIT_DIR)
 	for u in $(UNITS); do \
 		sed 's|@PREFIX@|$(PREFIX)|g' contrib/systemd/$$u > $(UNIT_DIR)/$$u && chmod 0644 $(UNIT_DIR)/$$u || exit 1; \
 	done
-	for u in $(USER_UNITS); do \
-		sed 's|@PREFIX@|$(PREFIX)|g' contrib/systemd/user/$$u > $(USER_UNIT_DIR)/$$u && chmod 0644 $(USER_UNIT_DIR)/$$u || exit 1; \
-	done
+	# Updating a real install from before ozwell-computer-desktop.service (the .deb does this in postinst).
+	[ "$(DESTDIR)" != / ] || { enabled=; for u in $(LEGACY_UNITS); do \
+		[ -e $(UNIT_DIR)/$$u ] || continue; \
+		if systemctl is-enabled --quiet $$u; then enabled=1; fi; \
+		systemctl disable --now $$u >/dev/null 2>&1; rm -f $(UNIT_DIR)/$$u; \
+	done; rm -f $(DESTAPP)/bin/ozwell-computer-session; \
+	if [ -n "$$enabled" ]; then systemctl enable ozwell-computer-desktop.service >/dev/null; fi; }
 	$(INSTALL) -d $(DESTDIR)/etc/default $(DESTDIR)/etc/pam.d $(XFCONF) $(DESTDIR)/usr/share/applications
 	$(call conffile,contrib/default/ozwell-computer,$(DESTDIR)/etc/default/ozwell-computer)
 	$(call conffile,contrib/pam/ozwell-computer,$(DESTDIR)/etc/pam.d/ozwell-computer)

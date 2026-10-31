@@ -100,17 +100,16 @@ how `docker compose up` shows it. A token you configure yourself is never printe
 
 The image is based on `ghcr.io/mieweb/opensource-server/nodejs`, with systemd as PID 1,
 and installs the `ozwell-computer` Debian package (below) plus a few sample apps. The
-package runs the desktop like a regular login, as the `desktop` user:
+package provides these units, both running as the `desktop` user:
 
 | Unit | Purpose |
 |---|---|
-| `ozwell-computer-desktop.service` (system) | `xinit /etc/X11/Xsession startxfce4 -- Xvfb :0 ...` at `$OZWELL_COMPUTER_SCREEN`, in a PAM login session (`/etc/pam.d/ozwell-computer`: Debian's `common-account` and `common-session`), so `pam_systemd` starts the user's systemd manager and session D-Bus. The session is xfce4-session running xfwm4 plus `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). It also starts the AT-SPI bus and, on first start, a terminal (xfce4-terminal); Thunar is the file manager. |
-| `ozwell-computer.service` (user, `systemctl --user -M desktop@ ...`) | this server, started by the session (an autostart entry) once it has passed its environment (`DISPLAY`, the session bus, the accessibility modules) to the user manager |
+| `ozwell-computer-desktop.service` | `xinit /etc/X11/Xsession startxfce4 -- Xvfb :0 ...` at `$OZWELL_COMPUTER_SCREEN`, in a PAM login session (`/etc/pam.d/ozwell-computer`: Debian's `common-account` and `common-session`), so `pam_systemd` starts the user's session D-Bus at `/run/user/<uid>/bus`. The session is xfce4-session running xfwm4 plus `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). It also starts the AT-SPI bus and, on first start, a terminal (xfce4-terminal); Thunar is the file manager. |
+| `ozwell-computer.service` | this server (`Requires=` the desktop) |
 
-Apps launched through the API inherit that environment: they share the session bus
-and have the GTK/Qt accessibility bridges enabled, so their UI shows up in
-`/api/v1/a11y/*`. The server's logs are in `journalctl _SYSTEMD_USER_UNIT=ozwell-computer.service`
-(or `journalctl --user -u ozwell-computer` as `desktop`).
+Apps launched through the API share the session bus (`DISPLAY=:0`, and the server sets
+`XDG_RUNTIME_DIR`/`DBUS_SESSION_BUS_ADDRESS` from its UID) and have the GTK/Qt
+accessibility bridges enabled, so their UI shows up in `/api/v1/a11y/*`.
 
 **The desktop persists.** Restarting, upgrading or crashing the server leaves the
 desktop running; the server reattaches to the display, and open apps stay open. When
@@ -229,9 +228,8 @@ the systemd units, `/usr/bin/ozwell-computer`, and the desktop configuration
 - Installing it creates the `desktop` user, then enables and starts the services.
 - Upgrading restarts only the server, so applications open on the desktop survive.
   Upgrading from a version with separate Xvfb, D-Bus and session units replaces them
-  with `ozwell-computer-desktop.service`, which restarts the desktop once. (On the git
-  channel below, the previous version's updater installs the new one, so this happens
-  on the update after that.)
+  with `ozwell-computer-desktop.service`, which restarts the desktop once (`make install`
+  does the same for the git channel below).
 - Removing it stops and disables the services; purging also deletes
   `/var/lib/ozwell-computer`.
 

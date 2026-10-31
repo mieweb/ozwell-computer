@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { resolveKeysym, charToKeysym, keysymToChar, normalizeModifier, XK } from '../../src/x11/keymap.js';
 import { ScreenshotRegistry, resolvePoint, fitSize } from '../../src/coords.js';
-import { loadConfig, parseArgs } from '../../src/config.js';
+import { loadConfig, parseArgs, sessionEnv } from '../../src/config.js';
 import { safePath, signedUrl, verifySignature, parseRange } from '../../src/fs/index.js';
 import { deriveKey } from '../../src/auth/token.js';
 import { addRect } from '../../src/x11/damage.js';
@@ -114,6 +114,14 @@ describe('config', () => {
     expect(loadConfig({ OZWELL_COMPUTER_CPUS: '1.5' }).config.cpus).toBe(1.5);
     expect(loadConfig({}, ['--cpus', '4']).config.cpus).toBe(4);
     expect(() => loadConfig({ OZWELL_COMPUTER_CPUS: '0' })).toThrow();
+  });
+
+  it('derives the session bus from the UID when unset', () => {
+    const all = () => true;
+    expect(sessionEnv({}, 104, all)).toEqual({ XDG_RUNTIME_DIR: '/run/user/104', DBUS_SESSION_BUS_ADDRESS: 'unix:path=/run/user/104/bus' });
+    expect(sessionEnv({ XDG_RUNTIME_DIR: '/x' }, 104, all)).toEqual({ DBUS_SESSION_BUS_ADDRESS: 'unix:path=/x/bus' });
+    expect(sessionEnv({ DBUS_SESSION_BUS_ADDRESS: 'unix:path=/b' }, 104, all)).toEqual({ XDG_RUNTIME_DIR: '/run/user/104' });
+    expect(sessionEnv({}, 104, () => false)).toEqual({});
   });
 });
 

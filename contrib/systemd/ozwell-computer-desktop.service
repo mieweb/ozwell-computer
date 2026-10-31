@@ -3,21 +3,21 @@ Description=ozwell-computer desktop (Xvfb :0 with the Xfce session of user deskt
 After=systemd-user-sessions.service
 
 [Service]
+# exec: started once PAM has set up the session, so ozwell-computer.service (After=)
+# finds the user's bus.
+Type=exec
 User=desktop
 # A login session (pam_systemd through common-session): it starts the user's systemd
-# manager, where the server (ozwell-computer.service) and the session's D-Bus run.
+# manager and its session bus (/run/user/UID/bus, dbus-user-session).
 PAMName=ozwell-computer
-Environment=XDG_SESSION_TYPE=x11 XDG_SESSION_CLASS=user
+Environment=XDG_SESSION_TYPE=x11 XDG_SESSION_CLASS=user DISPLAY=:0
 WorkingDirectory=~
-# The server's token and the upgrade request/status files, owned by desktop.
-StateDirectory=ozwell-computer
-StateDirectoryMode=0700
 Environment=OZWELL_COMPUTER_SCREEN=1920x1080x24
 # Our xfce4-session.xml and xsettings.xml (the ones in /etc/xdg belong to xfce4-session
 # and xfce4-settings) and autostart entries take precedence over the defaults.
 Environment=XDG_CONFIG_DIRS=@PREFIX@/xdg:/etc/xdg
 # Apps expose AT-SPI (GNOME_ACCESSIBILITY=1: Firefox and others only do when told an AT
-# is present). The session's autostart passes these on to the user manager.
+# is present), as in ozwell-computer.service.
 Environment=GNOME_ACCESSIBILITY=1 GSK_RENDERER=cairo LIBGL_ALWAYS_SOFTWARE=1 NO_AT_BRIDGE=0 QT_LINUX_ACCESSIBILITY_ALWAYS_ON=1
 EnvironmentFile=-/etc/default/ozwell-computer
 # Xsession runs the distribution's session setup (D-Bus, accessibility modules, exporting
