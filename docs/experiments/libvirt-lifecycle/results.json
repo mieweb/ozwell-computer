@@ -1,0 +1,208 @@
+{
+  "started_at": "2026-10-31T20:07:51.650Z",
+  "passed": true,
+  "idle_ms": 1500,
+  "nwfilter_enforced": false,
+  "scope": "Real seeded libvirt VM, production LibvirtProvider + IdleController + orchestrator HTTP/WebSocket/MCP gateway; TCG x86_64 guest on disposable Docker host.",
+  "limitations": [
+    "Local software emulation; timings are not KVM production benchmarks.",
+    "Controller restart is tested; host reboot, storage corruption and cross-host restore are not simulated.",
+    "Libvirt and host page-cache memory remain; the guest QEMU process must disappear.",
+    "Host kernel cannot apply libvirt nwfilter; lab-only XML adapter omits filterref; production provider still requires anti-spoof filters; not security deployment validation."
+  ],
+  "cycles": [
+    {
+      "label": "viewer-wake",
+      "automatic_save_wait_ms": 2620,
+      "domain_state": "hibernated",
+      "qemu_processes": [],
+      "managed_save_bytes": 963984576,
+      "passive_no_wake": {
+        "authenticated /health": 503,
+        "authenticated /api/v1/metrics": 503,
+        "authenticated /api/v1/lifecycle": 503,
+        "anonymous /api/v1/capabilities": 401,
+        "anonymous /": 200
+      },
+      "wake_to_viewer_ms": 4958,
+      "after_probe": {
+        "token": "fc82dca2efb7a6c5625f3092d2d8edf7ce67504575235c7a4e1d8e025cba0417",
+        "pid": 778,
+        "start_ticks": "6858",
+        "boot_id": "0c99867c-92f5-4225-a2de-eef66c935174",
+        "payload_sha256": "cbd07dc2523e59ea7156def05d7871533045915fcd4ea3aa4515ee3bc4b4c727",
+        "payload_bytes": 67108864,
+        "counter": 154
+      },
+      "after_gui": {
+        "window_id": "0x1400004",
+        "pid": 779,
+        "start_ticks": "6859",
+        "unsaved_text": "unsaved-f8e8a069-ebde-45ce-a2db-4bf91c9b1821",
+        "clipboard_generation": 4
+      },
+      "after_png": {
+        "file": "gui-after-viewer.png",
+        "bytes": 17247,
+        "sha256": "67c83c6c1a3fcdc6ab3e2a93f42f906840149651af6cf4ea3f083b946deefcbc"
+      },
+      "screenshot_identical": true,
+      "after_qemu_processes": [
+        {
+          "pid": 5316,
+          "rss_bytes": 1227845632
+        }
+      ],
+      "passed": true
+    },
+    {
+      "label": "mcp-wake",
+      "automatic_save_wait_ms": 2409,
+      "domain_state": "hibernated",
+      "qemu_processes": [],
+      "managed_save_bytes": 963878070,
+      "wake_to_mcp_result_ms": 7368,
+      "mcp_probe": {
+        "token": "fc82dca2efb7a6c5625f3092d2d8edf7ce67504575235c7a4e1d8e025cba0417",
+        "pid": 778,
+        "start_ticks": "6858",
+        "boot_id": "0c99867c-92f5-4225-a2de-eef66c935174",
+        "payload_sha256": "cbd07dc2523e59ea7156def05d7871533045915fcd4ea3aa4515ee3bc4b4c727",
+        "payload_bytes": 67108864,
+        "counter": 349
+      },
+      "after_probe": {
+        "token": "fc82dca2efb7a6c5625f3092d2d8edf7ce67504575235c7a4e1d8e025cba0417",
+        "pid": 778,
+        "start_ticks": "6858",
+        "boot_id": "0c99867c-92f5-4225-a2de-eef66c935174",
+        "payload_sha256": "cbd07dc2523e59ea7156def05d7871533045915fcd4ea3aa4515ee3bc4b4c727",
+        "payload_bytes": 67108864,
+        "counter": 370
+      },
+      "after_gui": {
+        "window_id": "0x1400004",
+        "pid": 779,
+        "start_ticks": "6859",
+        "unsaved_text": "unsaved-f8e8a069-ebde-45ce-a2db-4bf91c9b1821",
+        "clipboard_generation": 6
+      },
+      "after_png": {
+        "file": "gui-after-mcp.png",
+        "bytes": 17247,
+        "sha256": "67c83c6c1a3fcdc6ab3e2a93f42f906840149651af6cf4ea3f083b946deefcbc"
+      },
+      "screenshot_identical": true,
+      "after_qemu_processes": [
+        {
+          "pid": 7487,
+          "rss_bytes": 1274208256
+        }
+      ],
+      "passed": true
+    },
+    {
+      "label": "controller-restart",
+      "automatic_save_wait_ms": 2358,
+      "domain_state": "hibernated",
+      "qemu_processes": [],
+      "managed_save_bytes": 963386652,
+      "passive_no_wake": {
+        "authenticated /health": 503,
+        "authenticated /api/v1/metrics": 503,
+        "authenticated /api/v1/lifecycle": 503,
+        "anonymous /api/v1/capabilities": 401,
+        "anonymous /": 200
+      },
+      "wake_after_restart_ms": 4715,
+      "after_probe": {
+        "token": "fc82dca2efb7a6c5625f3092d2d8edf7ce67504575235c7a4e1d8e025cba0417",
+        "pid": 778,
+        "start_ticks": "6858",
+        "boot_id": "0c99867c-92f5-4225-a2de-eef66c935174",
+        "payload_sha256": "cbd07dc2523e59ea7156def05d7871533045915fcd4ea3aa4515ee3bc4b4c727",
+        "payload_bytes": 67108864,
+        "counter": 465
+      },
+      "after_gui": {
+        "window_id": "0x1400004",
+        "pid": 779,
+        "start_ticks": "6859",
+        "unsaved_text": "unsaved-f8e8a069-ebde-45ce-a2db-4bf91c9b1821",
+        "clipboard_generation": 8
+      },
+      "after_png": {
+        "file": "gui-after-controller-restart.png",
+        "bytes": 17247,
+        "sha256": "67c83c6c1a3fcdc6ab3e2a93f42f906840149651af6cf4ea3f083b946deefcbc"
+      },
+      "screenshot_identical": true,
+      "after_qemu_processes": [
+        {
+          "pid": 8870,
+          "rss_bytes": 1237426176
+        }
+      ],
+      "passed": true
+    }
+  ],
+  "checks": {
+    "keep_awake_blocks_save": true,
+    "sse_blocks_save": true,
+    "websocket_blocks_save": true,
+    "command_job_blocks_save": true,
+    "controller_restart_preserves_sleep": true
+  },
+  "versions": {
+    "libvirt": "Virsh command line tool of libvirt 9.0.0\nSee web site at https://libvirt.org/\n\nCompiled with support for:\n Hypervisors: QEMU/KVM LXC LibXL OpenVZ VMware ESX Test\n Networking: Remote Network Bridging Interface udev Nwfilter\n Storage: Dir Disk Filesystem SCSI Multipath iSCSI iSCSI-direct LVM RBD Gluster ZFS\n Miscellaneous: Daemon Nodedev AppArmor SELinux Secrets Debug DTrace Readline",
+    "node": "v24.22.2",
+    "host": "Linux version 7.2.9-orbstack-00391-g2b298d05fbd4 (orbstack@builder) (ClangBuiltLinux clang version 22.1.3 (https://github.com/llvm/llvm-project.git e9846648fd6183ee6d8cbdb4502213fcf902a211), ClangBuiltLinux LLD 22.1.3 (https://github.com/llvm/llvm-project.git e9846648fd6183ee6d8cbdb4502213fcf902a211)) #1 SMP PREEMPT Mon Oct 12 05:39:36 UTC 2026",
+    "qemu": {
+      "qemu": {
+        "micro": 22,
+        "minor": 2,
+        "major": 7
+      },
+      "package": "Debian 1:7.2+dfsg-7+deb12u18+b3"
+    }
+  },
+  "instance_id": "ozc-la7so2o2vq",
+  "uuid": "24aa994e-a049-4cba-9048-b48b2289ff16",
+  "first_boot_ready_ms": 86492,
+  "guest_environment": {
+    "kernel": "6.12.113+deb13-amd64",
+    "architecture": "x86_64",
+    "os_release": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\nSUPPORT_URL=\"https://www.debian.org/support\"\nBUG_REPORT_URL=\"https://bugs.debian.org/\"\n",
+    "ozwell_package": "2026.10.2+1.g158f71c.dirty",
+    "app_version": "0.0.0",
+    "revision": null,
+    "dist_sha256": {
+      "server.js": "6f1e215b323091fa9bc257c4d136e1e796ac9b540da084f1a120f44679be3971",
+      "lifecycle.js": "a63d23c924b1e268653260f011a7b48d214307bc4041ff6cb2f0a30f830d633b",
+      "routes/lifecycle.js": "966a5e0bd6442c2b04e684b0f4683bf6e44ee14a5086474f1958f195446028c6"
+    }
+  },
+  "guest_capabilities_version": "0.0.0",
+  "initial_probe": {
+    "token": "fc82dca2efb7a6c5625f3092d2d8edf7ce67504575235c7a4e1d8e025cba0417",
+    "pid": 778,
+    "start_ticks": "6858",
+    "boot_id": "0c99867c-92f5-4225-a2de-eef66c935174",
+    "payload_sha256": "cbd07dc2523e59ea7156def05d7871533045915fcd4ea3aa4515ee3bc4b4c727",
+    "payload_bytes": 67108864,
+    "counter": 18
+  },
+  "initial_gui": {
+    "window_id": "0x1400004",
+    "pid": 779,
+    "start_ticks": "6859",
+    "unsaved_text": "unsaved-f8e8a069-ebde-45ce-a2db-4bf91c9b1821",
+    "clipboard_generation": 2
+  },
+  "initial_png": {
+    "file": "gui-before.png",
+    "bytes": 17247,
+    "sha256": "67c83c6c1a3fcdc6ab3e2a93f42f906840149651af6cf4ea3f083b946deefcbc"
+  },
+  "finished_at": "2026-10-31T20:10:33.508Z"
+}

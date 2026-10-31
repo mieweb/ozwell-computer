@@ -6,6 +6,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Computer, Provider, Requester } from './providers/types.ts';
 import { InstanceClient, InstanceError } from './instance-client.ts';
+import type { IdleController } from './lifecycle.ts';
 
 export interface ToolDef { name: string; description?: string; inputSchema: { type: 'object'; properties?: Record<string, unknown>; required?: string[]; [k: string]: unknown } }
 
@@ -24,15 +25,17 @@ export function describe(c: Computer) {
     display_name: c.displayName ?? null,
     status: c.status,
     stopped: c.stopped,
+    ...(c.hibernated === undefined ? {} : { hibernated: c.hibernated }),
     created_at: c.createdAt ?? null,
     viewer_url: base && c.token ? `${base.replace(/\/+$/, '')}/?token=${encodeURIComponent(c.token)}` : base ?? null,
   };
 }
 
-const managementTools = (maxInstances: number | undefined): ToolDef[] => [
+const managementTools = (maxInstances: number | undefined, autoRestore = false): ToolDef[] => [
   {
     name: 'list_computers',
-    description: 'List your ozwell-computers (virtual Linux desktops) with their current status. Use an instance_id with the other tools; a computer with stopped: true must be started with start_computer first.',
+    description: 'List your ozwell-computers (virtual Linux desktops) with their current status. Use an instance_id with the other tools. ' +
+      (autoRestore ? 'A hibernated computer restores automatically when a desktop tool or viewer connects; other stopped computers require start_computer.' : 'A computer with stopped: true must be started with start_computer first.'),
     inputSchema: { type: 'object', properties: {} },
   },
   {
@@ -43,7 +46,8 @@ const managementTools = (maxInstances: number | undefined): ToolDef[] => [
   },
   {
     name: 'get_computer',
-    description: 'Status, readiness and viewer_url of one of your computers. If it is still starting, waits up to ~40 s for it. If it is stopped, call start_computer.',
+    description: 'Status, readiness and viewer_url of one of your computers. If it is still starting, waits up to ~40 s for it. ' +
+      (autoRestore ? 'Status inspection leaves hibernated computers asleep; a desktop tool, viewer or start_computer restores them.' : 'If it is stopped, call start_computer.'),
     inputSchema: { type: 'object', properties: { instance_id: { type: 'string' } }, required: ['instance_id'] },
   },
   {
@@ -54,6 +58,24 @@ const managementTools = (maxInstances: number | undefined): ToolDef[] => [
   {
     name: 'destroy_computer',
     description: 'Permanently delete one of your computers and everything on it.',
+    inputSchema: { type: 'object', properties: { instance_id: { type: 'string' } }, required: ['instance_id'] },
+  },
+];
+
+const hibernationTools: ToolDef[] = [
+  {
+    name: 'hibernate_computer',
+    description: 'Save a quiescent computer to disk and release its VM CPU and RAM, preserving applications and unsaved work. Refuses while viewers, requests, command jobs, upgrades or keep-awake leases are active. The next authorized viewer or desktop tool restores it automatically.',
+    inputSchema: { type: 'object', properties: { instance_id: { type: 'string' } }, required: ['instance_id'] },
+  },
+  {
+    name: 'keep_computer_awake',
+    description: 'Prevent idle hibernation for application work outside Ozwell command jobs, such as a browser download. Restores a hibernated computer and sets or renews its manual keep-awake lease. ttl_ms defaults to one hour, maximum one day. Use allow_computer_hibernation when finished.',
+    inputSchema: { type: 'object', properties: { instance_id: { type: 'string' }, ttl_ms: { type: 'integer', minimum: 1, maximum: 86_400_000 } }, required: ['instance_id'] },
+  },
+  {
+    name: 'allow_computer_hibernation',
+    description: 'Release the manual keep-awake lease so this computer can hibernate after its idle grace period. Does not close viewers, stop jobs or wake a saved computer.',
     inputSchema: { type: 'object', properties: { instance_id: { type: 'string' } }, required: ['instance_id'] },
   },
 ];
@@ -80,6 +102,7 @@ export interface OrchestratorDeps {
   /** Per-user limit on computers; undefined means unlimited. */
   maxInstances?: number;
   log?: { info: (o: object, m: string) => void; warn: (o: object, m: string) => void };
+  lifecycle?: IdleController;
 }
 
 /** Is the computer up? (Re-reads it: providers may only learn URLs while it starts.) */
@@ -123,7 +146,7 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
     instructions:
       'Manages per-user virtual Linux desktops (ozwell-computers). Call list_computers, or create_computer if you have none, ' +
       'then pass its instance_id to the desktop tools (screenshot, click, type_text, ...). Share viewer_url with the user so they can watch. ' +
-      'Idle computers may be stopped: start them with start_computer.',
+      (deps.lifecycle ? 'Idle computers hibernate and restore automatically when a desktop tool or viewer connects. Use keep_computer_awake for application work outside command jobs.' : 'Idle computers may be stopped: start them with start_computer.'),
   });
 
   /** A computer the requester owns, or a not-found error (others' computers are invisible). */
@@ -155,7 +178,21 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
     };
   };
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...managementTools(deps.maxInstances), ...proxied] }));
+  const startWithLifecycle = async (c: Computer, startStopped = false) => {
+    try {
+      const active = await deps.lifecycle!.acquire(c.id, startStopped);
+      try { return text({ ...describe(active.computer), ready: true }); }
+      finally { active.release(); }
+    } catch (e) {
+      // Preserve the management API's wait-then-hand-off contract for cold boots.
+      if (e instanceof InstanceError && e.reason === 'computer_starting') {
+        return text({ ...describe(await provider.get(c.id) ?? c), ready: false });
+      }
+      throw e;
+    }
+  };
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...managementTools(deps.maxInstances, !!deps.lifecycle), ...(deps.lifecycle ? hibernationTools : []), ...proxied] }));
 
   server.setRequestHandler(CallToolRequestSchema, async (req): Promise<any> => {
     const { name } = req.params;
@@ -170,6 +207,7 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
           if (over) return over;
           const display = typeof args.display_name === 'string' ? args.display_name.slice(0, 64) : undefined;
           const created = await provider.create({ owner: user, displayName: display });
+          if (deps.lifecycle) return await startWithLifecycle(created);
           const { c, ready } = await waitReady(provider, created, deps.readyTimeoutMs ?? CREATE_WAIT_MS);
           return text({ ...describe(c), ready });
         }
@@ -180,6 +218,7 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
         }
         case 'start_computer': {
           const c0 = await mine(args.instance_id);
+          if (deps.lifecycle) return await startWithLifecycle(c0, true);
           // Only stopped ones: a provider's start may restart a running computer.
           const started = c0.stopped ? await provider.start(c0.id) : c0;
           const { c, ready } = await waitReady(provider, started, deps.readyTimeoutMs ?? CREATE_WAIT_MS, c0.stopped);
@@ -190,22 +229,45 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
           await provider.destroy(c.id);
           return text({ ok: true, instance_id: c.id });
         }
+        case 'hibernate_computer': {
+          if (!deps.lifecycle) return fail('feature_unsupported', 'this provider does not support hibernation');
+          const c = await mine(args.instance_id);
+          return text(describe(await deps.lifecycle.hibernate(c.id)));
+        }
+        case 'keep_computer_awake': {
+          if (!deps.lifecycle) return fail('feature_unsupported', 'this provider does not support hibernation');
+          const c = await mine(args.instance_id);
+          const ttl = args.ttl_ms ?? 3_600_000;
+          if (typeof ttl !== 'number') return fail('invalid_request', 'ttl_ms must be an integer');
+          await deps.lifecycle.keepAwake(c.id, ttl);
+          return text({ ok: true, instance_id: c.id, ttl_ms: ttl });
+        }
+        case 'allow_computer_hibernation': {
+          if (!deps.lifecycle) return fail('feature_unsupported', 'this provider does not support hibernation');
+          const c = await mine(args.instance_id);
+          await deps.lifecycle.allowIdle(c.id);
+          return text({ ok: true, instance_id: c.id });
+        }
         default: {
           if (!proxiedNames.has(name)) return fail('invalid_request', `unknown tool ${name}`);
-          const c = await mine(args.instance_id);
-          if (c.stopped) return stoppedError(c);
-          if (!c.internalUrl || !c.token) return fail('target_unavailable', `computer ${c.id} is ${c.status} and not reachable`);
-          const { instance_id: _drop, ...rest } = args;
-          // The computer shows this as the agent's name, so never the user's.
-          const agent = user.agentName ?? 'agent';
-          return await client.callTool(`${c.id}\u0000${user.id}\u0000${agent}`, c.internalUrl, c.token, agent, name, rest)
-            .catch(async (e) => {
-              if (!(e instanceof InstanceError && e.unreachable)) throw e;
-              // Best effort: a failed lookup keeps the original error.
-              const now = await provider.get(c.id).catch(() => null);
-              if (now?.stopped) return stoppedError(now);
-              throw e;
-            });
+          let c = await mine(args.instance_id);
+          const active = deps.lifecycle ? await deps.lifecycle.acquire(c.id) : undefined;
+          if (active) c = active.computer;
+          try {
+            if (c.stopped) return stoppedError(c);
+            if (!c.internalUrl || !c.token) return fail('target_unavailable', `computer ${c.id} is ${c.status} and not reachable`);
+            const { instance_id: _drop, ...rest } = args;
+            // The computer shows this as the agent's name, so never the user's.
+            const agent = user.agentName ?? 'agent';
+            return await client.callTool(`${c.id}\u0000${user.id}\u0000${agent}`, c.internalUrl, c.token, agent, name, rest)
+              .catch(async (e) => {
+                if (!(e instanceof InstanceError && e.unreachable)) throw e;
+                // Best effort: a failed lookup keeps the original error.
+                const now = await provider.get(c.id).catch(() => null);
+                if (now?.stopped) return stoppedError(now);
+                throw e;
+              });
+          } finally { active?.release(); }
         }
       }
     } catch (e) {

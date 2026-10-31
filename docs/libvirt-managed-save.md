@@ -3,8 +3,10 @@
 [Issue #57](https://github.com/mieweb/ozwell-computer/issues/57) tracks the objective:
 stop an unused Ozwell computer completely, release its executing guest processes
 and their RAM, then restore its running applications and unsaved state when a
-client returns. This experiment tests the underlying VM lifecycle. It does not
-implement a libvirt provider, automatic idle detection, or a wake gateway.
+client returns. This initial experiment tests the underlying VM lifecycle. The
+complete provider, automatic idle controller and authenticated wake gateway are
+now implemented; see the [deployment guide](libvirt-deployment.md) and the
+[whole-lifecycle validation](experiments/libvirt-lifecycle/README.md).
 
 `virsh managedsave DOMAIN --running` saves a running VM and stops it. Ordinary
 `virsh start DOMAIN` consumes that managed save and resumes the same guest state.
