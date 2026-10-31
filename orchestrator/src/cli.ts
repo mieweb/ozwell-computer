@@ -29,7 +29,7 @@ const maxInstances = rawMax === undefined ? undefined : Number(rawMax);
 
 const provider = await providerFromUri(uri as string, env);
 if (!provider.hibernate && env.ORCHESTRATOR_IDLE_MS !== undefined && env.ORCHESTRATOR_IDLE_MS !== '0') {
-  die('ORCHESTRATOR_IDLE_MS requires a hibernation-capable provider (libvirt:///system)');
+  die('ORCHESTRATOR_IDLE_MS requires a hibernation-capable provider (libvirt or docker-checkpoint)');
 }
 const readMs = (key: string, fallback: number, min: number) => {
   const raw = env[key];
@@ -43,7 +43,7 @@ const lifecycle = provider.hibernate ? new IdleController(provider, {
 const catalog = loadCatalog(env.TOOL_CATALOG || new URL('../../docs/mcp-tools.json', import.meta.url));
 const app = await buildServer({
   provider, catalog, client: new InstanceClient(), version, psk: psk as string | null, maxInstances, lifecycle,
-  gatewayUrl: lifecycle ? env.LIBVIRT_PUBLIC_URL : undefined,
+  gatewayUrl: lifecycle ? provider.publicUrl : undefined,
   logger: { level: env.LOG_LEVEL || 'info', redact: ['req.headers.authorization'] },
 });
 app.log.info({ provider: provider.scheme, tools: catalog.length, maxInstances: maxInstances ?? 'unlimited', idleMs: lifecycle?.idleMs }, 'orchestrator configured');

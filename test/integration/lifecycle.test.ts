@@ -32,10 +32,15 @@ describe('guest lifecycle', () => {
 
       const prepared = await prepare();
       expect(prepared.status).toBe(200);
+      expect(prepared.headers.get('connection')).toBe('close');
       expect(prepared.body).toMatchObject({ prepared: true, lease_id: expect.any(String), active_requests: 0, running_jobs: 0 });
       expect(await api('GET', '/api/v1/capabilities')).toMatchObject({ status: 503, body: { error: { reason: 'hibernating', retry_after_ms: 1000 } } });
-      expect((await fetch(`${URL_}/health`)).status).toBe(204);
-      expect((await api('GET', '/api/v1/metrics')).status).toBe(200);
+      const health = await fetch(`${URL_}/health`);
+      expect(health.status).toBe(204);
+      expect(health.headers.get('connection')).toBe('close');
+      const metrics = await api('GET', '/api/v1/metrics');
+      expect(metrics.status).toBe(200);
+      expect(metrics.headers.get('connection')).toBe('close');
       expect((await api('GET', lifecycle)).body.prepared).toBe(true);
       expect((await resume()).body.prepared).toBe(false);
       expect((await api('GET', '/api/v1/capabilities')).status).toBe(200);

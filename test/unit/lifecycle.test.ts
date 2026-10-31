@@ -1,10 +1,13 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
+import { Agent, request as httpRequest, type IncomingHttpHeaders } from 'node:http';
+import type { Socket } from 'node:net';
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
 import { WebSocket } from 'ws';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Lifecycle, MAX_LEASE_MS, registerLifecycle } from '../../src/lifecycle.js';
 import { registerAuth } from '../../src/auth/plugin.js';
@@ -140,6 +143,203 @@ describe('guest lifecycle HTTP API', () => {
       await writeFile(join(dir, 'exit'), '0');
       expect((await app.inject({ method: 'POST', url: '/api/v1/lifecycle/prepare', headers: auth, payload: { idle_ms: 0 } })).statusCode).toBe(200);
     } finally { await app.close(); }
+  });
+
+  it('drains idle control-plane TCP connections before checkpointing', async () => {
+    const { app } = await make();
+    const idleAgent = new Agent({ keepAlive: true }), prepareAgent = new Agent({ keepAlive: true });
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+    function call(path: string, agent: Agent, body?: object) {
+      return new Promise<{ socket: Socket; headers: IncomingHttpHeaders; status: number }>((resolve, reject) => {
+        const payload = body === undefined ? undefined : JSON.stringify(body);
+        const req = httpRequest(base + path, {
+          method: payload ? 'POST' : 'GET', agent,
+          headers: { ...auth, ...(payload ? { 'content-type': 'application/json', 'content-length': Buffer.byteLength(payload) } : {}) },
+        }, (res) => {
+          const socket = res.socket;
+          res.on('error', reject);
+          res.on('end', () => resolve({ socket, headers: res.headers, status: res.statusCode! }));
+          res.resume();
+        });
+        req.on('error', reject);
+        req.end(payload);
+      });
+    }
+    try {
+      const idleConnection = await call('/health', idleAgent);
+      expect(idleConnection.socket.destroyed).toBe(false);
+      const prepared = await call('/api/v1/lifecycle/prepare', prepareAgent, { idle_ms: 0 });
+      expect(prepared.status).toBe(200);
+      expect(prepared.headers.connection).toBe('close');
+      await vi.waitFor(() => {
+        expect(idleConnection.socket.destroyed).toBe(true);
+        expect(prepared.socket.destroyed).toBe(true);
+      });
+      for (const path of ['/health', '/api/v1/metrics', '/api/v1/lifecycle']) {
+        const poll = await call(path, idleAgent);
+        expect(poll.headers.connection).toBe('close');
+        await vi.waitFor(() => expect(poll.socket.destroyed).toBe(true));
+      }
+    } finally { idleAgent.destroy(); prepareAgent.destroy(); await app.close(); }
+  });
+
+  it.each(['handler', 'early-handler', 'pre-handler', 'early-pre-handler', 'callback-pre-handler', 'inherited-pre-handler', 'handler-error', 'pre-handler-error'])(
+    'retains disconnected %s work until its actual execution settles', async (kind) => {
+      const app = Fastify();
+      registerAuth(app, { token: 'secret-token' });
+      const lifecycle = new Lifecycle(idle);
+      registerLifecycle(app, lifecycle, false);
+      let release!: () => void, entered!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const began = new Promise<void>((resolve) => { entered = resolve; });
+      const work = async (reply: any) => {
+        entered();
+        if (kind.startsWith('early-')) reply.send({ early: true });
+        await gate;
+        if (kind.endsWith('-error')) throw new Error('work failed after disconnect');
+      };
+      if (kind === 'inherited-pre-handler') app.addHook('preHandler', async (_req, reply) => { await work(reply); });
+      app.post('/work', {
+        ...(kind.includes('pre-handler') && kind !== 'inherited-pre-handler' ? {
+          preHandler: kind === 'callback-pre-handler'
+            ? function (_req: any, _reply: any, done: any) { entered(); void gate.then(() => done()); }
+            : async (_req: any, reply: any) => { await work(reply); },
+        } : {}),
+      }, async (_req, reply) => {
+        if (!kind.includes('pre-handler')) await work(reply);
+        return { ok: true };
+      });
+      await app.listen({ host: '127.0.0.1', port: 0 });
+      const connected = once(app.server, 'connection');
+      const req = httpRequest(`http://127.0.0.1:${(app.server.address() as any).port}/work`, { method: 'POST', headers: auth }, (res) => res.resume());
+      req.on('error', () => {});
+      req.end();
+      const [socket] = await connected;
+      try {
+        await began;
+        const closed = new Promise<void>((resolve) => socket.once('close', () => resolve()));
+        req.destroy();
+        await closed;
+        expect(await lifecycle.status()).toMatchObject({ active_requests: 1, connections: 0 });
+        await expect(lifecycle.prepare(0)).rejects.toMatchObject({ reason: 'not_idle' });
+        release();
+        await vi.waitFor(async () => expect((await lifecycle.status()).active_requests).toBe(0));
+        await expect(lifecycle.prepare(0)).resolves.toMatchObject({ prepared: true });
+      } finally { release(); req.destroy(); await app.close(); }
+    },
+  );
+
+  it('releases admission after validation and prehandler errors without entering the handler', async () => {
+    const app = Fastify();
+    const lifecycle = new Lifecycle(idle);
+    registerLifecycle(app, lifecycle, true);
+    app.post('/validation', { schema: { body: { type: 'object', required: ['name'], properties: { name: { type: 'string' } } } } }, async () => ({ ok: true }));
+    app.get('/rejected', { preHandler: async () => { throw new Error('rejected'); } }, async () => ({ ok: true }));
+    try {
+      expect((await app.inject({ method: 'POST', url: '/validation', payload: {} })).statusCode).toBe(400);
+      expect((await app.inject('/rejected')).statusCode).toBe(500);
+      expect((await lifecycle.status()).active_requests).toBe(0);
+    } finally { await app.close(); }
+  });
+
+  it.each(['synchronous', 'delayed'])('supports a %s callback-hook early reply without done', async (kind) => {
+    const app = Fastify();
+    const lifecycle = new Lifecycle(idle);
+    registerLifecycle(app, lifecycle, true);
+    const handler = vi.fn(async () => ({ shouldNotRun: true }));
+    app.get('/early', { preHandler: function (_req, reply, _done) {
+      if (kind === 'delayed') setImmediate(() => { reply.code(403).send({ denied: true }); });
+      else reply.code(403).send({ denied: true });
+    } }, handler);
+    try {
+      expect((await app.inject('/early')).statusCode).toBe(403);
+      expect(handler).not.toHaveBeenCalled();
+      expect((await lifecycle.status()).active_requests).toBe(0);
+    } finally { await app.close(); }
+  });
+
+  it('releases an incomplete request body after disconnect without invoking the handler', async () => {
+    const app = Fastify();
+    const lifecycle = new Lifecycle(idle);
+    registerLifecycle(app, lifecycle, true);
+    let admitted!: () => void;
+    const began = new Promise<void>((resolve) => { admitted = resolve; });
+    app.addHook('onRequest', async () => { admitted(); });
+    const handler = vi.fn(async () => ({ ok: true }));
+    app.post('/body', handler);
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const connected = once(app.server, 'connection');
+    const req = httpRequest(`http://127.0.0.1:${(app.server.address() as any).port}/body`, { method: 'POST', headers: { 'content-type': 'application/json', 'content-length': '1000' } });
+    req.on('error', () => {}); req.write('{"incomplete":');
+    const [socket] = await connected;
+    try {
+      await began;
+      expect((await lifecycle.status()).active_requests).toBe(1);
+      const closed = new Promise<void>((resolve) => socket.once('close', () => resolve())); req.destroy(); await closed;
+      await vi.waitFor(async () => expect((await lifecycle.status()).active_requests).toBe(0));
+      expect(handler).not.toHaveBeenCalled();
+    } finally { req.destroy(); await app.close(); }
+  });
+
+  it('keeps a disconnected synchronous exec command active until the child process finishes', async () => {
+    const { app, root } = await make();
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const started = join(root, 'started'), proceed = join(root, 'proceed'), finished = join(root, 'finished');
+    const script = `const fs=require('node:fs'); fs.writeFileSync(${JSON.stringify(started)},'ready'); const timer=setInterval(()=>{if(fs.existsSync(${JSON.stringify(proceed)})){clearInterval(timer);fs.writeFileSync(${JSON.stringify(finished)},'done')}},10)`;
+    const body = JSON.stringify({ cmd: process.execPath, args: ['-e', script], timeout_ms: 10_000 });
+    const connected = once(app.server, 'connection');
+    const req = httpRequest(`http://127.0.0.1:${(app.server.address() as any).port}/api/v1/exec`, { method: 'POST', headers: { ...auth, 'content-type': 'application/json', 'content-length': Buffer.byteLength(body) } });
+    req.on('error', () => {}); req.end(body);
+    const [socket] = await connected;
+    const status = async () => (await app.inject({ url: '/api/v1/lifecycle', headers: auth })).json();
+    try {
+      await vi.waitFor(async () => expect(await readFile(started, 'utf8')).toBe('ready'));
+      const closed = new Promise<void>((resolve) => socket.once('close', () => resolve())); req.destroy(); await closed;
+      expect(await status()).toMatchObject({ active_requests: 1, running_jobs: 0 });
+      expect((await app.inject({ method: 'POST', url: '/api/v1/lifecycle/prepare', headers: auth, payload: { idle_ms: 0 } })).statusCode).toBe(409);
+      await writeFile(proceed, 'go');
+      await vi.waitFor(async () => expect(await readFile(finished, 'utf8')).toBe('done'));
+      await vi.waitFor(async () => expect((await status()).active_requests).toBe(0));
+    } finally { await writeFile(proceed, 'go'); req.destroy(); await app.close(); }
+  });
+
+  it('keeps a disconnected MCP tool active after its HTTP adapter has returned', async () => {
+    const { app, desktop } = await make();
+    let release!: () => void, entered!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const began = new Promise<void>((resolve) => { entered = resolve; });
+    let adapterReturned = false;
+    const handleRequest = StreamableHTTPServerTransport.prototype.handleRequest;
+    const adapter = vi.spyOn(StreamableHTTPServerTransport.prototype, 'handleRequest').mockImplementation(async function (this: StreamableHTTPServerTransport, ...args) {
+      try { return await handleRequest.apply(this, args); }
+      finally { if ((args[2] as { method?: string } | undefined)?.method === 'tools/call') adapterReturned = true; }
+    });
+    vi.spyOn(desktop, 'screenshot').mockImplementation(async () => { entered(); await gate; throw new Error('finished tool'); });
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const base = `http://127.0.0.1:${(app.server.address() as any).port}`;
+    const headers: Record<string, string> = { ...auth, 'content-type': 'application/json', accept: 'application/json, text/event-stream' };
+    const initial = await fetch(base + '/mcp', { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'lifecycle-test', version: '1' } } }) });
+    await initial.text();
+    headers['mcp-session-id'] = initial.headers.get('mcp-session-id')!;
+    headers['mcp-protocol-version'] = '2025-06-18';
+    const initialized = await fetch(base + '/mcp', { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) });
+    await initialized.text();
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'screenshot', arguments: {} } });
+    const connected = once(app.server, 'connection');
+    const req = httpRequest(base + '/mcp', { method: 'POST', headers: { ...headers, 'content-length': Buffer.byteLength(body) }, agent: false }, (res) => res.resume());
+    req.on('error', () => {}); req.end(body);
+    const [socket] = await connected;
+    const status = async () => (await app.inject({ url: '/api/v1/lifecycle', headers: auth })).json();
+    try {
+      await began;
+      const closed = new Promise<void>((resolve) => socket.once('close', () => resolve())); req.destroy(); await closed;
+      await vi.waitFor(() => expect(adapterReturned).toBe(true));
+      expect(await status()).toMatchObject({ active_requests: 1, running_jobs: 0 });
+      expect((await app.inject({ method: 'POST', url: '/api/v1/lifecycle/prepare', headers: auth, payload: { idle_ms: 0 } })).statusCode).toBe(409);
+      release();
+      await vi.waitFor(async () => expect((await status()).active_requests).toBe(0));
+    } finally { release(); req.destroy(); await app.close(); adapter.mockRestore(); }
   });
 
   it('keeps hijacked SSE and upgraded WebSocket requests active until their actual connection closes', async () => {

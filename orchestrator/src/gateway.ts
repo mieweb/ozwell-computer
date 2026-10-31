@@ -26,11 +26,11 @@ const hopHeaders = new Set(['connection', 'keep-alive', 'proxy-authenticate', 'p
 
 /** Validate at startup, rather than silently publishing an unreachable viewer URL. */
 export function validatePublicUrl(template: string): URL {
-  if (template.split('{id}').length !== 2) throw new Error('LIBVIRT_PUBLIC_URL must contain exactly one {id} DNS label');
+  if (template.split('{id}').length !== 2) throw new Error('computer gateway URL must contain exactly one {id} DNS label');
   // URL() escapes braces in some components; parse a real label then inspect all components.
   const u = new URL(template.replace('{id}', 'ozwell-placeholder'));
   if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password || u.pathname !== '/' || u.search || u.hash || !u.hostname.split('.').includes('ozwell-placeholder')) {
-    throw new Error('LIBVIRT_PUBLIC_URL must be an http(s) origin with {id} as a complete DNS label');
+    throw new Error('computer gateway URL must be an http(s) origin with {id} as a complete DNS label');
   }
   return u;
 }
@@ -130,14 +130,16 @@ export function createGateway(opts: GatewayOptions) {
     return { computer, url, publicUrl: origin };
   }
 
-  function request(computer: Computer, req: IncomingMessage, publicUrl: URL, upgrade = false) {
+  function request(computer: Computer, req: IncomingMessage, publicUrl: URL, upgrade = false, close = false) {
     if (!computer.internalUrl) throw new Error('Computer has no internal address');
     const target = new URL(computer.internalUrl);
     if (!['http:', 'https:'].includes(target.protocol) || target.username || target.password) throw new Error('Invalid internal address');
+    const upstreamHeaders = headers(req, publicUrl, upgrade);
+    if (close) upstreamHeaders.connection = 'close';
     const outgoing = (target.protocol === 'https:' ? httpsRequest : httpRequest)({
       protocol: target.protocol, hostname: target.hostname, port: target.port,
-      method: req.method, path: req.url ?? '/', headers: headers(req, publicUrl, upgrade),
-      agent: target.protocol === 'https:' ? httpsAgent : httpAgent,
+      method: req.method, path: req.url ?? '/', headers: upstreamHeaders,
+      agent: close ? false : target.protocol === 'https:' ? httpsAgent : httpAgent,
     });
     // A connection deadline is not a response/stream deadline: PTY, VNC and SSE
     // connections can remain active indefinitely without an arbitrary timeout.
@@ -183,7 +185,7 @@ export function createGateway(opts: GatewayOptions) {
         if (computer.stopped || computer.hibernated) { send(res, 503, 'Computer is hibernated'); return true; }
       } else lease = await opts.lifecycle.acquire(computer.id);
       if (closed || res.destroyed || req.aborted) { lease?.release(); if (closed) send(res, 503, 'Gateway is closing'); return true; }
-      const upstream = request(lease?.computer ?? computer, req, publicUrl);
+      const upstream = request(lease?.computer ?? computer, req, publicUrl, false, passive(req, url.pathname));
       let finished = false;
       const done = () => { if (finished) return; finished = true; aborters.delete(abort); lease?.release(); };
       const abort = () => { upstream.destroy(); res.destroy(); done(); };

@@ -263,7 +263,14 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
   }, async (req) => jobs.cancel((req.params as any).id));
 
   app.get('/api/v1/pty', { websocket: true, preHandler: gate, schema: { hide: true } }, async (socket, req) => {
+    let term: any;
+    let closed = false;
+    const stop = () => { closed = true; try { term?.kill(); } catch { /* gone */ } };
+    socket.once('close', stop);
     const pty = await loadPty();
+    // Module loading may finish after the client has already disconnected. Never
+    // start a shell whose close event was missed while awaiting the native module.
+    if (closed || socket.readyState !== 1) return;
     if (!pty) {
       socket.send(JSON.stringify(new ApiError('feature_unsupported', 'node-pty is not installed', { feature: 'pty' }).toBody()));
       socket.close(1011);
@@ -271,10 +278,11 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
     }
     const q = req.query as Record<string, string>;
     const shell = q.shell || process.env.SHELL || '/bin/bash';
-    const term = pty.spawn(shell, [], {
+    term = pty.spawn(shell, [], {
       name: 'xterm-256color', cols: Number(q.cols) || 80, rows: Number(q.rows) || 24,
       cwd: q.cwd || process.env.HOME || '/', env: { ...process.env, DISPLAY: desktop.x.displayName, TERM: 'xterm-256color' },
     });
+    if (closed || socket.readyState !== 1) { stop(); return; }
     term.onData((d: string) => { if (socket.readyState === 1) socket.send(d); });
     term.onExit(({ exitCode }: { exitCode: number }) => {
       if (socket.readyState === 1) { socket.send(JSON.stringify({ exit: exitCode })); socket.close(1000); }
@@ -290,7 +298,6 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
       }
       term.write(s);
     });
-    socket.on('close', () => { try { term.kill(); } catch { /* gone */ } });
   });
 
   const pathQuery = {

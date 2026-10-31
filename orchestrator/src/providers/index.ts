@@ -4,11 +4,13 @@ import type { Provider, ProviderFactory } from './types.ts';
 import { dockerProvider } from './docker.ts';
 import { opensourceServerProvider } from './opensource-server.ts';
 import { libvirtProvider } from './libvirt.ts';
+import { dockerCheckpointProvider } from './docker-checkpoint.ts';
 
 const registry = new Map<string, ProviderFactory>([
   ['docker', dockerProvider],
   ['opensource-server', opensourceServerProvider],
   ['libvirt', libvirtProvider],
+  ['docker-checkpoint', dockerCheckpointProvider],
 ]);
 
 /** Register an additional provider (e.g. from a plugin or a test). */

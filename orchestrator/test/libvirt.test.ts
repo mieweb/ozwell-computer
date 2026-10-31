@@ -82,6 +82,13 @@ describe('libvirt provider', () => {
     expect(await restarted.get(c.id)).toEqual(c); expect(await restarted.list('bob')).toEqual([]); expect(await restarted.list('alice')).toEqual([c]);
     expect((await restarted.create({ owner: { id: 'bob' } })).internalUrl).toBe('http://192.168.230.3:8080');
   });
+  it('uses the shared wake gateway setting for new computers', async () => {
+    const f = await fixture();
+    const p = new LibvirtProvider(new URL('libvirt:///system'), { ...f.env, COMPUTER_GATEWAY_URL: 'https://{id}.shared.example.test' }, f.deps);
+    const c = await p.create({ owner: { id: 'alice' } });
+    expect(p.publicUrl).toBe('https://{id}.shared.example.test');
+    expect(c.externalUrl).toBe(`https://${c.id}.shared.example.test`);
+  });
   it('uses an SSE4.2 capable guest CPU for explicit emulation', async () => {
     const f = await fixture(), p = new LibvirtProvider(new URL('libvirt:///system'), { ...f.env, LIBVIRT_DOMAIN_TYPE: 'qemu' }, f.deps);
     const c = await p.create({ owner: { id: 'alice' } }); expect(f.domains.get(c.id)!.xml).toContain('Nehalem');

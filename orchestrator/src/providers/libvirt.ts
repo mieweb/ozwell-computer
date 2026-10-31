@@ -83,7 +83,7 @@ export class LibvirtProvider implements Provider {
     if (!/^[a-zA-Z][a-zA-Z0-9_-]{0,62}$/.test(this.network)) throw new Error('invalid LIBVIRT_NETWORK');
     this.subnet = env.LIBVIRT_SUBNET ?? '192.168.230';
     if (!/^(10\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3})$/.test(this.subnet) || this.subnet.split('.').some((n) => +n > 255)) throw new Error('LIBVIRT_SUBNET must be three private IPv4 octets');
-    this.publicUrl = env.LIBVIRT_PUBLIC_URL ?? '';
+    this.publicUrl = env.COMPUTER_GATEWAY_URL ?? env.LIBVIRT_PUBLIC_URL ?? '';
     let external: URL;
     try { external = new URL(this.publicUrl.replace('{id}', 'ozc-test')); } catch { throw new Error('LIBVIRT_PUBLIC_URL must be e.g. https://{id}.computers.example.com'); }
     if (this.publicUrl.split('{id}').length !== 2 || !/^https?:\/\/\{id\}\./i.test(this.publicUrl) || !external.hostname.startsWith('ozc-test.') || !['http:', 'https:'].includes(external.protocol) || external.username || external.password || external.search || external.hash || !['', '/'].includes(external.pathname)) throw new Error('LIBVIRT_PUBLIC_URL requires one {id} hostname label and no path or credentials');

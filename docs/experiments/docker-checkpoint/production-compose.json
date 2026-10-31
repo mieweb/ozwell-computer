@@ -1,0 +1,122 @@
+{
+  "passed": true,
+  "management_https_verified": true,
+  "wildcard_https_verified": true,
+  "daemon_sigkill_frontend_recovery": true,
+  "before_probe": {
+    "pid": 187,
+    "nonce": "d8896b9156c56f21cfc33cb93ca64c107e70e3a3e00d398375277e8e3fefe271",
+    "sha256": "87af17284151f0704da54d9112b2c02f11df8c00152ead113010e91ec4739070",
+    "bytes": 67108864,
+    "counter": 9
+  },
+  "source_image": "sha256:663c21f279981015755cf99ba23e4398f9b26cd760d923bf261f43723b68a8ab",
+  "main_id": "72c21b5298ae",
+  "idle_to_saved_ms": 12874,
+  "saved": {
+    "pid": 0,
+    "running": false,
+    "status": "exited",
+    "name": "/ozc-qxuehlbf2w--saved-c0c63d53c6f2c6a3"
+  },
+  "saved_stats": {
+    "BlockIO": "0B / 0B",
+    "CPUPerc": "0.00%",
+    "Container": "72c21b5298ae",
+    "ID": "72c21b5298ae",
+    "MemPerc": "0.00%",
+    "MemUsage": "0B / 0B",
+    "Name": "ozc-qxuehlbf2w--saved-c0c63d53c6f2c6a3",
+    "NetIO": "0B / 0B",
+    "PIDs": "0"
+  },
+  "wake_to_viewer_ms": 1416,
+  "after_probe": {
+    "pid": 187,
+    "nonce": "d8896b9156c56f21cfc33cb93ca64c107e70e3a3e00d398375277e8e3fefe271",
+    "sha256": "87af17284151f0704da54d9112b2c02f11df8c00152ead113010e91ec4739070",
+    "bytes": 67108864,
+    "counter": 63
+  },
+  "native_docker_version": {
+    "Platform": {
+      "Name": "Docker Engine - Community"
+    },
+    "Version": "29.8.2",
+    "ApiVersion": "1.56",
+    "MinAPIVersion": "1.40",
+    "Os": "linux",
+    "Arch": "arm64",
+    "Components": [
+      {
+        "Name": "Engine",
+        "Version": "29.8.2",
+        "Details": {
+          "ApiVersion": "1.56",
+          "Arch": "arm64",
+          "BuildTime": "Wed Sep 30 19:32:49 2026",
+          "Experimental": "true",
+          "GitCommit": "8af9fe3",
+          "GoVersion": "go1.26.8",
+          "KernelVersion": "7.2.9-orbstack-00391-g2b298d05fbd4",
+          "MinAPIVersion": "1.40",
+          "Module": "github.com/moby/moby/v2",
+          "ModuleVersion": "v2.0.0+unknown",
+          "Os": "linux"
+        }
+      },
+      {
+        "Name": "containerd",
+        "Version": "v2.3.6",
+        "Details": {
+          "GitCommit": "ee2735368117d2eb259779949d5e75cdafec9761"
+        }
+      },
+      {
+        "Name": "runc",
+        "Version": "1.5.2",
+        "Details": {
+          "GitCommit": "v1.5.2-0-g29dd3dc"
+        }
+      },
+      {
+        "Name": "docker-init",
+        "Version": "0.19.0",
+        "Details": {
+          "GitCommit": "de40ad0"
+        }
+      }
+    ],
+    "GitCommit": "8af9fe3",
+    "GoVersion": "go1.26.8",
+    "KernelVersion": "7.2.9-orbstack-00391-g2b298d05fbd4",
+    "Experimental": true,
+    "BuildTime": "2026-09-30T19:32:49.000000000+00:00"
+  },
+  "network": {
+    "passed": true,
+    "dns": {
+      "address": "104.20.23.154",
+      "family": 4
+    },
+    "https": {
+      "status": 200,
+      "bytes": 577
+    }
+  },
+  "owned_computer_destroyed": true,
+  "runtime_restart": {
+    "same_runtime_container": true,
+    "trigger": "SIGKILL of inner dockerd",
+    "runtime_automatic_restart_count": 1,
+    "gateway_automatic_restart_count": 1,
+    "verified_https_frontend_recovered": true,
+    "startup_namespace_mismatch_exits_75_before_cli": true,
+    "ephemeral_run_state": true,
+    "unix_socket_only": true,
+    "docker_init_pid1": true
+  },
+  "official_runtime_base_arm64_manifest": "sha256:0cfe34780472229470f56736bbf85165a0f15e2da84a4798af89bed607f3ffc3",
+  "disposable_compose_project_removed": true,
+  "disposable_compose_volumes_removed": true
+}

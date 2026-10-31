@@ -22,7 +22,15 @@ export default async function lifecycleRoutes(app: FastifyInstance, lifecycle: L
       ...schema('Close work admission only if the guest has been idle; returns not_idle (409) otherwise'),
       body: record('Required idle grace', { idle_ms: prop('integer', 'Minimum time without activity', { minimum: 0, maximum: MAX_LEASE_MS }) }, { additionalProperties: false }),
     },
-  }, async (req) => lifecycle.prepare((req.body as { idle_ms: number }).idle_ms));
+  }, async (req, reply) => {
+    const prepared = await lifecycle.prepare((req.body as { idle_ms: number }).idle_ms);
+    // Control-plane HTTP pools are not desktop activity. Drain their idle TCP
+    // sockets before CRIU saves the process tree; the preparation response also
+    // closes its own connection once its body has been delivered.
+    reply.header('connection', 'close');
+    app.server.closeIdleConnections();
+    return prepared;
+  });
   app.post('/api/v1/lifecycle/resume', {
     schema: {
       ...schema('Reopen work admission after restore, save failure, or controller recovery'),

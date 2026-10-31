@@ -20,11 +20,12 @@ needs network access from the orchestrator to both the provider API and every co
 The lower layers work on their own: you can run the container (layer 3) without an
 orchestrator, or the server (layer 4) without the container.
 
-For desktops that release their VM CPU and RAM while disconnected, the
-[libvirt deployment](docs/libvirt-deployment.md) adds automatic managed-save
-hibernation and authenticated wake through an external gateway. Open applications,
-process memory and unsaved work survive restoration. Existing container providers
-continue to work; managed-save hibernation requires VM-backed computers.
+For desktops that release application CPU and RAM while disconnected, use
+[libvirt managed save on Linux](docs/libvirt-deployment.md) or the
+[Docker checkpoint runtime on Mac/OrbStack](docs/docker-checkpoint-deployment.md).
+Both automatically save idle computers and restore their open applications,
+process memory and unsaved work on an authenticated request. A small gateway
+remains available to wake them. Existing container providers retain their behavior.
 
 ```mermaid
 flowchart TB
@@ -33,17 +34,17 @@ flowchart TB
 
     subgraph L1["Layer 1: Orchestrator"]
         orch["ozwell-computer-orchestrator<br/>POST /mcp"]
-        wake["Always-on wake gateway<br/>(libvirt computers)"]
+        wake["Always-on wake gateway<br/>(hibernating computers)"]
     end
 
     subgraph L2["Layer 2: Provider"]
-        prov["docker | opensource-server | libvirt<br/>list, get, create, start, destroy"]
+        prov["docker | docker-checkpoint | opensource-server | libvirt<br/>list, get, create, start, destroy"]
     end
 
     runtime[("Docker Engine /<br/>opensource-server API / libvirt")]
 
     subgraph L3["Layer 3: Computer runtime (container or VM)"]
-        systemd["systemd (PID 1)"]
+        systemd["systemd or checkpoint Supervisor (PID 1)"]
         desk["Xvfb :0, D-Bus,<br/>xfwm4 + xfce4-panel, AT-SPI"]
         apps["apps: terminal, Thunar, Firefox"]
         subgraph L4["Layer 4: ozwell-computer (this repo)"]
@@ -59,7 +60,7 @@ flowchart TB
     systemd --> server
     orch -->|"MCP tools/call, instance token"| server
     human -->|"viewer_url (?token=)"| server
-    human -->|"libvirt viewer_url"| wake
+    human -->|"hibernating viewer_url"| wake
     wake --> prov
     wake -->|"HTTP / WebSocket after restore"| server
     server <-->|"X11 (node-x11), AT-SPI"| desk
@@ -75,8 +76,8 @@ flowchart TB
    adapter to a computer runtime, selected by `PROVIDER_URI`'s scheme. It implements
    `list(owner)`, `get(id)`, `create({ owner, displayName })` and `destroy(id)`, and keeps
    durable state (owner, metadata, URLs, token) on the managed containers or VMs.
-   `docker`, `opensource-server` and `libvirt` are built in. The libvirt provider also
-   supports managed-save hibernation and resume.
+   `docker`, `docker-checkpoint`, `opensource-server` and `libvirt` are built in.
+   Libvirt and Docker checkpoint providers support idle hibernation and resume.
 3. **Container** ([Dockerfile](Dockerfile)): the standard runtime for one computer.
    systemd runs as PID 1 and starts the package's units: the session D-Bus, `Xvfb :0`,
    the XFCE session (xfwm4, panels, AT-SPI) and the server, all as the `desktop` user.

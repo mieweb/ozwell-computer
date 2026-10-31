@@ -43,6 +43,8 @@ export interface CreateOptions {
 export interface Provider {
   /** Scheme(s) this provider registered under, for logs. */
   readonly scheme: string;
+  /** Stable wildcard viewer origin served by the wake gateway, when supported. */
+  readonly publicUrl?: string;
   /** Computers owned by `owner`. */
   list(owner: string): Promise<Computer[]>;
   /** One computer by id, or null when it doesn't exist (or isn't managed by us). */

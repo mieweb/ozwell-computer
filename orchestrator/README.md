@@ -9,11 +9,11 @@ provider, and proxies every ozwell-computer tool with an extra `instance_id` arg
 - **Provider-backed.** Every MCP request is handled independently. Who owns which computer,
   their metadata, URLs and access token all live in the provider (for Docker: container
   labels and env), so restarting or replicating the orchestrator loses nothing.
-- **Idle hibernation with libvirt.** VM desktops automatically managed-save after
+- **Idle hibernation.** Libvirt and Docker checkpoint desktops automatically save after
   five disconnected idle minutes and restore on an authorized viewer/API/MCP
   request. The always-on gateway stays outside the VM. Running commands, viewers,
   terminal/event connections, upgrades and explicit keep-awake leases prevent saves.
-  Container providers retain their existing start/stop behavior.
+  The ordinary container providers retain their existing start/stop behavior.
 - **Per user.** Ozwell calls with one workspace-wide configuration, plus
   `X-Ozwell-User-Id` (required), `X-Ozwell-User-Email` and `X-Ozwell-User-Name`. Every
   tool is scoped to that user id: other users' computers are reported as not found.
@@ -39,7 +39,7 @@ provider, and proxies every ozwell-computer tool with an extra `instance_id` arg
   - Proxied: every tool in `../docs/mcp-tools.json` with `instance_id` added. That
     catalog is generated from the computer (`npm run mcp-tools` at the repo root), so
     the orchestrator knows the tools without a running instance.
-  - Libvirt additionally exposes `hibernate_computer`, `keep_computer_awake` and
+  - Hibernating providers additionally expose `hibernate_computer`, `keep_computer_awake` and
     `allow_computer_hibernation`. Desktop tools automatically restore hibernated
     computers. Explicit saves refuse active work, and a failed restore never falls
     back to a fresh boot. `keep_computer_awake` sets/renews a manual `ttl_ms` lease
@@ -58,7 +58,7 @@ stateDiagram-v2
     Starting --> Ready: GET /health returns 204
     Starting --> Stopped: status failed, exited, dead, missing or offline
     Ready --> Ready: proxied tool calls
-    Ready --> Hibernated: libvirt disconnected idle grace
+    Ready --> Hibernated: disconnected idle grace
     Hibernated --> Ready: authorized viewer or desktop tool restores
     Hibernated --> [*]: destroy_computer
     Ready --> Stopped: container stops
@@ -215,8 +215,9 @@ the environment take precedence.
 | `ORCHESTRATOR_MAX_INSTANCES` | unlimited | computers each user may have |
 | `COMPUTER_FRAME_ANCESTORS` | none | origins (e.g. `https://app.ozwell.ai`) allowed to embed the viewer in an iframe; passed to computers when they are created as `OZWELL_COMPUTER_FRAME_ANCESTORS`, so existing computers keep their value |
 | `LOG_LEVEL` | `info` | |
-| `ORCHESTRATOR_IDLE_MS` | `300000` | libvirt disconnected idle grace; `0` disables automatic saves |
-| `ORCHESTRATOR_IDLE_POLL_MS` | `15000` | libvirt idle sweep interval |
+| `ORCHESTRATOR_IDLE_MS` | `300000` | disconnected idle grace for hibernating providers; `0` disables automatic saves |
+| `ORCHESTRATOR_IDLE_POLL_MS` | `15000` | idle sweep interval |
+| `COMPUTER_GATEWAY_URL` | (required for hibernation) | stable http(s) origin with one complete `{id}` hostname label; also accepts provider-specific aliases |
 
 Configure Ozwell's workspace MCP server as `http(s)://<orchestrator>/mcp` (Streamable
 HTTP) with the header `Authorization: Bearer <psk>`. Put TLS in front of it.
@@ -261,6 +262,49 @@ longer work. The manual MCP lease is named `manual`; releasing it does not affec
 leases created directly through the guest API. Arbitrary application background
 work cannot be inferred reliably from CPU idleness: use a lease for downloads,
 unattended remote sessions or application tasks that must continue disconnected.
+
+### `docker-checkpoint` (Mac/OrbStack idle hibernation)
+
+Use the [dedicated runtime and deployment guide](../docs/docker-checkpoint-deployment.md).
+It packages a compatible CRIU build in its own Docker daemon inside OrbStack;
+it does not replace OrbStack executables or restart the host engine. The gateway
+shares this runtime's network namespace and local socket. Native `flat-v1`
+desktops use Supervisor and a private cgroup, without an external terminal.
+
+```
+docker-checkpoint:///run/ozwell-docker/docker.sock
+  ?image=ozwell-computer:checkpoint-arm64-flat
+  &network=bridge
+```
+
+Set `COMPUTER_GATEWAY_URL=https://{id}.ozwell-computers.local`. Images for the
+desktop, operation worker and network anchor must be loaded into this daemon
+before creation. The bootstrap script does this. The provider checks that the
+desktop image matches the daemon's native architecture and checkpoint profile.
+The existing amd64/systemd/TTY development container cannot be converted in place.
+
+Application RAM is written to disk and application processes stop. A small
+per-computer network anchor preserves its network namespace while saved. Atomic
+container names record save/restore intent; immutable labels record ownership and
+the stable URL. Separate operation containers retain daemon receipts across
+controller restarts. Missing or failed restore images retain the saved state and
+refuse a fresh boot. Every controller for this daemon must share the same local
+`DOCKER_CHECKPOINT_LOCK_DIR`; remote Docker TCP sockets are refused.
+
+Configuration beyond the common idle settings:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `DOCKER_CHECKPOINT_WORKER_IMAGE` | `node:24-bookworm-slim` | preloaded native image for durable operation receipts |
+| `DOCKER_CHECKPOINT_NETWORK_IMAGE` | `alpine:3.19` | preloaded sleeping network anchor image |
+| `DOCKER_CHECKPOINT_CRIU_CONFIG` | `/opt/ozc-criu/ozwell.conf` | absolute path inside the daemon runtime, applied per desktop through `org.criu.config` |
+| `DOCKER_CHECKPOINT_DAEMON_SOCKET` | `/var/run/docker.sock` | socket path inside the daemon runtime, bound into operation workers |
+| `DOCKER_CHECKPOINT_LOCK_DIR` | `~/.local/state/ozwell-computer/checkpoints` | shared local coordination directory |
+| `DOCKER_CHECKPOINT_JOB_TIMEOUT_MS` | `120000` | controller observation deadline, at most `300000`; expiration retains operation/state for recovery |
+
+The same activity protections, leases, authenticated wake and passive polling
+rules described for libvirt apply. Docker/CRIU support depends on kernel and
+application compatibility; unsupported saves preserve the running workload.
 
 ### `docker` (reference)
 

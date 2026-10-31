@@ -86,7 +86,11 @@ describe('always-on computer gateway', () => {
     expect((await call(h.port, '/health', { host: 'orchestrator.test' })).body).toBe('orchestrator');
   });
   it('polls without waking or extending activity, and keeps prepare/resume private', async () => {
-    let hits = 0; const h = await setup((_req, res) => { hits++; res.end('poll'); });
+    let hits = 0; const h = await setup((req, res) => {
+      hits++;
+      if (['/health', '/api/v1/metrics', '/api/v1/lifecycle'].includes(req.url!)) expect(req.headers.connection).toBe('close');
+      res.end('poll');
+    });
     for (const path of ['/health', '/api/v1/metrics', '/api/v1/lifecycle']) expect((await call(h.port, path)).status).toBe(200);
     expect(hits).toBe(3); expect(h.acquisitions).toBe(0); h.computer.stopped = true; h.computer.hibernated = true;
     for (const path of ['/health', '/api/v1/metrics', '/api/v1/lifecycle']) expect((await call(h.port, path)).status).toBe(503);
