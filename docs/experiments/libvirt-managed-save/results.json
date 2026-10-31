@@ -1,0 +1,225 @@
+{
+  "started_at": "2026-10-31T05:19:25.906Z",
+  "domain": "ozc-managedsave-test",
+  "uri": "qemu:///system",
+  "endpoint": "http://127.0.0.1:18080/",
+  "cycles": [
+    {
+      "cycle": 1,
+      "before_probe": {
+        "token": "2362287d6091dc5b2c5d50a7d118ebdf1d39113a691811ef487b23e6bd61fdf3",
+        "pid": 703,
+        "start_ticks": "5641",
+        "boot_id": "87aad6e7-78fc-4c3c-93b9-e303aa6b3c4a",
+        "payload_sha256": "97a31fde5fca600716ed58fd8f55f4013300e214692313c8bb7e14b1a110655a",
+        "payload_bytes": 67108864,
+        "counter": 60
+      },
+      "before_processes": [
+        {
+          "pid": 3434,
+          "rss_bytes": 2238853120
+        }
+      ],
+      "before_gui": {
+        "window_id": "0xe00004",
+        "pid": 704,
+        "start_ticks": "5643",
+        "unsaved_text": "unsaved-b0dabdfa-982f-4e1c-8fa7-083f2aebad13",
+        "verification": "copy from widget after fresh clipboard sentinel",
+        "clipboard_generation": 4
+      },
+      "save_ms": 896,
+      "saved_state": "shut off (saved)",
+      "saved_info": "Id:             -\nName:           ozc-managedsave-test\nUUID:           a74fa4d3-90d6-4dc1-8bba-12588f216b20\nOS Type:        hvm\nState:          shut off\nCPU(s):         2\nMax memory:     2097152 KiB\nUsed memory:    2097152 KiB\nPersistent:     yes\nAutostart:      disable\nManaged save:   yes\nSecurity model: none\nSecurity DOI:   0",
+      "saved_processes": [],
+      "save_image": {
+        "path": "/var/lib/libvirt/qemu/save/ozc-managedsave-test.save",
+        "size_bytes": 938255741,
+        "allocated_bytes": 938258432
+      },
+      "saved_disks": [
+        {
+          "target": "vda",
+          "path": "/lab/rootfs.ext4",
+          "dev": 87,
+          "ino": 4633731,
+          "size": 8589934592,
+          "mtime_ms": 1793423983210.7874
+        }
+      ],
+      "saved_wait_ms": 5011,
+      "start_ms": 477,
+      "ready_ms": 592,
+      "after_probe": {
+        "token": "2362287d6091dc5b2c5d50a7d118ebdf1d39113a691811ef487b23e6bd61fdf3",
+        "pid": 703,
+        "start_ticks": "5641",
+        "boot_id": "87aad6e7-78fc-4c3c-93b9-e303aa6b3c4a",
+        "payload_sha256": "97a31fde5fca600716ed58fd8f55f4013300e214692313c8bb7e14b1a110655a",
+        "payload_bytes": 67108864,
+        "counter": 90
+      },
+      "after_processes": [
+        {
+          "pid": 3573,
+          "rss_bytes": 1100308480
+        }
+      ],
+      "after_gui": {
+        "window_id": "0xe00004",
+        "pid": 704,
+        "start_ticks": "5643",
+        "unsaved_text": "unsaved-b0dabdfa-982f-4e1c-8fa7-083f2aebad13",
+        "verification": "copy from widget after fresh clipboard sentinel",
+        "clipboard_generation": 6
+      },
+      "after_gui_png": {
+        "file": "/lab/results/gui-after-1.png",
+        "bytes": 17130,
+        "sha256": "591d9f4f50b18838ebc01a567dcc7a48ca8ace2180cf5e070021b2234dedcf3f"
+      },
+      "passed": true
+    },
+    {
+      "cycle": 2,
+      "before_probe": {
+        "token": "2362287d6091dc5b2c5d50a7d118ebdf1d39113a691811ef487b23e6bd61fdf3",
+        "pid": 703,
+        "start_ticks": "5641",
+        "boot_id": "87aad6e7-78fc-4c3c-93b9-e303aa6b3c4a",
+        "payload_sha256": "97a31fde5fca600716ed58fd8f55f4013300e214692313c8bb7e14b1a110655a",
+        "payload_bytes": 67108864,
+        "counter": 112
+      },
+      "before_processes": [
+        {
+          "pid": 3573,
+          "rss_bytes": 1161437184
+        }
+      ],
+      "before_gui": {
+        "window_id": "0xe00004",
+        "pid": 704,
+        "start_ticks": "5643",
+        "unsaved_text": "unsaved-b0dabdfa-982f-4e1c-8fa7-083f2aebad13",
+        "verification": "copy from widget after fresh clipboard sentinel",
+        "clipboard_generation": 8
+      },
+      "save_ms": 824,
+      "saved_state": "shut off (saved)",
+      "saved_info": "Id:             -\nName:           ozc-managedsave-test\nUUID:           a74fa4d3-90d6-4dc1-8bba-12588f216b20\nOS Type:        hvm\nState:          shut off\nCPU(s):         2\nMax memory:     2097152 KiB\nUsed memory:    2097152 KiB\nPersistent:     yes\nAutostart:      disable\nManaged save:   yes\nSecurity model: none\nSecurity DOI:   0",
+      "saved_processes": [],
+      "save_image": {
+        "path": "/var/lib/libvirt/qemu/save/ozc-managedsave-test.save",
+        "size_bytes": 941392511,
+        "allocated_bytes": 941395968
+      },
+      "saved_disks": [
+        {
+          "target": "vda",
+          "path": "/lab/rootfs.ext4",
+          "dev": 87,
+          "ino": 4633731,
+          "size": 8589934592,
+          "mtime_ms": 1793423999611.7363
+        }
+      ],
+      "saved_wait_ms": 5004,
+      "start_ms": 360,
+      "ready_ms": 450,
+      "after_probe": {
+        "token": "2362287d6091dc5b2c5d50a7d118ebdf1d39113a691811ef487b23e6bd61fdf3",
+        "pid": 703,
+        "start_ticks": "5641",
+        "boot_id": "87aad6e7-78fc-4c3c-93b9-e303aa6b3c4a",
+        "payload_sha256": "97a31fde5fca600716ed58fd8f55f4013300e214692313c8bb7e14b1a110655a",
+        "payload_bytes": 67108864,
+        "counter": 142
+      },
+      "after_processes": [
+        {
+          "pid": 3617,
+          "rss_bytes": 1097265152
+        }
+      ],
+      "after_gui": {
+        "window_id": "0xe00004",
+        "pid": 704,
+        "start_ticks": "5643",
+        "unsaved_text": "unsaved-b0dabdfa-982f-4e1c-8fa7-083f2aebad13",
+        "verification": "copy from widget after fresh clipboard sentinel",
+        "clipboard_generation": 10
+      },
+      "after_gui_png": {
+        "file": "/lab/results/gui-after-2.png",
+        "bytes": 17130,
+        "sha256": "591d9f4f50b18838ebc01a567dcc7a48ca8ace2180cf5e070021b2234dedcf3f"
+      },
+      "passed": true
+    }
+  ],
+  "gui_required": true,
+  "scope": "Real existing Linux VM, Ozwell HTTP exec, 64 MiB nonzero RAM probe, optional unsaved GUI entry. No idle scheduler or wake gateway.",
+  "limitations": [
+    "Same host /proc and guest DMI product_uuid required.",
+    "No network-session, host-upgrade, cross-host or crash-recovery guarantees.",
+    "Host page cache and libvirt controller memory may remain."
+  ],
+  "uuid": "a74fa4d3-90d6-4dc1-8bba-12588f216b20",
+  "versions": {
+    "libvirt": "Virsh command line tool of libvirt 9.0.0\nSee web site at https://libvirt.org/\n\nCompiled with support for:\n Hypervisors: QEMU/KVM LXC LibXL OpenVZ VMware ESX Test\n Networking: Remote Network Bridging Interface udev Nwfilter\n Storage: Dir Disk Filesystem SCSI Multipath iSCSI iSCSI-direct LVM RBD Gluster ZFS\n Miscellaneous: Daemon Nodedev AppArmor SELinux Secrets Debug DTrace Readline",
+    "qemu": {
+      "qemu": {
+        "micro": 22,
+        "minor": 2,
+        "major": 7
+      },
+      "package": "Debian 1:7.2+dfsg-7+deb12u18+b3"
+    },
+    "node": "v24.22.2",
+    "host": "Linux version 7.2.9-orbstack-00391-g2b298d05fbd4 (orbstack@builder) (ClangBuiltLinux clang version 22.1.3 (https://github.com/llvm/llvm-project.git e9846648fd6183ee6d8cbdb4502213fcf902a211), ClangBuiltLinux LLD 22.1.3 (https://github.com/llvm/llvm-project.git e9846648fd6183ee6d8cbdb4502213fcf902a211)) #1 SMP PREEMPT Mon Oct 12 05:39:36 UTC 2026\n"
+  },
+  "domain_xml": "<domain type='qemu' id='1' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>\n  <name>ozc-managedsave-test</name>\n  <uuid>a74fa4d3-90d6-4dc1-8bba-12588f216b20</uuid>\n  <memory unit='KiB'>2097152</memory>\n  <currentMemory unit='KiB'>2097152</currentMemory>\n  <vcpu placement='static'>2</vcpu>\n  <resource>\n    <partition>/machine</partition>\n  </resource>\n  <os>\n    <type arch='x86_64' machine='pc-i440fx-7.2'>hvm</type>\n    <kernel>/lab/vmlinuz</kernel>\n    <initrd>/lab/initrd</initrd>\n    <cmdline>root=/dev/vda rw console=ttyS0 net.ifnames=0</cmdline>\n    <boot dev='hd'/>\n  </os>\n  <cpu mode='custom' match='exact' check='full'>\n    <model fallback='forbid'>Nehalem</model>\n    <feature policy='require' name='hypervisor'/>\n  </cpu>\n  <clock offset='utc'/>\n  <on_poweroff>destroy</on_poweroff>\n  <on_reboot>restart</on_reboot>\n  <on_crash>destroy</on_crash>\n  <devices>\n    <emulator>/usr/bin/qemu-system-x86_64</emulator>\n    <disk type='file' device='disk'>\n      <driver name='qemu' type='raw'/>\n      <source file='/lab/rootfs.ext4' index='1'/>\n      <backingStore/>\n      <target dev='vda' bus='virtio'/>\n      <alias name='virtio-disk0'/>\n      <address type='pci' domain='0x0000' bus='0x00' slot='0x02' function='0x0'/>\n    </disk>\n    <controller type='usb' index='0' model='piix3-uhci'>\n      <alias name='usb'/>\n      <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x2'/>\n    </controller>\n    <controller type='pci' index='0' model='pci-root'>\n      <alias name='pci.0'/>\n    </controller>\n    <serial type='file'>\n      <source path='/lab/results/serial.log'/>\n      <target type='isa-serial' port='0'>\n        <model name='isa-serial'/>\n      </target>\n      <alias name='serial0'/>\n    </serial>\n    <console type='file'>\n      <source path='/lab/results/serial.log'/>\n      <target type='serial' port='0'/>\n      <alias name='serial0'/>\n    </console>\n    <input type='mouse' bus='ps2'>\n      <alias name='input0'/>\n    </input>\n    <input type='keyboard' bus='ps2'>\n      <alias name='input1'/>\n    </input>\n    <audio id='1' type='none'/>\n    <memballoon model='none'/>\n  </devices>\n  <seclabel type='dynamic' model='dac' relabel='yes'>\n    <label>+0:+0</label>\n    <imagelabel>+0:+0</imagelabel>\n  </seclabel>\n  <qemu:commandline>\n    <qemu:arg value='-netdev'/>\n    <qemu:arg value='user,id=labnet,hostfwd=tcp:127.0.0.1:18080-:8080'/>\n    <qemu:arg value='-device'/>\n    <qemu:arg value='virtio-net-pci,netdev=labnet,addr=0x10'/>\n  </qemu:commandline>\n</domain>",
+  "disks": [
+    {
+      "target": "vda",
+      "path": "/lab/rootfs.ext4",
+      "dev": 87,
+      "ino": 4633731,
+      "size": 8589934592,
+      "mtime_ms": 1793423966170.8406
+    }
+  ],
+  "guest_uuid": "a74fa4d3-90d6-4dc1-8bba-12588f216b20",
+  "guest_environment": {
+    "kernel": "6.12.113+deb13-amd64",
+    "architecture": "x86_64",
+    "os_release": "PRETTY_NAME=\"Debian GNU/Linux 13 (trixie)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"13\"\nVERSION=\"13 (trixie)\"\nVERSION_CODENAME=trixie\nDEBIAN_VERSION_FULL=13.1\nID=debian\nHOME_URL=\"https://www.debian.org/\"\nSUPPORT_URL=\"https://www.debian.org/support\"\nBUG_REPORT_URL=\"https://bugs.debian.org/\"\n",
+    "ozwell_package": "2026.10.2+1.g158f71c.dirty"
+  },
+  "initial_probe": {
+    "token": "2362287d6091dc5b2c5d50a7d118ebdf1d39113a691811ef487b23e6bd61fdf3",
+    "pid": 703,
+    "start_ticks": "5641",
+    "boot_id": "87aad6e7-78fc-4c3c-93b9-e303aa6b3c4a",
+    "payload_sha256": "97a31fde5fca600716ed58fd8f55f4013300e214692313c8bb7e14b1a110655a",
+    "payload_bytes": 67108864,
+    "counter": 23
+  },
+  "initial_gui": {
+    "window_id": "0xe00004",
+    "pid": 704,
+    "start_ticks": "5643",
+    "unsaved_text": "unsaved-b0dabdfa-982f-4e1c-8fa7-083f2aebad13",
+    "verification": "copy from widget after fresh clipboard sentinel",
+    "clipboard_generation": 2
+  },
+  "initial_gui_png": {
+    "file": "/lab/results/gui-before.png",
+    "bytes": 17130,
+    "sha256": "591d9f4f50b18838ebc01a567dcc7a48ca8ace2180cf5e070021b2234dedcf3f"
+  },
+  "passed": true,
+  "finished_at": "2026-10-31T05:20:10.250Z"
+}
