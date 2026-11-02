@@ -73,10 +73,11 @@ install: build $(if $(filter /,$(DESTDIR)),system-deps)
 		systemctl disable --now $$u >/dev/null 2>&1; rm -f $(UNIT_DIR)/$$u; \
 	done; rm -f $(DESTAPP)/bin/ozwell-computer-session; \
 	if [ -n "$$enabled" ]; then systemctl enable ozwell-computer-desktop.service >/dev/null; fi; }
-	$(INSTALL) -d $(DESTDIR)/etc/default $(DESTDIR)/etc/pam.d $(XFCONF) $(DESTDIR)/usr/share/applications
+	$(INSTALL) -d $(DESTDIR)/etc/default $(DESTDIR)/etc/pam.d $(DESTDIR)/etc/xdg/autostart $(XFCONF) $(DESTDIR)/usr/share/applications
 	$(call conffile,contrib/default/ozwell-computer,$(DESTDIR)/etc/default/ozwell-computer)
 	$(call conffile,contrib/pam/ozwell-computer,$(DESTDIR)/etc/pam.d/ozwell-computer)
 	$(call conffile,contrib/xfce/mimeapps.list,$(DESTDIR)/etc/xdg/mimeapps.list)
+	$(call conffile,contrib/xfce/autostart/xfdesktop.desktop,$(DESTDIR)/etc/xdg/autostart/xfdesktop.desktop)
 	for f in contrib/xfce/xfconf/*.xml; do $(call conffile,$$f,$(XFCONF)/$${f##*/}) || exit 1; done
 	# Older versions overrode xfce4-session and xsettings defaults here; Debian's now apply.
 	rm -rf $(DESTAPP)/xdg

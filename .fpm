@@ -43,6 +43,7 @@
 --config-files /etc/default/ozwell-computer
 --config-files /etc/pam.d/ozwell-computer
 --config-files /etc/xdg/mimeapps.list
+--config-files /etc/xdg/autostart/xfdesktop.desktop
 --config-files /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
 --config-files /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-panel.xml
 --config-files /etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml

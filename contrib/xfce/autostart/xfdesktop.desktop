@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Desktop
+# Restored sessions saved before xfdesktop joined the session lack it; a second launch is a no-op.
+Exec=xfdesktop
+OnlyShowIn=XFCE;

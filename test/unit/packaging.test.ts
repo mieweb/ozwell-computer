@@ -258,13 +258,17 @@ describe('desktop session', () => {
     expect(read('Makefile')).toMatch(/^\trm -rf \$\(DESTAPP\)\/xdg$/m);
   });
 
-  it('xfdesktop draws the backdrop from xfconf defaults (no autostart glue)', () => {
+  it('xfdesktop draws the backdrop from xfconf defaults, also in sessions saved without it', () => {
     const xml = read('contrib/xfce/xfconf/xfce4-desktop.xml');
     // Xvfb's only RandR output is "screen"; xfwm4.xml keeps one workspace.
     expect(xml).toMatch(/<property name="backdrop" type="empty">\s*<property name="screen0" type="empty">\s*<property name="monitorscreen" type="empty">\s*<property name="workspace0" type="empty">/);
     expect(read('contrib/xfce/xfconf/xfwm4.xml')).toMatch(/name="workspace_count" type="int" value="1"/);
     expect(read('.fpm')).toMatch(/^--depends xfdesktop4$/m);
     expect(read('.fpm')).toMatch(/^--config-files \/etc\/xdg\/xfce4\/xfconf\/xfce-perchannel-xml\/xfce4-desktop\.xml$/m);
+    // xfce4-session runs autostart entries on restored sessions too.
+    expect(read('contrib/xfce/autostart/xfdesktop.desktop')).toMatch(/^Exec=xfdesktop$/m);
+    expect(read('Makefile')).toMatch(/conffile,contrib\/xfce\/autostart\/xfdesktop\.desktop,\$\(DESTDIR\)\/etc\/xdg\/autostart\/xfdesktop\.desktop\)/);
+    expect(read('.fpm')).toMatch(/^--config-files \/etc\/xdg\/autostart\/xfdesktop\.desktop$/m);
   });
 
   it('the default themes are installed and light: Greybird borders, light panel', () => {
