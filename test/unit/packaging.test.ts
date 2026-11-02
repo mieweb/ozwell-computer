@@ -244,21 +244,18 @@ describe('desktop session', () => {
     expect(restarts).toEqual(['ozwell-computer.service', 'ozwell-computer-upgrade.path']);
   });
 
-  it('xfce4-session restores the saved session, saves it on logout, and starts the default apps only without one', () => {
-    expect(desktop).not.toMatch(/xfwm4|xfce4-panel|xfce4-terminal/);
-    const xml = read('contrib/xfce/xfce4-session.xml');
-    expect(xml).toMatch(/name="SaveOnExit" type="bool" value="true"/);
-    expect(xml).toMatch(/name="StartAssistiveTechnologies" type="bool" value="true"/);
-    const failsafe = /name="FailsafeSessionName" type="string" value="(\w+)"/.exec(xml)![1];
-    expect(xml).toMatch(new RegExp(`name="${failsafe}" type="empty">\\s*<property name="IsFailsafe" type="bool" value="true"/>`));
-    // xfce4-session doesn't save on SIGTERM: stopping logs out and waits for it.
-    expect(desktop).toMatch(/^ExecStop=\/bin\/sh -c 'xfce4-session-logout --logout \|\| exit; while kill -0 "\$MAINPID"/m);
+  it('xfce4-session uses Debian\'s defaults and saves the session on logout', () => {
+    expect(desktop).not.toMatch(/xfwm4|xfce4-panel|xfce4-terminal|XDG_CONFIG_DIRS/);
+    expect(read('Makefile')).not.toMatch(/xfce4-session\.xml|xsettings\.xml/);
+    expect(read('.fpm')).toMatch(/^--depends xfce4-session$/m);
+    // xfce4-session doesn't save on SIGTERM, and Debian leaves SaveOnExit off: stopping
+    // checkpoints the session, logs out and waits for it.
+    expect(desktop).toMatch(/^ExecStop=\/bin\/sh -c 'dbus-send --session --print-reply --dest=org\.xfce\.SessionManager \/org\/xfce\/SessionManager org\.xfce\.Session\.Manager\.Checkpoint string: >\/dev\/null; xfce4-session-logout --logout \|\| exit; while kill -0 "\$MAINPID"/m);
+    expect(read('.fpm')).toMatch(/^--depends dbus-bin$/m);
   });
 
-  it('the session reads its config from where make install puts it', () => {
-    expect(desktop).toMatch(/^Environment=XDG_CONFIG_DIRS=@PREFIX@\/xdg:\/etc\/xdg$/m);
-    expect(read('Makefile')).toMatch(/^APP_XFCONF := \$\(DESTAPP\)\/xdg\/xfce4\/xfconf\/xfce-perchannel-xml$/m);
-    expect(read('.fpm')).toMatch(/^--depends xfce4-session$/m);
+  it('make install removes the session overrides of older versions', () => {
+    expect(read('Makefile')).toMatch(/^\trm -rf \$\(DESTAPP\)\/xdg$/m);
   });
 
   it('xfdesktop draws the backdrop from xfconf defaults (no autostart glue)', () => {
@@ -266,20 +263,16 @@ describe('desktop session', () => {
     // Xvfb's only RandR output is "screen"; xfwm4.xml keeps one workspace.
     expect(xml).toMatch(/<property name="backdrop" type="empty">\s*<property name="screen0" type="empty">\s*<property name="monitorscreen" type="empty">\s*<property name="workspace0" type="empty">/);
     expect(read('contrib/xfce/xfconf/xfwm4.xml')).toMatch(/name="workspace_count" type="int" value="1"/);
-    expect(read('contrib/xfce/xfce4-session.xml')).toMatch(/_Command" type="array">\s*<value type="string" value="xfdesktop"\/>/);
     expect(read('.fpm')).toMatch(/^--depends xfdesktop4$/m);
     expect(read('.fpm')).toMatch(/^--config-files \/etc\/xdg\/xfce4\/xfconf\/xfce-perchannel-xml\/xfce4-desktop\.xml$/m);
   });
 
-  it('the default themes are installed and light: Adwaita apps and panel, Greybird borders', () => {
+  it('the default themes are installed and light: Greybird borders, light panel', () => {
     expect(read('.fpm')).toMatch(/^--depends greybird-gtk-theme$/m);
     expect(read('.fpm')).toMatch(/^--depends gnome-themes-extra-data$/m);
     expect(read('.fpm')).not.toMatch(/xsettingsd/);
-    expect(read('contrib/xfce/xsettings.xml')).toMatch(/<property name="ThemeName" type="string" value="Adwaita"\/>/);
     expect(read('contrib/xfce/xfconf/xfwm4.xml')).toMatch(/<property name="theme" type="string" value="Greybird"\/>/);
     expect(read('contrib/xfce/xfconf/xfce4-panel.xml')).toMatch(/<property name="dark-mode" type="bool" value="false"\/>/);
-    // Not /etc/xdg: xfce4-settings owns that xsettings.xml.
-    expect(read('Makefile')).toMatch(/^\t\$\(INSTALL_DATA\) .*contrib\/xfce\/xsettings\.xml .*\$\(APP_XFCONF\)\/$/m);
   });
 
   it('Firefox restores the previous session', () => {

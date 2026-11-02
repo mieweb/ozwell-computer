@@ -104,7 +104,7 @@ package provides these units, both running as the `desktop` user:
 
 | Unit | Purpose |
 |---|---|
-| `ozwell-computer-desktop.service` | `xinit /etc/X11/Xsession startxfce4 -- Xvfb :0 ...` at `$OZWELL_COMPUTER_SCREEN`, in a PAM login session (`/etc/pam.d/ozwell-computer`: Debian's `common-account` and `common-session`), so `pam_systemd` starts the user's session D-Bus at `/run/user/<uid>/bus`. The session is xfce4-session running xfwm4, xfdesktop (a plain backdrop, set in `/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml`) and `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). It also starts the AT-SPI bus and, on first start, a terminal (xfce4-terminal); Thunar is the file manager. |
+| `ozwell-computer-desktop.service` | `xinit /etc/X11/Xsession startxfce4 -- Xvfb :0 ...` at `$OZWELL_COMPUTER_SCREEN`, in a PAM login session (`/etc/pam.d/ozwell-computer`: Debian's `common-account` and `common-session`), so `pam_systemd` starts the user's session D-Bus at `/run/user/<uid>/bus`. The session is xfce4-session running xfwm4, xfdesktop (a plain backdrop, set in `/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml`) and `xfce4-panel` (a top bar with an Applications menu and clock, and a bottom dock with launchers and running apps). These come from Debian's own xfce4-session and xsettings defaults; the AT-SPI bus starts on demand (D-Bus activation) when an app enables accessibility, and Thunar is the file manager. |
 | `ozwell-computer.service` | this server (`Requires=` the desktop) |
 
 Apps launched through the API share the session bus (`DISPLAY=:0`, and the server sets
@@ -114,8 +114,8 @@ accessibility bridges enabled, so their UI shows up in `/api/v1/a11y/*`.
 **The desktop persists.** Restarting, upgrading or crashing the server leaves the
 desktop running; the server reattaches to the display, and open apps stay open. When
 the desktop itself stops (container or machine restart, `systemctl restart
-ozwell-computer-desktop`) it logs out, and xfce4-session saves the session
-(`SaveOnExit`). The next start restores session-aware apps (those started from the panel or
+ozwell-computer-desktop`) it saves the session (a D-Bus checkpoint: Debian leaves
+xfce4-session's `SaveOnExit` off) and logs out. The next start restores session-aware apps (those started from the panel or
 dock, such as xfce4-terminal, Thunar and Firefox) with their window positions. Firefox
 reopens its previous tabs (`docker/firefox/policies.json`). Apps launched through the
 API aren't session clients and aren't restored. The session lives in the `desktop`
