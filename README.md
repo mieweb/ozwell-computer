@@ -230,9 +230,10 @@ the systemd units, `/usr/bin/ozwell-computer`, and the desktop configuration
   Upgrading from a version with separate Xvfb, D-Bus and session units replaces them
   with `ozwell-computer-desktop.service`, which restarts the desktop once (`make install`
   does the same for the git channel below). The restored session predates xfdesktop, so
-  the desktop has no backdrop until its saved session is reset: remove
-  `/home/desktop/.cache/sessions` and `systemctl restart ozwell-computer-desktop` (this
-  closes open applications).
+  the desktop has no backdrop until its saved session is reset. Stopping saves the session
+  again, so reset it while stopped: `systemctl stop ozwell-computer-desktop` (this also
+  stops the server and closes open applications), remove `/home/desktop/.cache/sessions`,
+  then `systemctl start ozwell-computer` (which starts the desktop).
 - Removing it stops and disables the services; purging also deletes
   `/var/lib/ozwell-computer`.
 
