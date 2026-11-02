@@ -8,6 +8,8 @@
 //                        Ozwell user is recorded in a tag only. email: also attribute each
 //                        computer to the opensource-server user whose mail matches
 //                        X-Ozwell-User-Email (the API key must be an admin); fails if none.
+//     default_owner=<username>  owner=email only: the opensource-server user that gets the
+//                        computer when the email is missing or matches no user (instead of failing)
 //     internal=external|ip  how the orchestrator reaches computers: through the external
 //                        https URL (default; works from anywhere) or http://<ipv4>:8080
 //                        (when the orchestrator runs on the site's network)
@@ -48,6 +50,7 @@ export class OpensourceServerProvider implements Provider {
   readonly domain: number;
   readonly template: string;
   readonly ownerMode: 'tag' | 'email';
+  readonly defaultOwner?: string;
   readonly internal: 'external' | 'ip';
   readonly env: Record<string, string>;
   private readonly key: string;
@@ -68,6 +71,8 @@ export class OpensourceServerProvider implements Provider {
     const owner = q.get('owner') ?? 'tag';
     if (owner !== 'tag' && owner !== 'email') throw new Error('opensource-server provider: owner must be tag or email');
     this.ownerMode = owner;
+    this.defaultOwner = q.get('default_owner') || undefined;
+    if (this.defaultOwner && owner !== 'email') throw new Error('opensource-server provider: default_owner needs owner=email');
     const internal = q.get('internal') ?? 'external';
     if (internal !== 'external' && internal !== 'ip') throw new Error('opensource-server provider: internal must be external or ip');
     this.internal = internal;
@@ -127,13 +132,17 @@ export class OpensourceServerProvider implements Provider {
     return c ? this.toComputer(c) : null;
   }
 
-  /** opensource-server username for an Ozwell user, by email (owner=email). */
+  /** opensource-server username for an Ozwell user, by email (owner=email), else default_owner. */
   private async usernameFor(email: string | undefined): Promise<string> {
-    if (!email) throw new Error('owner=email needs the X-Ozwell-User-Email header');
+    if (!email) {
+      if (this.defaultOwner) return this.defaultOwner;
+      throw new Error('owner=email needs the X-Ozwell-User-Email header');
+    }
     const { data } = await this.api<Array<{ uid: string; mail?: string; status?: string }>>('GET', '/users');
     const u = (data ?? []).find((x) => x.mail?.toLowerCase() === email.toLowerCase());
-    if (!u) throw new Error(`no opensource-server account with email ${email}`);
-    return u.uid;
+    if (u) return u.uid;
+    if (this.defaultOwner) return this.defaultOwner;
+    throw new Error(`no opensource-server account with email ${email}`);
   }
 
   async create(opts: CreateOptions): Promise<Computer> {

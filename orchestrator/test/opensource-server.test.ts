@@ -60,6 +60,7 @@ describe('opensource-server provider', () => {
     expect(() => new OpensourceServerProvider(new URL('opensource-server://h?site=1'), env)).toThrow(/domain/);
     expect(() => new OpensourceServerProvider(new URL('opensource-server://h?site=1&domain=1'), {})).toThrow(/API_KEY/);
     expect(() => make('owner=nope')).toThrow(/owner/);
+    expect(() => make('default_owner=admin')).toThrow(/default_owner needs owner=email/);
   });
 
   it('is selected by scheme', async () => {
@@ -101,6 +102,19 @@ describe('opensource-server provider', () => {
     expect((await p.list('u-3')).map((x) => x.id)).toEqual([c.id]);
     await expect(make('owner=email').create({ owner: { id: 'u-4', email: 'nobody@example.com' } })).rejects.toThrow(/no opensource-server account/);
     await expect(make('owner=email').create({ owner: { id: 'u-5' } })).rejects.toThrow(/X-Ozwell-User-Email/);
+  });
+
+  it('owner=email falls back to default_owner when the email matches no user', async () => {
+    const p = make('owner=email&default_owner=admin');
+    const unmatched = await p.create({ owner: { id: 'u-4', email: 'nobody@example.com' } });
+    expect(os.containers.find((x) => x.hostname === unmatched.id).owner).toBe('admin');
+    expect(unmatched.ownerEmail).toBe('nobody@example.com');
+    const noEmail = await p.create({ owner: { id: 'u-5' } });
+    expect(os.containers.find((x) => x.hostname === noEmail.id).owner).toBe('admin');
+    // a matching email still wins over the default
+    const matched = await p.create({ owner: { id: 'u-3', email: 'bob@example.com' } });
+    expect(os.containers.find((x) => x.hostname === matched.id).owner).toBe('bob');
+    expect((await p.list('u-4')).map((x) => x.id)).toEqual([unmatched.id]);
   });
 
   it('reports offline containers as stopped and starts them with a restart job', async () => {
