@@ -1,0 +1,60 @@
+name: ozwell-checkpoint
+services:
+  runtime:
+    build:
+      context: ..
+      dockerfile: docker/checkpoint-runtime/Dockerfile
+      args:
+        CRIU_KIT_IMAGE: "${CRIU_KIT_IMAGE:-ozwell-criu:checkpoint}"
+    image: ozwell-computer-runtime:checkpoint
+    privileged: true
+    # Only this dedicated daemon sees its inner desktops and checkpoints.
+    volumes:
+      - engine:/var/lib/docker
+      - socket:/run/ozwell-docker
+    tmpfs:
+      # containerd sockets/PIDs must disappear after an unclean runtime exit.
+      # The nested socket volume remains the gateway's stable mount point.
+      - /run:mode=0755
+    labels:
+      dev.orbstack.domains: "ozwell-checkpoint.local,*.ozwell-computers.local"
+      dev.orbstack.http-port: "8090"
+    restart: unless-stopped
+  gateway:
+    build:
+      context: ..
+      dockerfile: orchestrator/Dockerfile
+    image: ozwell-computer-orchestrator:checkpoint
+    command: ["node", "src/checkpoint-runtime-gateway.mjs"]
+    depends_on:
+      runtime:
+        condition: service_healthy
+    # Inner anchors publish ports only inside the runtime's network namespace.
+    network_mode: service:runtime
+    environment:
+      PROVIDER_URI: "docker-checkpoint:///run/ozwell-docker/docker.sock?image=${CHECKPOINT_COMPUTER_IMAGE:-ozwell-computer:checkpoint-arm64-flat}&network=bridge"
+      ORCHESTRATOR_TOKEN: "${ORCHESTRATOR_TOKEN:?Set ORCHESTRATOR_TOKEN in the private checkpoint environment file}"
+      ORCHESTRATOR_HOST: 0.0.0.0
+      ORCHESTRATOR_PORT: 8090
+      ORCHESTRATOR_IDLE_MS: "${ORCHESTRATOR_IDLE_MS:-300000}"
+      ORCHESTRATOR_IDLE_POLL_MS: "${ORCHESTRATOR_IDLE_POLL_MS:-15000}"
+      ORCHESTRATOR_MAX_INSTANCES: "${ORCHESTRATOR_MAX_INSTANCES:-3}"
+      COMPUTER_FRAME_ANCESTORS: "${COMPUTER_FRAME_ANCESTORS:-}"
+      COMPUTER_GATEWAY_URL: "https://{id}.ozwell-computers.local"
+      DOCKER_CHECKPOINT_DAEMON_SOCKET: /run/ozwell-docker/docker.sock
+      DOCKER_CHECKPOINT_CRIU_CONFIG: /opt/ozc-criu/ozwell.conf
+      DOCKER_CHECKPOINT_LOCK_DIR: /state
+    volumes:
+      - socket:/run/ozwell-docker
+      - coordination:/state
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/health',{signal:AbortSignal.timeout(2000)}).then(r=>{if(!r.ok)process.exitCode=1}).catch(()=>process.exitCode=1)"]
+      interval: 2s
+      timeout: 3s
+      start_period: 10s
+      retries: 30
+    restart: unless-stopped
+volumes:
+  engine:
+  socket:
+  coordination:

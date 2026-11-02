@@ -14,6 +14,7 @@ import { providerFromUri } from './providers/index.ts';
 import { InstanceClient } from './instance-client.ts';
 import { loadCatalog } from './mcp.ts';
 import { buildServer } from './server.ts';
+import { IdleController } from './lifecycle.ts';
 
 const env = process.env;
 const die = (m: string) => { process.stderr.write(`ozwell-computer-orchestrator: ${m}\n`); process.exit(2); };
@@ -27,12 +28,25 @@ if (rawMax !== undefined && !/^\d+$/.test(rawMax)) die('ORCHESTRATOR_MAX_INSTANC
 const maxInstances = rawMax === undefined ? undefined : Number(rawMax);
 
 const provider = await providerFromUri(uri as string, env);
+if (!provider.hibernate && env.ORCHESTRATOR_IDLE_MS !== undefined && env.ORCHESTRATOR_IDLE_MS !== '0') {
+  die('ORCHESTRATOR_IDLE_MS requires a hibernation-capable provider (libvirt or docker-checkpoint)');
+}
+const readMs = (key: string, fallback: number, min: number) => {
+  const raw = env[key];
+  const n = raw === undefined ? fallback : Number(raw);
+  if ((raw !== undefined && !/^\d+$/.test(raw)) || !Number.isSafeInteger(n) || n < min || n > 86_400_000) die(`${key} must be an integer from ${min} to 86400000`);
+  return n;
+};
+const lifecycle = provider.hibernate ? new IdleController(provider, {
+  idleMs: readMs('ORCHESTRATOR_IDLE_MS', 300_000, 0), pollMs: readMs('ORCHESTRATOR_IDLE_POLL_MS', 15_000, 1),
+}) : undefined;
 const catalog = loadCatalog(env.TOOL_CATALOG || new URL('../../docs/mcp-tools.json', import.meta.url));
 const app = await buildServer({
-  provider, catalog, client: new InstanceClient(), version, psk: psk as string | null, maxInstances,
+  provider, catalog, client: new InstanceClient(), version, psk: psk as string | null, maxInstances, lifecycle,
+  gatewayUrl: lifecycle ? provider.publicUrl : undefined,
   logger: { level: env.LOG_LEVEL || 'info', redact: ['req.headers.authorization'] },
 });
-app.log.info({ provider: provider.scheme, tools: catalog.length, maxInstances: maxInstances ?? 'unlimited' }, 'orchestrator configured');
+app.log.info({ provider: provider.scheme, tools: catalog.length, maxInstances: maxInstances ?? 'unlimited', idleMs: lifecycle?.idleMs }, 'orchestrator configured');
 if (authDisabled) app.log.warn('AUTHENTICATION IS DISABLED: any caller can act as any X-Ozwell-User-Id');
 await app.listen({ host: env.ORCHESTRATOR_HOST || '127.0.0.1', port: Number(env.ORCHESTRATOR_PORT || 8090) });
 

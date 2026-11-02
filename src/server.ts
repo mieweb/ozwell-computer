@@ -20,6 +20,10 @@ import vncRoutes from './vnc/routes.js';
 import mcpRoutes from './mcp/server.js';
 import type { A11y } from './a11y/atspi.js';
 import type { Updater } from './update.js';
+import { upgrading } from './update.js';
+import { jobsFor } from './process/jobs.js';
+import { Lifecycle, registerLifecycle } from './lifecycle.js';
+import lifecycleRoutes from './routes/lifecycle.js';
 import { m, render as renderMetrics, setCpus } from './metrics.js';
 import { errors, media } from './routes/schemas.js';
 
@@ -84,6 +88,7 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
     const e = toApiError(err);
     if (e.reason === 'internal') req.log.error({ err }, 'request failed');
     if (e.reason === 'unauthenticated') reply.header('www-authenticate', 'Bearer');
+    if (e.retryAfterMs !== undefined) reply.header('retry-after', String(Math.ceil(e.retryAfterMs / 1000)));
     reply.code(e.status).send(e.toBody());
   });
   app.setNotFoundHandler((req, reply) => {
@@ -109,6 +114,12 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(fastifySwaggerUi, { routePrefix: '/api/docs' });
 
   registerAuth(app, { token: ctx.token });
+  const jobs = jobsFor(ctx.config, ctx.desktop);
+  const lifecycle = new Lifecycle(async () => ({
+    running_jobs: (await jobs.list()).filter((j) => j.state === 'running').length,
+    busy: ctx.updater ? upgrading(await ctx.updater.status()) : false,
+  }));
+  registerLifecycle(app, lifecycle, ctx.token === null);
 
   const novncDir = dirname(dirname(require.resolve('@novnc/novnc'))); // exports → core/rfb.js
   await app.register(fastifyStatic, { root: novncDir, prefix: '/novnc/', decorateReply: false, index: false });
@@ -134,6 +145,7 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   });
 
   await app.register(async (s) => coreRoutes(s, ctx));
+  await app.register(async (s) => lifecycleRoutes(s, lifecycle));
   // Read per hello, so a viewer rebuilt under a running server (dev compose) reports its new id.
   await app.register(async (s) => windowRoutes(s, ctx, () => webBuild(staticDir)));
   await app.register(async (s) => execRoutes(s, ctx));

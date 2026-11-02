@@ -1,10 +1,12 @@
 // HTTP front: PSK bearer auth (Ozwell's workspace MCP config), Ozwell user headers,
 // stateless Streamable-HTTP MCP at /mcp, and /health.
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { buildMcpServer, type OrchestratorDeps } from './mcp.ts';
 import type { Requester } from './providers/types.ts';
+import { createGateway } from './gateway.ts';
 
 const digest = (s: string) => createHash('sha256').update(s).digest();
 export const tokenOk = (expected: string, given: string | undefined) =>
@@ -31,10 +33,36 @@ export interface ServerOptions extends OrchestratorDeps {
   /** Pre-shared key Ozwell sends as `Authorization: Bearer <psk>`; null disables auth (dev only). */
   psk: string | null;
   logger?: boolean | object;
+  /** Wildcard guest origin; the same listener serves their wake gateway. */
+  gatewayUrl?: string;
 }
 
 export async function buildServer(opts: ServerOptions): Promise<FastifyInstance> {
-  const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 32 * 1024 * 1024 });
+  if (opts.gatewayUrl && !opts.lifecycle) throw new Error('a wake gateway requires the lifecycle controller');
+  const gateway = opts.gatewayUrl ? createGateway({ provider: opts.provider, lifecycle: opts.lifecycle!, publicUrl: opts.gatewayUrl }) : undefined;
+  const app = Fastify({
+    logger: opts.logger ?? false, bodyLimit: 32 * 1024 * 1024,
+    ...(gateway ? { serverFactory: (handler: (req: IncomingMessage, res: ServerResponse) => void) => {
+      // The proxy must receive the original stream before Fastify parses a body.
+      const server = createServer((req, res) => {
+        void gateway.handler(req, res).then((handled) => { if (!handled) handler(req, res); }).catch(() => {
+          if (!res.headersSent) res.writeHead(503, { 'content-type': 'text/plain' });
+          res.end('Gateway unavailable');
+        });
+      });
+      server.on('upgrade', (req, socket, head) => {
+        void gateway.upgrade(req, socket, head).then((handled) => {
+          if (!handled) socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\n\r\n');
+        }).catch(() => socket.destroy());
+      });
+      return server;
+    } } : {}),
+  });
+  // Inject and then bind logging so library users get the same lifecycle events
+  // as CLI deployments, without logging instance credentials or request URLs.
+  opts.lifecycle?.setLogger(app.log);
+  app.addHook('onReady', async () => opts.lifecycle?.start());
+  app.addHook('preClose', async () => { await gateway?.close(); await opts.lifecycle?.close(); });
 
   app.get('/health', async (_req, reply) => reply.code(204).send());
 

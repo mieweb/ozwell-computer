@@ -13,6 +13,7 @@ import { safePath } from '../fs/index.js';
 import { launchDetached } from '../routes/windows.js';
 import { m } from '../metrics.js';
 import { upgrading, type UpdateStatus } from '../update.js';
+import { retainRequestWork } from '../lifecycle.js';
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 interface ToolResult { content: Content[]; isError?: boolean; [k: string]: unknown }
@@ -64,7 +65,7 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
     register(name, config, async (...a: any[]) => {
       const p = principal();
       ctx.log.info({ tool: name, agent: p.name, session: p.id }, 'mcp tool call');
-      const r = await cb(...a);
+      const r = await retainRequestWork(() => cb(...a));
       m.mcpToolCalls.inc({ tool: name, outcome: r.isError ? 'error' : 'ok' });
       const notice = updateNotice(ctx.updater?.cached() ?? null);
       return notice ? { ...r, content: [...r.content, { type: 'text', text: notice }] } : r;

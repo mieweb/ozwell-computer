@@ -26,14 +26,14 @@ const errorBody = (description: string) => record(description, {
     reason: prop('string', 'Machine-readable cause; it determines the HTTP status', { enum: Object.keys(REASON_STATUS) }),
     message: prop('string', 'Human-readable explanation'),
     feature: prop('string', 'The missing feature, when reason is feature_unsupported'),
-    retry_after_ms: prop('integer', 'How long to wait before retrying, when reason is rate_limited'),
+    retry_after_ms: prop('integer', 'How long to wait before retrying, when reason is rate_limited or hibernating'),
   }, { required: ['reason', 'message'] }),
 });
 
 /** Every route can fail with the shared error envelope. */
 export const errors = {
-  '4xx': errorBody('Request error: invalid_request (400), unauthenticated (401), permission_denied (403), target_unavailable or path_not_found (404), stale_* (409), limit_exceeded (413), would_require_activation or checksum_mismatch (422), rate_limited (429)'),
-  '5xx': errorBody('Server error: internal (500) or feature_unsupported (501)'),
+  '4xx': errorBody('Request error: invalid_request (400), unauthenticated (401), permission_denied (403), target_unavailable or path_not_found (404), stale_* or not_idle (409), limit_exceeded (413), would_require_activation or checksum_mismatch (422), rate_limited (429)'),
+  '5xx': errorBody('Server error: internal (500), feature_unsupported (501), or hibernating (503)'),
 };
 
 export const ok = record('The operation succeeded', { ok: prop('boolean', 'Always true') });

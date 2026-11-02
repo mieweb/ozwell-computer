@@ -20,6 +20,13 @@ needs network access from the orchestrator to both the provider API and every co
 The lower layers work on their own: you can run the container (layer 3) without an
 orchestrator, or the server (layer 4) without the container.
 
+For desktops that release application CPU and RAM while disconnected, use
+[libvirt managed save on Linux](docs/libvirt-deployment.md) or the
+[Docker checkpoint runtime on Mac/OrbStack](docs/docker-checkpoint-deployment.md).
+Both automatically save idle computers and restore their open applications,
+process memory and unsaved work on an authenticated request. A small gateway
+remains available to wake them. Existing container providers retain their behavior.
+
 ```mermaid
 flowchart TB
     agent["MCP client<br/>(Ozwell workspace, agents)"]
@@ -27,16 +34,17 @@ flowchart TB
 
     subgraph L1["Layer 1: Orchestrator"]
         orch["ozwell-computer-orchestrator<br/>POST /mcp"]
+        wake["Always-on wake gateway<br/>(hibernating computers)"]
     end
 
     subgraph L2["Layer 2: Provider"]
-        prov["docker | opensource-server<br/>list, get, create, destroy"]
+        prov["docker | docker-checkpoint | opensource-server | libvirt<br/>list, get, create, start, destroy"]
     end
 
-    runtime[("Docker Engine /<br/>opensource-server API")]
+    runtime[("Docker Engine /<br/>opensource-server API / libvirt")]
 
-    subgraph L3["Layer 3: Container (ghcr.io/mieweb/ozwell-computer)"]
-        systemd["systemd (PID 1)"]
+    subgraph L3["Layer 3: Computer runtime (container or VM)"]
+        systemd["systemd or checkpoint Supervisor (PID 1)"]
         desk["Xvfb :0, D-Bus,<br/>xfwm4 + xfce4-panel, AT-SPI"]
         apps["apps: terminal, Thunar, Firefox"]
         subgraph L4["Layer 4: ozwell-computer (this repo)"]
@@ -46,26 +54,30 @@ flowchart TB
 
     agent -->|"MCP, PSK + X-Ozwell-User-*"| orch
     orch --> prov
-    prov -->|"create / inspect / delete containers"| runtime
+    prov -->|"create / inspect / start / hibernate / delete"| runtime
     runtime -->|"runs"| systemd
     systemd --> desk
     systemd --> server
     orch -->|"MCP tools/call, instance token"| server
     human -->|"viewer_url (?token=)"| server
+    human -->|"hibernating viewer_url"| wake
+    wake --> prov
+    wake -->|"HTTP / WebSocket after restore"| server
     server <-->|"X11 (node-x11), AT-SPI"| desk
     desk --- apps
 ```
 
 1. **Orchestrator** ([orchestrator/](orchestrator/README.md)): the single MCP endpoint
-   most clients use. It is stateless and per user: it adds `list_computers`,
-   `create_computer`, `get_computer` and `destroy_computer`, and proxies every
+   most clients use. It stores durable state in its provider and is per user: it adds `list_computers`,
+   `create_computer`, `get_computer`, `start_computer` and `destroy_computer`, and proxies every
    ozwell-computer tool with an extra `instance_id`. It authenticates Ozwell with a
    pre-shared key and scopes every call to `X-Ozwell-User-Id`.
 2. **Provider** ([orchestrator/src/providers/](orchestrator/src/providers/types.ts)): the
    adapter to a computer runtime, selected by `PROVIDER_URI`'s scheme. It implements
    `list(owner)`, `get(id)`, `create({ owner, displayName })` and `destroy(id)`, and keeps
-   all state (owner, metadata, URLs, token) on the containers themselves. `docker` and
-   `opensource-server` are built in.
+   durable state (owner, metadata, URLs, token) on the managed containers or VMs.
+   `docker`, `docker-checkpoint`, `opensource-server` and `libvirt` are built in.
+   Libvirt and Docker checkpoint providers support idle hibernation and resume.
 3. **Container** ([Dockerfile](Dockerfile)): the standard runtime for one computer.
    systemd runs as PID 1 and starts the package's units: the session D-Bus, `Xvfb :0`,
    the XFCE session (xfwm4, panels, AT-SPI) and the server, all as the `desktop` user.

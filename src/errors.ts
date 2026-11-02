@@ -12,6 +12,8 @@ export type Reason =
   | 'invalid_request'
   | 'limit_exceeded'
   | 'rate_limited'
+  | 'not_idle'
+  | 'hibernating'
   | 'internal';
 
 export const REASON_STATUS: Record<Reason, number> = {
@@ -28,6 +30,8 @@ export const REASON_STATUS: Record<Reason, number> = {
   invalid_request: 400,
   limit_exceeded: 413,
   rate_limited: 429,
+  not_idle: 409,
+  hibernating: 503,
   internal: 500,
 };
 

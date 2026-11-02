@@ -28,7 +28,8 @@ interface Target { socketPath?: string; host?: string; port?: number }
 
 export class DockerApi {
   readonly target: Target;
-  constructor(target: Target) { this.target = target; }
+  readonly readDeadlineMs: number;
+  constructor(target: Target, readDeadlineMs = 0) { this.target = target; this.readDeadlineMs = readDeadlineMs; }
 
   call(method: string, path: string, body?: unknown): Promise<{ status: number; data: any }> {
     return new Promise((resolve, reject) => {
@@ -36,9 +37,12 @@ export class DockerApi {
       const req = request({
         ...(this.target.socketPath ? { socketPath: this.target.socketPath } : { host: this.target.host, port: this.target.port }),
         method, path,
+        ...(method === 'GET' && this.readDeadlineMs ? { signal: AbortSignal.timeout(this.readDeadlineMs) } : {}),
         headers: { host: 'docker', ...(payload ? { 'content-type': 'application/json', 'content-length': payload.length } : {}) },
       }, (res) => {
         const chunks: Buffer[] = [];
+        res.once('error', reject);
+        res.once('aborted', () => reject(new Error('Docker response aborted')));
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
           const text = Buffer.concat(chunks).toString('utf8');
@@ -61,7 +65,7 @@ export class DockerApi {
 }
 
 export class DockerProvider implements Provider {
-  readonly scheme = 'docker';
+  readonly scheme: string = 'docker';
   readonly api: DockerApi;
   readonly image: string;
   readonly network?: string;
@@ -81,7 +85,7 @@ export class DockerProvider implements Provider {
     this.env = computerEnv(env);
   }
 
-  private toComputer(c: any): Computer {
+  protected toComputer(c: any): Computer {
     // Accepts both list entries and inspect results.
     const labels = c.Config?.Labels ?? c.Labels ?? {};
     const name = String(c.Name ?? c.Names?.[0] ?? '').replace(/^\//, '');
@@ -126,6 +130,9 @@ export class DockerProvider implements Provider {
     if (r.status === 404) return null;
     if (r.status >= 300) throw new Error(`docker inspect ${id}: HTTP ${r.status}`);
     if (r.data?.Config?.Labels?.[LABEL.managed] !== 'true') return null;
+    // Checkpoint intent is owned exclusively by the checkpoint provider. A plain
+    // Docker controller must never bypass it with an ordinary container start.
+    if (r.data?.Config?.Labels?.[`${L}checkpoint-version`] !== undefined) return null;
     return this.toComputer(r.data);
   }
 
@@ -171,6 +178,7 @@ export class DockerProvider implements Provider {
   }
 
   async start(id: string): Promise<Computer> {
+    if (!(await this.get(id))) throw new Error(`computer ${id} not found`);
     const r = await this.api.call('POST', `/containers/${encodeURIComponent(id)}/start`);
     // 304: already running
     if (r.status >= 300 && r.status !== 304) throw new Error(`docker start ${id}: HTTP ${r.status}: ${r.data?.message ?? r.data}`);

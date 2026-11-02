@@ -31,7 +31,11 @@ const ROLE_MAP: Record<string, string> = {
   'separator': 'separator', 'status bar': 'status', 'scroll pane': 'scroll_area', 'viewport': 'group',
   'split pane': 'split_group', 'canvas': 'canvas', 'terminal': 'terminal', 'desktop frame': 'desktop',
 };
-export const mapRole = (r: string) => ROLE_MAP[r] ?? r.replace(/\s+/g, '_');
+export const mapRole = (r: string, states: readonly string[] = []) => {
+  // GTK3 exposes GtkEntry as text; its states distinguish it from static text.
+  if (r === 'text' && states.includes('editable') && states.includes('single_line')) return 'text_field';
+  return ROLE_MAP[r] ?? r.replace(/\s+/g, '_');
+};
 
 /**
  * dbus-next opens `unix:path=`/`unix:abstract=` through the `usocket` native module,
@@ -302,7 +306,7 @@ export class A11y {
       const d = await this.details(bus, v.ref, v.l).catch(() => ({ bounds: null, actions: [] as string[], value: null }));
       return {
         element_id: ids.get(v)!, parent_id: v.parent ? ids.get(v.parent)! : null, depth: v.depth,
-        role: mapRole(v.l.native_role), native_role: v.l.native_role, name: v.l.name, value: d.value,
+        role: mapRole(v.l.native_role, v.l.states), native_role: v.l.native_role, name: v.l.name, value: d.value,
         description: v.l.description, bounds: d.bounds, states: v.l.states, actions: d.actions, app: v.app,
       };
     }));
@@ -324,7 +328,7 @@ export class A11y {
     const vc = o.value_contains?.toLowerCase();
     // Filter on the cheap facts during the walk; only matches get bounds/actions/value.
     const { snapshot_id, nodes, truncated } = await this.walk({ window: o.window, maxNodes: 20000, maxDepth: 64 }, (l) =>
-      (!o.role || mapRole(l.native_role) === o.role || l.native_role === o.role) &&
+      (!o.role || mapRole(l.native_role, l.states) === o.role || l.native_role === o.role) &&
       (o.name === undefined || l.name === o.name) &&
       (!nc || l.name.toLowerCase().includes(nc)) &&
       (!o.states || o.states.every((st) => l.states.includes(st))),

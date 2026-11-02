@@ -24,6 +24,8 @@ export interface Computer {
   status: string;
   /** Stopped (e.g. by the platform when idle) and needs start() before use. */
   stopped: boolean;
+  /** Saved RAM exists; start must restore it rather than boot a fresh guest. */
+  hibernated?: boolean;
   createdAt?: string;
   /** Base URL the orchestrator uses to reach the instance (API + MCP). */
   internalUrl?: string;
@@ -41,6 +43,8 @@ export interface CreateOptions {
 export interface Provider {
   /** Scheme(s) this provider registered under, for logs. */
   readonly scheme: string;
+  /** Stable wildcard viewer origin served by the wake gateway, when supported. */
+  readonly publicUrl?: string;
   /** Computers owned by `owner`. */
   list(owner: string): Promise<Computer[]>;
   /** One computer by id, or null when it doesn't exist (or isn't managed by us). */
@@ -51,6 +55,12 @@ export interface Provider {
   start(id: string): Promise<Computer>;
   /** Destroy a computer and its storage. */
   destroy(id: string): Promise<void>;
+  /** Optional whole-VM hibernation capability; absent for container providers. */
+  hibernate?(id: string): Promise<Computer>;
+  /** All managed computers, for recovery and idle sweeps. Never expose to users. */
+  listAll?(): Promise<Computer[]>;
+  /** Serialize a lifecycle decision with its mutation (reentrant). */
+  withLock?<T>(id: string, fn: () => Promise<T>): Promise<T>;
 }
 
 /** A provider factory receives the parsed PROVIDER_URI and the environment. */
