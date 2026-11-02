@@ -22,8 +22,8 @@ describe('maintainer scripts', () => {
   });
 
   describe('postinst in a sandbox (fake systemctl and getent)', () => {
-    // [$2 (the previous version), legacy enable links] -> systemctl calls, remaining links
-    function run(prev: string, legacyLinks: string[] = []) {
+    // [$2 (the previous version), legacy enable links, MainPID of a running legacy session] -> systemctl calls, remaining links
+    function run(prev: string, legacyLinks: string[] = [], legacyPid = 0) {
       const dir = mkdtempSync(join(tmpdir(), 'oz-postinst-'));
       try {
         mkdirSync(join(dir, 'bin'));
@@ -31,7 +31,8 @@ describe('maintainer scripts', () => {
         for (const l of legacyLinks) spawnSync('ln', ['-s', '/nonexistent', join(dir, 'wants', l)]);
         const script = read('contrib/postinst').replaceAll('/etc/systemd/system/multi-user.target.wants', `${dir}/wants`).replaceAll('/run/systemd/system', dir);
         writeFileSync(join(dir, 'postinst'), script);
-        writeFileSync(join(dir, 'bin/systemctl'), `#!/bin/sh\necho "systemctl $*" >> ${dir}/calls\n`, { mode: 0o755 });
+        writeFileSync(join(dir, 'bin/systemctl'), `#!/bin/sh\necho "systemctl $*" >> ${dir}/calls\n[ "$1" != show ] || echo ${legacyPid}\n`, { mode: 0o755 });
+        writeFileSync(join(dir, 'bin/runuser'), `#!/bin/sh\necho "runuser $*" >> ${dir}/calls\n`, { mode: 0o755 });
         writeFileSync(join(dir, 'bin/getent'), '#!/bin/sh\necho desktop\n', { mode: 0o755 });
         writeFileSync(join(dir, 'calls'), '');
         const r = spawnSync('sh', [join(dir, 'postinst'), 'configure', prev], { env: { ...process.env, PATH: `${dir}/bin:${process.env.PATH}` } });
@@ -45,9 +46,23 @@ describe('maintainer scripts', () => {
 
     it('on upgrade restarts only the server', () => {
       expect(run('1.0.0').calls).toEqual([
+        'systemctl show -P MainPID ozwell-computer-session.service',
         `systemctl stop ${legacy}`,
         'systemctl daemon-reload',
         'systemctl try-restart ozwell-computer.service',
+        'systemctl try-restart ozwell-computer-upgrade.path',
+      ]);
+    });
+
+    it('logs a running legacy session out on its bus (its stop helper is gone), then starts the desktop unit', () => {
+      // A PID that isn't running, so the wait for the logout ends at once.
+      const calls = run('1.0.0', [], 2 ** 22 - 1).calls;
+      expect(calls[1]).toMatch(/^runuser -u desktop -- env DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=\/run\/desktop-bus\/bus xfce4-session-logout --logout$/);
+      expect(calls.slice(2)).toEqual([
+        `systemctl stop ${legacy}`,
+        'systemctl daemon-reload',
+        'systemctl try-restart ozwell-computer.service',
+        'systemctl start ozwell-computer-desktop.service',
         'systemctl try-restart ozwell-computer-upgrade.path',
       ]);
     });
