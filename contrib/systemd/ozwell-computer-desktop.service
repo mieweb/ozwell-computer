@@ -22,9 +22,8 @@ EnvironmentFile=-/etc/default/ozwell-computer
 # failsafe session (/etc/xdg/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml); later
 # starts restore the saved session.
 ExecStart=/usr/bin/xinit /etc/X11/Xsession startxfce4 -- /usr/bin/Xvfb :0 -screen 0 ${OZWELL_COMPUTER_SCREEN} -nolisten tcp +extension RANDR +extension DAMAGE -dpi 96
-# Save the session (Debian leaves SaveOnExit off, so logging out alone doesn't), then log
-# out and wait for it to finish.
-ExecStop=/bin/sh -c 'dbus-send --session --print-reply --dest=org.xfce.SessionManager /org/xfce/SessionManager org.xfce.Session.Manager.Checkpoint string: >/dev/null; xfce4-session-logout --logout || exit; while kill -0 "$MAINPID" 2>/dev/null; do sleep 0.2; done'
+# Log out with SaveOnExit (Debian leaves it off) and wait for it to finish.
+ExecStop=/bin/sh -c 'xfconf-query -c xfce4-session -p /general/SaveOnExit -n -t bool -s true; xfce4-session-logout --logout || exit; while kill -0 "$MAINPID" 2>/dev/null; do sleep 0.2; done'
 TimeoutStopSec=30
 Restart=always
 RestartSec=1

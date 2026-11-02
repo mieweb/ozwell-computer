@@ -249,9 +249,9 @@ describe('desktop session', () => {
     expect(read('Makefile')).not.toMatch(/xfce4-session\.xml|xsettings\.xml/);
     expect(read('.fpm')).toMatch(/^--depends xfce4-session$/m);
     // xfce4-session doesn't save on SIGTERM, and Debian leaves SaveOnExit off: stopping
-    // checkpoints the session, logs out and waits for it.
-    expect(desktop).toMatch(/^ExecStop=\/bin\/sh -c 'dbus-send --session --print-reply --dest=org\.xfce\.SessionManager \/org\/xfce\/SessionManager org\.xfce\.Session\.Manager\.Checkpoint string: >\/dev\/null; xfce4-session-logout --logout \|\| exit; while kill -0 "\$MAINPID"/m);
-    expect(read('.fpm')).toMatch(/^--depends dbus-bin$/m);
+    // enables it, logs out and waits for it.
+    expect(desktop).toMatch(/^ExecStop=\/bin\/sh -c 'xfconf-query -c xfce4-session -p \/general\/SaveOnExit -n -t bool -s true; xfce4-session-logout --logout \|\| exit; while kill -0 "\$MAINPID"/m);
+    expect(read('.fpm')).toMatch(/^--depends xfconf$/m);
   });
 
   it('make install removes the session overrides of older versions', () => {

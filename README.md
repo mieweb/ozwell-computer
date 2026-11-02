@@ -114,8 +114,8 @@ accessibility bridges enabled, so their UI shows up in `/api/v1/a11y/*`.
 **The desktop persists.** Restarting, upgrading or crashing the server leaves the
 desktop running; the server reattaches to the display, and open apps stay open. When
 the desktop itself stops (container or machine restart, `systemctl restart
-ozwell-computer-desktop`) it saves the session (a D-Bus checkpoint: Debian leaves
-xfce4-session's `SaveOnExit` off) and logs out. The next start restores session-aware apps (those started from the panel or
+ozwell-computer-desktop`) it logs out with xfce4-session's `SaveOnExit` turned on
+(Debian leaves it off), which saves the session. The next start restores session-aware apps (those started from the panel or
 dock, such as xfce4-terminal, Thunar and Firefox) with their window positions. Firefox
 reopens its previous tabs (`docker/firefox/policies.json`). Apps launched through the
 API aren't session clients and aren't restored. The session lives in the `desktop`
