@@ -1,0 +1,5 @@
+# PAM configuration for ozwell-computer-desktop.service (PAMName=ozwell-computer):
+# the distribution's account and session setup, including pam_systemd, which registers
+# the session with logind and starts the user's systemd manager.
+@include common-account
+@include common-session

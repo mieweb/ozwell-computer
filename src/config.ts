@@ -8,6 +8,20 @@ export function inContainer(): boolean {
   return existsSync('/.dockerenv') || existsSync('/run/.containerenv') || process.env.container !== undefined;
 }
 
+/**
+ * The user's session bus, as pam_systemd and dbus-user-session set it up: a system unit
+ * running as that user doesn't get XDG_RUNTIME_DIR or DBUS_SESSION_BUS_ADDRESS (and %U in
+ * the unit is the manager's UID, not User='s), so derive them from our own UID when unset.
+ */
+export function sessionEnv(env: NodeJS.ProcessEnv, uid = process.getuid?.(), exists = existsSync): NodeJS.ProcessEnv {
+  if (uid === undefined) return {};
+  const out: NodeJS.ProcessEnv = {};
+  const runtime = env.XDG_RUNTIME_DIR || `/run/user/${uid}`;
+  if (!env.XDG_RUNTIME_DIR && exists(runtime)) out.XDG_RUNTIME_DIR = runtime;
+  if (!env.DBUS_SESSION_BUS_ADDRESS && exists(`${runtime}/bus`)) out.DBUS_SESSION_BUS_ADDRESS = `unix:path=${runtime}/bus`;
+  return out;
+}
+
 const bool = z
   .union([z.boolean(), z.string()])
   .transform((v) => (typeof v === 'boolean' ? v : ['1', 'true', 'yes', 'on'].includes(v.toLowerCase())));

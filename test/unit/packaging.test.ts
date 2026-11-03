@@ -21,6 +21,66 @@ describe('maintainer scripts', () => {
     expect(read('contrib/postinst')).toMatch(/try-restart ozwell-computer-upgrade\.path/);
   });
 
+  describe('postinst in a sandbox (fake systemctl and getent)', () => {
+    // [$2 (the previous version), legacy enable links, MainPID of a running legacy session] -> systemctl calls, remaining links
+    function run(prev: string, legacyLinks: string[] = [], legacyPid = 0) {
+      const dir = mkdtempSync(join(tmpdir(), 'oz-postinst-'));
+      try {
+        mkdirSync(join(dir, 'bin'));
+        mkdirSync(join(dir, 'wants'));
+        for (const l of legacyLinks) spawnSync('ln', ['-s', '/nonexistent', join(dir, 'wants', l)]);
+        const script = read('contrib/postinst').replaceAll('/etc/systemd/system/multi-user.target.wants', `${dir}/wants`).replaceAll('/run/systemd/system', dir);
+        writeFileSync(join(dir, 'postinst'), script);
+        writeFileSync(join(dir, 'bin/systemctl'), `#!/bin/sh\necho "systemctl $*" >> ${dir}/calls\n[ "$1" != show ] || echo ${legacyPid}\n`, { mode: 0o755 });
+        writeFileSync(join(dir, 'bin/runuser'), `#!/bin/sh\necho "runuser $*" >> ${dir}/calls\n`, { mode: 0o755 });
+        writeFileSync(join(dir, 'bin/getent'), '#!/bin/sh\necho desktop\n', { mode: 0o755 });
+        writeFileSync(join(dir, 'calls'), '');
+        const r = spawnSync('sh', [join(dir, 'postinst'), 'configure', prev], { env: { ...process.env, PATH: `${dir}/bin:${process.env.PATH}` } });
+        expect(r.status).toBe(0);
+        return { calls: readFileSync(join(dir, 'calls'), 'utf8').trim().split('\n'), links: spawnSync('ls', [join(dir, 'wants')], { encoding: 'utf8' }).stdout.trim() };
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    }
+    const legacy = 'ozwell-computer-session.service ozwell-computer-xvfb.service ozwell-computer-dbus.service';
+
+    it('on upgrade restarts only the server', () => {
+      expect(run('1.0.0').calls).toEqual([
+        'systemctl show -P MainPID ozwell-computer-session.service',
+        `systemctl stop ${legacy}`,
+        'systemctl daemon-reload',
+        'systemctl try-restart ozwell-computer.service',
+        'systemctl try-restart ozwell-computer-upgrade.path',
+      ]);
+    });
+
+    it('logs a running legacy session out on its bus (its stop helper is gone), then starts the desktop unit', () => {
+      // A PID that isn't running, so the wait for the logout ends at once.
+      const calls = run('1.0.0', [], 2 ** 22 - 1).calls;
+      expect(calls[1]).toMatch(/^runuser -u desktop -- env DISPLAY=:0 DBUS_SESSION_BUS_ADDRESS=unix:path=\/run\/desktop-bus\/bus xfce4-session-logout --logout$/);
+      expect(calls.slice(2)).toEqual([
+        `systemctl stop ${legacy}`,
+        'systemctl daemon-reload',
+        'systemctl try-restart ozwell-computer.service',
+        'systemctl start ozwell-computer-desktop.service',
+        'systemctl try-restart ozwell-computer-upgrade.path',
+      ]);
+    });
+
+    it('replaces the separate Xvfb, bus and session units of older versions, keeping them enabled', () => {
+      const r = run('1.0.0', legacy.split(' '));
+      expect(r.links).toBe('');
+      expect(r.calls[0]).toBe('systemctl enable ozwell-computer-desktop.service');
+    });
+  });
+
+  it('make install replaces the legacy units of a git install', () => {
+    const mk = read('Makefile');
+    expect(mk).toMatch(/^LEGACY_UNITS := ozwell-computer-session\.service ozwell-computer-xvfb\.service ozwell-computer-dbus\.service$/m);
+    expect(mk).toMatch(/systemctl disable --now \$\$u >\/dev\/null 2>&1; rm -f \$\(UNIT_DIR\)\/\$\$u/);
+    expect(mk).toMatch(/then systemctl enable ozwell-computer-desktop\.service/);
+  });
+
   it('the upgrade service cannot time out mid-transaction, and the script recovers and waits for locks', () => {
     expect(read('contrib/systemd/ozwell-computer-upgrade.service')).toMatch(/^TimeoutStartSec=infinity$/m);
     const sh = read('contrib/upgrade.sh');
@@ -149,10 +209,34 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
 describe('desktop session', () => {
   const unit = (u: string) => read(`contrib/systemd/${u}.service`);
 
-  // Restarting the server (upgrades, crashes, `systemctl restart`) must not take the
-  // desktop down with it; the session Requires= the bus and Xvfb.
-  it.each(['ozwell-computer-dbus', 'ozwell-computer-xvfb', 'ozwell-computer-session'])('%s is not bound to the server', (u) => {
-    expect(unit(u)).not.toMatch(/^(PartOf|BindsTo|Requires|Requisite)=.*ozwell-computer\.service/m);
+  const desktop = unit('ozwell-computer-desktop');
+  const server = unit('ozwell-computer');
+
+  it('one system unit runs Xvfb and the Xfce session through xinit and Xsession, in a PAM login session', () => {
+    expect(desktop).toMatch(/^User=desktop$/m);
+    expect(desktop).toMatch(/^PAMName=ozwell-computer$/m);
+    expect(desktop).toMatch(/^ExecStart=\/usr\/bin\/xinit \/etc\/X11\/Xsession startxfce4 -- \/usr\/bin\/Xvfb :0 -screen 0 \$\{OZWELL_COMPUTER_SCREEN\} /m);
+    expect(desktop).toMatch(/^WantedBy=multi-user\.target$/m);
+    // pam_systemd (from common-session) starts the user manager and its session bus.
+    expect(read('contrib/pam/ozwell-computer').split('\n').filter((l) => l && !l.startsWith('#'))).toEqual(['@include common-account', '@include common-session']);
+    expect(read('Makefile')).toContain('$(call conffile,contrib/pam/ozwell-computer,$(DESTDIR)/etc/pam.d/ozwell-computer)');
+    for (const p of ['xinit', 'x11-common', 'libpam-systemd', 'dbus-user-session']) expect(read('.fpm')).toMatch(new RegExp(`^--depends ${p}$`, 'm'));
+    expect(read('.fpm')).toMatch(/^--config-files \/etc\/pam\.d\/ozwell-computer$/m);
+  });
+
+  // Restarting the server (upgrades, crashes, `systemctl restart`) must not take the desktop down with it.
+  it('the server is a system unit of desktop that requires the desktop, not the other way round', () => {
+    expect(server).toMatch(/^User=desktop$/m);
+    expect(server).toMatch(/^Requires=ozwell-computer-desktop\.service$/m);
+    expect(server).toMatch(/^After=ozwell-computer-desktop\.service /m);
+    expect(server).toMatch(/^KillMode=process$/m);
+    expect(desktop).not.toMatch(/^(After|Wants|Requires|BindsTo|PartOf|Upholds)=.*ozwell-computer\.service/m);
+    // After= waits for the PAM session (and so the user's bus), not just the fork.
+    expect(desktop).toMatch(/^Type=exec$/m);
+    for (const u of [server, desktop]) expect(u).toMatch(/^Environment=.*\bDISPLAY=:0\b/m);
+    // %U would be the service manager's UID: the server derives the bus itself (sessionEnv).
+    expect(server).not.toMatch(/^Environment=.*\b(DBUS_SESSION_BUS_ADDRESS|XDG_RUNTIME_DIR)=/m);
+    expect(read('src/cli.ts')).toMatch(/Object\.assign\(process\.env, sessionEnv\(process\.env\)\)/);
   });
 
   it('postinst restarts only the server on upgrade', () => {
@@ -160,32 +244,39 @@ describe('desktop session', () => {
     expect(restarts).toEqual(['ozwell-computer.service', 'ozwell-computer-upgrade.path']);
   });
 
-  it('xfce4-session restores the saved session, and starts the default apps only without one', () => {
-    const sh = read('contrib/xfce/session.sh');
-    expect(sh).toMatch(/^exec xfce4-session$/m);
-    expect(sh).not.toMatch(/^\s*(xfwm4|xfce4-panel|xfce4-terminal)\b/m);
-    const xml = read('contrib/xfce/xfce4-session.xml');
-    expect(xml).toMatch(/name="SaveOnExit" type="bool" value="true"/);
-    const failsafe = /name="FailsafeSessionName" type="string" value="(\w+)"/.exec(xml)![1];
-    expect(xml).toMatch(new RegExp(`name="${failsafe}" type="empty">\\s*<property name="IsFailsafe" type="bool" value="true"/>`));
-    expect(unit('ozwell-computer-session')).toMatch(/^ExecStop=.*ozwell-computer-session stop$/m);
-  });
-
-  it('xfconfd reads the session config from where make install puts it', () => {
-    expect(unit('ozwell-computer-dbus')).toMatch(/^Environment=XDG_CONFIG_DIRS=@PREFIX@\/xdg:\/etc\/xdg$/m);
-    expect(read('Makefile')).toMatch(/^APP_XFCONF := \$\(DESTAPP\)\/xdg\/xfce4\/xfconf\/xfce-perchannel-xml$/m);
+  it('xfce4-session uses Debian\'s defaults and saves the session on logout', () => {
+    expect(desktop).not.toMatch(/xfwm4|xfce4-panel|xfce4-terminal|XDG_CONFIG_DIRS/);
+    expect(read('Makefile')).not.toMatch(/xfce4-session\.xml|xsettings\.xml/);
     expect(read('.fpm')).toMatch(/^--depends xfce4-session$/m);
+    // xfce4-session doesn't save on SIGTERM, and Debian leaves SaveOnExit off: stopping
+    // enables it, logs out and waits for it.
+    expect(desktop).toMatch(/^ExecStop=\/bin\/sh -c 'xfconf-query -c xfce4-session -p \/general\/SaveOnExit -n -t bool -s true; xfce4-session-logout --logout \|\| exit; while kill -0 "\$MAINPID"/m);
+    expect(read('.fpm')).toMatch(/^--depends xfconf$/m);
   });
 
-  it('the default themes are installed and light: Adwaita apps and panel, Greybird borders', () => {
+  it('make install removes the session overrides of older versions', () => {
+    expect(read('Makefile')).toMatch(/^\trm -rf \$\(DESTAPP\)\/xdg$/m);
+  });
+
+  it('xfdesktop draws the backdrop from xfconf defaults, also in sessions saved without it', () => {
+    const xml = read('contrib/xfce/xfconf/xfce4-desktop.xml');
+    // Xvfb's only RandR output is "screen"; xfwm4.xml keeps one workspace.
+    expect(xml).toMatch(/<property name="backdrop" type="empty">\s*<property name="screen0" type="empty">\s*<property name="monitorscreen" type="empty">\s*<property name="workspace0" type="empty">/);
+    expect(read('contrib/xfce/xfconf/xfwm4.xml')).toMatch(/name="workspace_count" type="int" value="1"/);
+    expect(read('.fpm')).toMatch(/^--depends xfdesktop4$/m);
+    expect(read('.fpm')).toMatch(/^--config-files \/etc\/xdg\/xfce4\/xfconf\/xfce-perchannel-xml\/xfce4-desktop\.xml$/m);
+    // xfce4-session runs autostart entries on restored sessions too.
+    expect(read('contrib/xfce/autostart/xfdesktop.desktop')).toMatch(/^Exec=xfdesktop$/m);
+    expect(read('Makefile')).toMatch(/conffile,contrib\/xfce\/autostart\/xfdesktop\.desktop,\$\(DESTDIR\)\/etc\/xdg\/autostart\/xfdesktop\.desktop\)/);
+    expect(read('.fpm')).toMatch(/^--config-files \/etc\/xdg\/autostart\/xfdesktop\.desktop$/m);
+  });
+
+  it('the default themes are installed and light: Greybird borders, light panel', () => {
     expect(read('.fpm')).toMatch(/^--depends greybird-gtk-theme$/m);
     expect(read('.fpm')).toMatch(/^--depends gnome-themes-extra-data$/m);
     expect(read('.fpm')).not.toMatch(/xsettingsd/);
-    expect(read('contrib/xfce/xsettings.xml')).toMatch(/<property name="ThemeName" type="string" value="Adwaita"\/>/);
     expect(read('contrib/xfce/xfconf/xfwm4.xml')).toMatch(/<property name="theme" type="string" value="Greybird"\/>/);
     expect(read('contrib/xfce/xfconf/xfce4-panel.xml')).toMatch(/<property name="dark-mode" type="bool" value="false"\/>/);
-    // Not /etc/xdg: xfce4-settings owns that xsettings.xml.
-    expect(read('Makefile')).toMatch(/^\t\$\(INSTALL_DATA\) .*contrib\/xfce\/xsettings\.xml .*\$\(APP_XFCONF\)\/$/m);
   });
 
   it('Firefox restores the previous session', () => {
