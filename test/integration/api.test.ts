@@ -15,6 +15,8 @@ describe('system', () => {
     const caps = (await api('GET', '/api/v1/capabilities')).body;
     expect(r.body.displays.length).toBeGreaterThan(0);
     expect(r.body.displays[0].bounds).toMatchObject({ width: caps.display.width, height: caps.display.height });
+    // xfwm4 runs in the desktop session (integration setup waits for it).
+    expect(caps.display.window_manager).toBe(true);
   });
 });
 

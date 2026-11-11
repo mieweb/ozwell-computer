@@ -21,6 +21,7 @@ const capabilities = record('What this server can do right now', {
     height: prop('integer', 'Root window height (when connected)'),
     depth: prop('integer', 'Bits per pixel (when connected)'),
     geometry_epoch: prop('integer', 'Increments when the screen size changes; screenshot ids from earlier epochs are stale'),
+    window_manager: prop('boolean', 'Whether an EWMH window manager is running (when connected); window moves, focus and close need one'),
     error: prop(['string', 'null'], 'Last connection error (when disconnected)'),
   }, { required: ['name', 'connected'] }),
   extensions: prop('array', 'X extensions available on the display', { items: { type: 'string' } }),
@@ -97,7 +98,10 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
       version: ctx.version,
       auth: config.authDisabled ? 'disabled' : 'token',
       display: s
-        ? { name: s.displayName, connected: true, width: s.width, height: s.height, depth: s.pixel.depth, geometry_epoch: s.geometryEpoch }
+        ? {
+          name: s.displayName, connected: true, width: s.width, height: s.height, depth: s.pixel.depth, geometry_epoch: s.geometryEpoch,
+          window_manager: await desktop.ctl().windows.hasWindowManager().catch(() => false),
+        }
         : { name: config.display, connected: false, error: desktop.x.lastError },
       extensions: s?.extensionNames() ?? [],
       features: {

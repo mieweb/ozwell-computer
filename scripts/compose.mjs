@@ -53,7 +53,11 @@ export function generatedToken() {
   return r.status === 0 && r.out ? r.out : null;
 }
 
-/** Wait until /health is 204 and the desktop session has at least one window. */
+/**
+ * Wait until /health is 204 and the desktop is usable: the X display is connected and its
+ * window manager is running. (Not "a window is open": a fresh session shows only the panel
+ * and backdrop, which the windows API leaves out.)
+ */
 export async function waitReady({ timeoutMs = 120_000 } = {}) {
   const deadline = Date.now() + timeoutMs;
   let lastErr = '';
@@ -62,8 +66,10 @@ export async function waitReady({ timeoutMs = 120_000 } = {}) {
       const base = url();
       const tok = token();
       if (tok && (await fetch(`${base}/health`)).status === 204) {
-        const w = await (await fetch(`${base}/api/v1/windows`, { headers: { authorization: `Bearer ${tok}` } })).json();
-        if (w.windows?.length) return { url: base, token: tok };
+        const r = await fetch(`${base}/api/v1/capabilities`, { headers: { authorization: `Bearer ${tok}` } });
+        const { display } = await r.json();
+        if (display?.connected && display.window_manager) return { url: base, token: tok };
+        lastErr = !r.ok ? `capabilities: HTTP ${r.status}` : display?.connected ? 'no window manager yet' : `display not connected (${display?.error ?? 'unknown'})`;
       }
     } catch (e) { lastErr = e.message; }
     if (Date.now() > deadline) {
