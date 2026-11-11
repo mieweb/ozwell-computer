@@ -10,6 +10,8 @@ continues the work: each one shows what a single request changed and why.
   (`area: what changed`, then a short body saying why).
 - Run the checks below that apply before committing, and say in the message if any were
   skipped.
+- When you push to a branch with an open PR, update the PR description in the same step
+  so it matches what the branch now does (paths, behaviour, testing).
 
 ## Testing changes locally
 
