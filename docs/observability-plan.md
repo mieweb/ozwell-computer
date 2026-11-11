@@ -1,7 +1,7 @@
 # Observability plan: orchestrator and instances
 
-Status: plan with decisions recorded. Phases 0–4 are implemented (`telemetry.ts`, `metrics.ts`, `operations.ts`,
-`instrument-provider.ts`, `internal-server.ts` in `orchestrator/src/`; `journal.ts`, `routes/logs.ts`,
+Status: plan with decisions recorded. Phases 0–5 are implemented (`telemetry.ts`, `metrics.ts`, `operations.ts`,
+`instrument-provider.ts`, `internal-server.ts`, `log-puller.ts` in `orchestrator/src/`; `journal.ts`, `routes/logs.ts`,
 `trace-context.ts` in the instance's `src/`); later phases are not.
 
 ## Goals
@@ -241,7 +241,12 @@ All scrape routes are served **only on the internal listener**.
        version one).
      - **5xx, timeout or refused connection:** exponential backoff up to a cap.
      - One instance never delays another.
-     - Metrics: `ozwell_orchestrator_log_pulls_total{outcome}` and
+     - **VictoriaLogs refuses a batch:** the cursor doesn't advance, and the same range
+       is pulled again after a backoff.
+     - **The instance no longer knows the cursor (400):** start again from now.
+     - Metrics: `ozwell_orchestrator_log_pulls_total{outcome}` (`ok`, `unsupported`,
+       `unauthorized`, `unavailable`, `ship_error`, `error`),
+       `ozwell_orchestrator_log_entries_shipped_total` and
        `ozwell_orchestrator_log_pull_unsupported_instances`.
 3. **Correlation.** The instance's request logger binds `trace_id`/`span_id` from an
    incoming `traceparent` header or `_meta.traceparent`.

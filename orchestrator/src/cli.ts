@@ -16,6 +16,9 @@
 //                        Unauthenticated: never public.
 //   ORCHESTRATOR_SD_ADDRESS  host:port vmagent reaches the internal listener at, put in /sd
 //                        targets (default the internal host:port; compose: orchestrator:8091)
+//   ORCHESTRATOR_LOG_SHIP_URL  VictoriaLogs journald ingest (…/insert/journald): pull every
+//                        running computer's journal there. Unset disables the puller.
+//   ORCHESTRATOR_LOG_POLL_MS  between pulls of one computer (default 5000)
 //   ORCHESTRATOR_OP_TIMEOUT_MS  give up timing a create/start/destroy after this (default 600000)
 import { readFileSync } from 'node:fs';
 import { providerFromUri } from './providers/index.ts';
@@ -27,6 +30,7 @@ import { shutdownTelemetry } from './telemetry.ts';
 import { Metrics } from './metrics.ts';
 import { buildInternalServer } from './internal-server.ts';
 import { OperationTracker } from './operations.ts';
+import { LogPuller } from './log-puller.ts';
 
 const env = process.env;
 const die = (m: string) => { process.stderr.write(`ozwell-computer-orchestrator: ${m}\n`); process.exit(2); };
@@ -42,6 +46,8 @@ const rawInternal = env.ORCHESTRATOR_INTERNAL_PORT;
 if (rawInternal && !/^\d+$/.test(rawInternal)) die('ORCHESTRATOR_INTERNAL_PORT must be a port number');
 const rawOpTimeout = env.ORCHESTRATOR_OP_TIMEOUT_MS;
 if (rawOpTimeout && !/^\d+$/.test(rawOpTimeout)) die('ORCHESTRATOR_OP_TIMEOUT_MS must be a number of milliseconds');
+const rawLogPoll = env.ORCHESTRATOR_LOG_POLL_MS;
+if (rawLogPoll && !/^\d+$/.test(rawLogPoll)) die('ORCHESTRATOR_LOG_POLL_MS must be a number of milliseconds');
 const logger = { level: env.LOG_LEVEL || 'info', redact: ['req.headers.authorization'] };
 const metrics = new Metrics();
 
@@ -63,5 +69,14 @@ const sdAddress = env.ORCHESTRATOR_SD_ADDRESS || `${['0.0.0.0', '::'].includes(i
 const internal = rawInternal ? await buildInternalServer({ metrics, provider, sdAddress, logger: { ...logger, level: env.LOG_LEVEL || 'warn' } }) : null;
 await internal?.listen({ host: internalHost, port: Number(rawInternal) });
 
-const stop = () => Promise.all([app.close(), internal?.close()]).then(shutdownTelemetry).then(() => process.exit(0));
+const logPuller = env.ORCHESTRATOR_LOG_SHIP_URL
+  ? new LogPuller({
+    provider, shipUrl: env.ORCHESTRATOR_LOG_SHIP_URL, metrics, log: app.log.child({ component: 'log-puller' }),
+    pollMs: rawLogPoll ? Number(rawLogPoll) : undefined,
+  })
+  : null;
+logPuller?.start();
+if (logPuller) app.log.info({ shipUrl: env.ORCHESTRATOR_LOG_SHIP_URL }, 'pulling instance logs');
+
+const stop = () => Promise.all([app.close(), internal?.close(), logPuller?.stop()]).then(shutdownTelemetry).then(() => process.exit(0));
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { void stop(); });

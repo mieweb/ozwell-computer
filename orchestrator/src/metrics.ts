@@ -83,6 +83,26 @@ export class Metrics {
     registers: [this.registry],
   });
 
+  // Instance log puller (log-puller.ts).
+  readonly logPulls = new Counter({
+    name: 'ozwell_orchestrator_log_pulls_total',
+    help: 'Instance journal pulls, by outcome: ok, unsupported (no logs route: an older instance), unauthorized, unavailable, ship_error, error',
+    labelNames: ['outcome'] as const,
+    registers: [this.registry],
+  });
+
+  readonly logEntriesShipped = new Counter({
+    name: 'ozwell_orchestrator_log_entries_shipped_total',
+    help: 'Instance journal entries forwarded to VictoriaLogs',
+    registers: [this.registry],
+  });
+
+  readonly logPullUnsupported = new Gauge({
+    name: 'ozwell_orchestrator_log_pull_unsupported_instances',
+    help: 'Running instances whose version has no logs route (re-checked periodically)',
+    registers: [this.registry],
+  });
+
   constructor(opts: { defaultMetrics?: boolean } = {}) {
     if (opts.defaultMetrics ?? true) collectDefaultMetrics({ register: this.registry, prefix: 'ozwell_orchestrator_' });
   }
