@@ -1,0 +1,12 @@
+apiVersion: 1
+providers:
+  # Read-only: dashboards change in the repo (orchestrator/deploy/grafana/dashboards), not the UI.
+  - name: ozwell
+    folder: ozwell-computer
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    editable: false
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

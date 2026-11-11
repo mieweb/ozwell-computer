@@ -202,9 +202,30 @@ the environment take precedence.
 | `ORCHESTRATOR_MAX_INSTANCES` | unlimited | computers each user may have |
 | `COMPUTER_FRAME_ANCESTORS` | none | origins (e.g. `https://app.ozwell.ai`) allowed to embed the viewer in an iframe; passed to computers when they are created as `OZWELL_COMPUTER_FRAME_ANCESTORS`, so existing computers keep their value |
 | `LOG_LEVEL` | `info` | |
+| `ORCHESTRATOR_INTERNAL_HOST` / `ORCHESTRATOR_INTERNAL_PORT` | `127.0.0.1` / off | internal listener for vmagent: `/metrics`, `/sd`, `/instances/:id/metrics`. No auth: never public |
+| `ORCHESTRATOR_SD_ADDRESS` | the internal host:port | address vmagent uses to reach the internal listener |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | off | OTLP (HTTP, protobuf) export of traces and the orchestrator's logs |
+| `ORCHESTRATOR_LOG_SHIP_URL` | off | VictoriaLogs `…/insert/journald`: pull every computer's journal there |
+| `ORCHESTRATOR_LOG_POLL_MS` / `ORCHESTRATOR_OP_TIMEOUT_MS` | `5000` / `600000` | log pull interval; operation timing timeout |
 
 Configure Ozwell's workspace MCP server as `http(s)://<orchestrator>/mcp` (Streamable
 HTTP) with the header `Authorization: Bearer <psk>`. Put TLS in front of it.
+
+### With Docker Compose and the observability stack
+
+`orchestrator/deploy/compose.yml` runs the orchestrator image (`orchestrator/Dockerfile`)
+and, with `--profile observability`, VictoriaMetrics, vmagent, VictoriaLogs,
+VictoriaTraces and Grafana with read-only dashboards. See docs/observability-plan.md.
+
+```bash
+cd orchestrator/deploy
+cp .env.example .env    # set ORCHESTRATOR_TOKEN, GF_SECURITY_ADMIN_PASSWORD, PROVIDER_URI, ...
+docker compose --profile observability up -d --build
+./smoke.sh              # a trace, a metric series and a log line arrive
+```
+
+Only the orchestrator and Grafana (`GRAFANA_PORT`, default 3000) publish ports, on
+127.0.0.1 by default: route to them from the existing reverse proxy, which terminates TLS.
 
 ## Providers
 

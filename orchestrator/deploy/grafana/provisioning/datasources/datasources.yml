@@ -1,0 +1,49 @@
+apiVersion: 1
+datasources:
+  - name: VictoriaMetrics
+    uid: victoriametrics
+    type: prometheus
+    access: proxy
+    url: http://victoriametrics:8428
+    isDefault: true
+    editable: false
+    jsonData:
+      prometheusType: Prometheus
+      # No exemplarTraceIdDestinations: vmagent and VictoriaMetrics (v1.156) drop exemplars,
+      # so metrics → trace goes through the dashboards' recent-trace panels instead.
+
+  - name: VictoriaLogs
+    uid: victorialogs
+    type: victoriametrics-logs-datasource
+    access: proxy
+    url: http://victorialogs:9428
+    editable: false
+    jsonData:
+      # logs → trace: orchestrator records have a trace_id field; instance (journald)
+      # records carry it inside the pino JSON in _msg.
+      derivedFields:
+        - name: trace_id
+          matcherType: label
+          matcherRegex: trace_id
+          url: "$${__value.raw}"
+          datasourceUid: victoriatraces
+        - name: trace_id (message)
+          matcherType: regex
+          matcherRegex: '"trace_id":"([0-9a-f]{32})"'
+          url: "$${__value.raw}"
+          datasourceUid: victoriatraces
+
+  - name: VictoriaTraces
+    uid: victoriatraces
+    type: jaeger
+    access: proxy
+    url: http://victoriatraces:10428/select/jaeger
+    editable: false
+    jsonData:
+      # trace → logs: the orchestrator's records and the instances' lines with this trace.
+      tracesToLogsV2:
+        datasourceUid: victorialogs
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        customQuery: true
+        query: 'trace_id:="$${__span.traceId}" OR "$${__span.traceId}"'

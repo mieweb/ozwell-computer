@@ -154,6 +154,11 @@ describe('LogPuller', () => {
     expect(await count(metrics, 'unavailable')).toBe(1);
   });
 
+  it('keeps defaults for options passed as undefined', () => {
+    const p = new LogPuller({ provider: {} as Provider, shipUrl: vlUrl, pollMs: undefined, batch: undefined });
+    expect((p as any).o).toMatchObject({ pollMs: 5000, batch: 1000 });
+  });
+
   it('drops stopped instances, and one failing instance does not hold up another', async () => {
     journal = [0];
     let list = [comp(), comp({ id: 'ozc-dead', internalUrl: 'http://127.0.0.1:1' })];

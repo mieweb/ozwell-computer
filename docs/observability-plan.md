@@ -1,8 +1,9 @@
 # Observability plan: orchestrator and instances
 
-Status: plan with decisions recorded. Phases 0–5 are implemented (`telemetry.ts`, `metrics.ts`, `operations.ts`,
+Status: plan with decisions recorded. Phases 0–6 are implemented (`telemetry.ts`, `metrics.ts`, `operations.ts`,
 `instrument-provider.ts`, `internal-server.ts`, `log-puller.ts` in `orchestrator/src/`; `journal.ts`, `routes/logs.ts`,
-`trace-context.ts` in the instance's `src/`); later phases are not.
+`trace-context.ts` in the instance's `src/`; `orchestrator/Dockerfile` and `orchestrator/deploy/`).
+The "Later" items are not.
 
 ## Goals
 
@@ -296,8 +297,10 @@ All scrape routes are served **only on the internal listener**.
 - **Provisioning:** under `orchestrator/deploy/grafana/provisioning/`.
   - Datasources: VictoriaMetrics, VictoriaLogs (plugin), and VictoriaTraces (Jaeger
     type).
-  - Correlations: trace → logs on `trace_id`, logs → trace via a derived field, and
-    metrics → trace via exemplars.
+  - Correlations: trace → logs on `trace_id`, and logs → trace via a derived field.
+    Metrics → trace via exemplars is **not available**: vmagent and VictoriaMetrics
+    (v1.156) drop exemplars. The orchestrator still exposes them on `/metrics`; the
+    Operations and Tool calls dashboards have recent-trace panels instead.
 - **Read-only dashboards:** JSON files in `orchestrator/deploy/grafana/dashboards/`,
   provisioned with `allowUiUpdates: false` and `editable: false`. Changes are made in the
   repo only.
@@ -336,7 +339,8 @@ If computer MCP tools change, regenerate the catalog: `make build && npm run mcp
 ## New dependencies (orchestrator)
 
 - `@opentelemetry/api` and `@opentelemetry/sdk-node`
-- `@opentelemetry/exporter-trace-otlp-http` and `@opentelemetry/exporter-logs-otlp-http`
+- `@opentelemetry/exporter-trace-otlp-proto` and `@opentelemetry/exporter-logs-otlp-proto` (OTLP over HTTP
+  with protobuf: VictoriaLogs rejects the JSON encoding)
 - `@opentelemetry/instrumentation-undici`, `-http` and `-pino`
 - `@fastify/otel`
 - `prom-client`

@@ -121,9 +121,11 @@ export class LogPuller {
   private ticking = false;
 
   constructor(opts: LogPullerOptions) {
+    // Options given as undefined (e.g. an unset env var) keep their defaults.
+    const given = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined)) as LogPullerOptions;
     this.o = {
       pollMs: 5000, concurrency: 8, discoverMs: 15_000, recheckMs: 600_000, maxBackoffMs: 300_000,
-      batch: 1000, requestTimeoutMs: 30_000, now: Date.now, ...opts,
+      batch: 1000, requestTimeoutMs: 30_000, now: Date.now, ...given,
     };
   }
 

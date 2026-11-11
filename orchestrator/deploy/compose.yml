@@ -1,0 +1,126 @@
+# ozwell-computer orchestrator, optionally with its observability stack.
+#
+#   cd orchestrator/deploy
+#   cp ../.env.example .env        # set PROVIDER_URI, ORCHESTRATOR_TOKEN, GF_SECURITY_ADMIN_PASSWORD, ...
+#   docker compose up -d                              # the orchestrator alone
+#   docker compose --profile observability up -d      # plus metrics, logs, traces and Grafana
+#   ./smoke.sh                                        # check that a trace, a metric and a log arrive
+#
+# Only the orchestrator (ORCHESTRATOR_PUBLISH_PORT) and Grafana (GRAFANA_PORT) publish
+# ports, both on 127.0.0.1 by default: put the existing reverse proxy (TLS) in front.
+# The internal listener (:8091: /metrics, /sd, the scrape proxy) has no auth and stays
+# on the compose network. See docs/observability-plan.md.
+#
+# docker:// provider: the default PROVIDER_URI uses the host's Docker socket and puts new
+# computers on this compose network (`network=ozwell-observability`), so the orchestrator
+# can reach them for MCP, metrics and logs. Docker socket access is root-equivalent on
+# the host; prefer the opensource-server provider where you can.
+name: ozwell-observability
+
+x-victoria: &victoria
+  restart: unless-stopped
+  profiles: [observability]
+
+services:
+  orchestrator:
+    build:
+      context: ../..
+      dockerfile: orchestrator/Dockerfile
+    image: ozwell-computer-orchestrator:dev
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PROVIDER_URI: ${PROVIDER_URI:-docker:///var/run/docker.sock?network=ozwell-observability}
+      ORCHESTRATOR_HOST: 0.0.0.0
+      ORCHESTRATOR_PORT: 8090
+      ORCHESTRATOR_INTERNAL_HOST: 0.0.0.0
+      ORCHESTRATOR_INTERNAL_PORT: 8091
+      ORCHESTRATOR_SD_ADDRESS: orchestrator:8091
+      # Empty without the observability profile: the orchestrator then exports nothing.
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: ${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT:-}
+      ORCHESTRATOR_LOG_SHIP_URL: ${ORCHESTRATOR_LOG_SHIP_URL:-}
+    # The docker:// provider; remove with another provider. The group must own the socket.
+    group_add: ["${DOCKER_GID:-0}"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "${ORCHESTRATOR_BIND:-127.0.0.1}:${ORCHESTRATOR_PUBLISH_PORT:-8090}:8090"
+    networks: [default]
+
+  victoriametrics:
+    <<: *victoria
+    image: victoriametrics/victoria-metrics:v1.156.0
+    command: [-storageDataPath=/storage, -retentionPeriod=30d]
+    volumes: [vmdata:/storage]
+
+  vmagent:
+    <<: *victoria
+    image: victoriametrics/vmagent:v1.156.0
+    command:
+      - -promscrape.config=/etc/vmagent/scrape.yml
+      - -promscrape.httpSDCheckInterval=30s
+      - -remoteWrite.url=http://victoriametrics:8428/api/v1/write
+      - -remoteWrite.tmpDataPath=/tmp/vmagent
+    volumes: [./vmagent/scrape.yml:/etc/vmagent/scrape.yml:ro]
+    depends_on: [victoriametrics]
+
+  victorialogs:
+    <<: *victoria
+    image: victoriametrics/victoria-logs:v1.53.0
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod=14d
+      # Instance journals: one stream per computer and unit.
+      - -journald.streamFields=OZWELL_INSTANCE_ID,_SYSTEMD_UNIT
+    volumes: [vldata:/storage]
+
+  victoriatraces:
+    <<: *victoria
+    image: victoriametrics/victoria-traces:v0.13.0
+    command: [-storageDataPath=/storage, -retentionPeriod=7d]
+    volumes: [vtdata:/storage]
+
+  grafana:
+    <<: *victoria
+    image: grafana/grafana:13.2.6
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:?set GF_SECURITY_ADMIN_PASSWORD in .env}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_ORG_CREATE: "false"
+      GF_SERVER_ROOT_URL: ${GF_SERVER_ROOT_URL:-http://localhost:3000/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: ${GF_SERVER_SERVE_FROM_SUB_PATH:-false}
+      GF_PLUGINS_PREINSTALL: victoriametrics-logs-datasource
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana:/var/lib/grafana
+    ports:
+      - "${GRAFANA_BIND:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"
+    depends_on: [victoriametrics, victorialogs, victoriatraces]
+
+  # ./smoke.sh runs this: queries from inside the network (the backends publish no ports).
+  smoke:
+    image: curlimages/curl:8.23.0
+    profiles: [smoke]
+    entrypoint: ["sh", "/smoke/check.sh"]
+    environment:
+      ORCHESTRATOR_TOKEN: ${ORCHESTRATOR_TOKEN:-}
+    volumes: [./smoke:/smoke:ro]
+
+networks:
+  default:
+    # A fixed name, so the docker provider can attach computers (PROVIDER_URI ?network=).
+    name: ozwell-observability
+
+volumes:
+  vmdata:
+  vldata:
+  vtdata:
+  grafana:

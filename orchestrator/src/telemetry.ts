@@ -6,7 +6,7 @@
 // SDK alone would default to OTLP exporters on localhost, so processors are always explicit.)
 //
 //   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT  VictoriaTraces OTLP/HTTP traces endpoint
-//   OTEL_EXPORTER_OTLP_LOGS_ENDPOINT    VictoriaLogs OTLP/HTTP logs endpoint
+//   OTEL_EXPORTER_OTLP_LOGS_ENDPOINT    VictoriaLogs OTLP/HTTP logs endpoint (protobuf: VictoriaLogs takes no JSON)
 //   OTEL_SERVICE_NAME                   default ozwell-computer-orchestrator
 //   OTEL_TRACES_SAMPLER / _ARG          standard; the SDK default samples 100%
 import { register as registerAsyncLoader } from 'node:module';
@@ -14,8 +14,8 @@ import { register as registerSyncLoader, supportsSyncHooks } from 'import-in-the
 import { NodeSDK } from '@opentelemetry/sdk-node';
 import { BatchSpanProcessor, type SpanProcessor } from '@opentelemetry/sdk-trace';
 import { BatchLogRecordProcessor, type LogRecordProcessor } from '@opentelemetry/sdk-logs';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-http';
-import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-http';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
+import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-proto';
 import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
 import { UndiciInstrumentation } from '@opentelemetry/instrumentation-undici';
 import { PinoInstrumentation } from '@opentelemetry/instrumentation-pino';
