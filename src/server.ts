@@ -1,5 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
+import { logRoutes } from './routes/logs.js';
+import { parseTraceparent } from './trace-context.js';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
@@ -74,6 +76,11 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   setCpus(ctx.config.cpus);
   const app: FastifyInstance = Fastify({
     loggerInstance: ctx.log as any,
+    // Requests from the orchestrator carry its trace context: put the ids on every log line.
+    childLoggerFactory(logger, bindings, opts, rawReq) {
+      const ids = parseTraceparent(rawReq.headers.traceparent);
+      return logger.child(ids ? { ...bindings, ...ids } : bindings, opts);
+    },
     bodyLimit: 64 * 1024 * 1024,
     trustProxy: true,
     ajv: { customOptions: { coerceTypes: 'array', removeAdditional: false, allErrors: false } },
@@ -133,6 +140,7 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
     return reply.header('content-type', contentType).header('cache-control', 'no-store').send(body);
   });
 
+  await app.register(async (s) => logRoutes(s));
   await app.register(async (s) => coreRoutes(s, ctx));
   // Read per hello, so a viewer rebuilt under a running server (dev compose) reports its new id.
   await app.register(async (s) => windowRoutes(s, ctx, () => webBuild(staticDir)));

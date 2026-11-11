@@ -13,6 +13,7 @@ import { safePath } from '../fs/index.js';
 import { launchDetached } from '../routes/windows.js';
 import { m } from '../metrics.js';
 import { upgrading, type UpdateStatus } from '../update.js';
+import { traceIdsOf } from '../trace-context.js';
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 interface ToolResult { content: Content[]; isError?: boolean; [k: string]: unknown }
@@ -63,7 +64,10 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
   (mcp as any).registerTool = (name: string, config: unknown, cb: (...a: any[]) => Promise<ToolResult>) =>
     register(name, config, async (...a: any[]) => {
       const p = principal();
-      ctx.log.info({ tool: name, agent: p.name, session: p.id }, 'mcp tool call');
+      // The callback's last argument is the request context (params._meta, HTTP headers).
+      const extra = a.at(-1) as { _meta?: unknown; requestInfo?: { headers?: Record<string, unknown> } } | undefined;
+      const ids = traceIdsOf(extra?._meta, extra?.requestInfo?.headers);
+      ctx.log.info({ tool: name, agent: p.name, session: p.id, ...ids }, 'mcp tool call');
       const r = await cb(...a);
       m.mcpToolCalls.inc({ tool: name, outcome: r.isError ? 'error' : 'ok' });
       const notice = updateNotice(ctx.updater?.cached() ?? null);
