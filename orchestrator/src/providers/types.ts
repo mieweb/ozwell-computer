@@ -43,6 +43,8 @@ export interface Provider {
   readonly scheme: string;
   /** Computers owned by `owner`. */
   list(owner: string): Promise<Computer[]>;
+  /** Every computer this provider manages, for every owner (metrics/log discovery). */
+  listAll(): Promise<Computer[]>;
   /** One computer by id, or null when it doesn't exist (or isn't managed by us). */
   get(id: string): Promise<Computer | null>;
   /** Create and start a computer. May return before it is ready to serve. */

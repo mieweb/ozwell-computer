@@ -209,7 +209,7 @@ HTTP) with the header `Authorization: Bearer <psk>`. Put TLS in front of it.
 ## Providers
 
 `PROVIDER_URI`'s scheme selects a provider (`src/providers/index.ts`). The rest of the
-URI, and the environment, are passed to it. A provider implements `list(owner)`,
+URI, and the environment, are passed to it. A provider implements `list(owner)`, `listAll()`,
 `get(id)`, `create({ owner, displayName })`, `start(id)` and `destroy(id)`. Each computer reports:
 - `id`: provider-generated and DNS-compatible;
 - `owner` and metadata;

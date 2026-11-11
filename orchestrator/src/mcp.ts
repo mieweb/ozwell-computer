@@ -6,6 +6,11 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Computer, Provider, Requester } from './providers/types.ts';
 import { InstanceClient, InstanceError } from './instance-client.ts';
+import { SpanStatusCode, trace, type Span } from '@opentelemetry/api';
+import type { Metrics } from './metrics.ts';
+import type { OpKind, Operation, OperationTracker } from './operations.ts';
+
+const tracer = trace.getTracer('ozwell-computer-orchestrator');
 
 export interface ToolDef { name: string; description?: string; inputSchema: { type: 'object'; properties?: Record<string, unknown>; required?: string[]; [k: string]: unknown } }
 
@@ -80,6 +85,10 @@ export interface OrchestratorDeps {
   /** Per-user limit on computers; undefined means unlimited. */
   maxInstances?: number;
   log?: { info: (o: object, m: string) => void; warn: (o: object, m: string) => void };
+  /** Tool-call metrics; omitted means none are recorded. */
+  metrics?: Metrics;
+  /** Operation timing (operations.ts); omitted means none is recorded. */
+  operations?: OperationTracker;
 }
 
 /** Is the computer up? (Re-reads it: providers may only learn URLs while it starts.) */
@@ -95,17 +104,27 @@ export async function isReady(provider: Provider, id: string): Promise<{ c: Comp
 
 /** Wait until ready or the budget runs out (wait, then hand off; see create_computer). While
  * `starting`, a stopped status is expected (the platform hasn't caught up) and not final. */
-async function waitReady(provider: Provider, c: Computer, timeoutMs: number, starting = false) {
-  const end = Date.now() + timeoutMs;
-  let last = { c: c as Computer | null, ready: false };
-  for (;;) {
-    last = await isReady(provider, c.id);
-    // /health can answer before the provider stops reporting the computer as stopped.
-    const ready = last.ready && !last.c?.stopped;
-    const dead = last.c?.stopped ? !starting : ['failed', 'missing', 'dead'].includes(last.c?.status ?? '');
-    if (ready || dead || Date.now() >= end) return { c: last.c ?? c, ready };
-    await new Promise((r) => setTimeout(r, 1500));
-  }
+function waitReady(provider: Provider, c: Computer, timeoutMs: number, starting = false) {
+  return tracer.startActiveSpan('readiness.poll', { attributes: { 'ozwell.instance_id': c.id, 'ozwell.starting': starting } }, async (span) => {
+    const end = Date.now() + timeoutMs;
+    let last = { c: c as Computer | null, ready: false };
+    try {
+      for (let attempt = 1; ; attempt++) {
+        last = await isReady(provider, c.id);
+        // /health can answer before the provider stops reporting the computer as stopped.
+        const ready = last.ready && !last.c?.stopped;
+        const dead = last.c?.stopped ? !starting : ['failed', 'missing', 'dead'].includes(last.c?.status ?? '');
+        span.addEvent('attempt', { attempt, 'ozwell.status': last.c?.status ?? 'missing', 'ozwell.health_ok': last.ready });
+        if (ready || dead || Date.now() >= end) {
+          span.setAttributes({ 'ozwell.ready': ready, 'ozwell.attempts': attempt, 'ozwell.dead': dead });
+          return { c: last.c ?? c, ready };
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    } finally {
+      span.end();
+    }
+  });
 }
 
 /** Under common 60 s MCP client request timeouts. */
@@ -113,6 +132,29 @@ export const CREATE_WAIT_MS = 40_000;
 
 const stoppedError = (c: Computer) =>
   fail('computer_stopped', `computer ${c.id} is stopped (status: ${c.status}); call start_computer with instance_id "${c.id}", then retry`);
+
+/** Span attribute size cap: larger arguments (e.g. pasted files) are truncated with their size. */
+const MAX_ATTR = 8192;
+const argsAttr = (args: Record<string, unknown>) => {
+  const j = JSON.stringify(args);
+  return j.length <= MAX_ATTR ? j : `${j.slice(0, MAX_ATTR)}…(${j.length} bytes)`;
+};
+
+/** End a tool-call span from its result: `isError` results are errors with their reason. */
+function finishToolSpan(span: Span, result: any): string {
+  let reason: string | undefined;
+  let ready: unknown;
+  if (result?.isError) {
+    try { reason = JSON.parse(result.content?.[0]?.text ?? '{}')?.error?.reason; } catch { /* not ours */ }
+    reason ??= 'tool_error';
+    span.setStatus({ code: SpanStatusCode.ERROR, message: reason });
+    span.setAttribute('error.type', reason);
+  } else {
+    try { ready = JSON.parse(result?.content?.[0]?.text ?? '{}')?.ready; } catch { /* not JSON */ }
+    if (typeof ready === 'boolean') span.setAttribute('ozwell.ready', ready);
+  }
+  return reason ? 'error' : 'ok';
+}
 
 export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server {
   const { provider, client } = deps;
@@ -126,10 +168,29 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
       'Idle computers may be stopped: start them with start_computer.',
   });
 
+  const ops = deps.operations;
+  /** Link the current tool-call span to an operation's own trace. */
+  const linkOp = (op: Operation | undefined) => { if (op) trace.getActiveSpan()?.addLink(op.link()); };
+  /** Run a create/start/destroy provider call as (or joined to) an operation. */
+  const operation = async <T extends Computer | void>(kind: OpKind, id: string | undefined, fn: () => Promise<T>): Promise<T> => {
+    const op = ops?.begin(kind, id);
+    linkOp(op);
+    try {
+      const r = await fn();
+      op?.enqueued(r || undefined);
+      return r;
+    } catch (e) {
+      op?.fail(e);
+      throw e;
+    }
+  };
+  const timed = <T>(kind: 'list' | 'get', fn: () => Promise<T>) => (ops ? ops.timed(kind, fn) : fn());
+  const observed = (c: Computer, ready: boolean) => { ops?.observe(c, ready); return text({ ...describe(c), ready }); };
+
   /** A computer the requester owns, or a not-found error (others' computers are invisible). */
   const mine = async (id: unknown): Promise<Computer> => {
     if (typeof id !== 'string' || !id) throw new InstanceError('invalid_request', 'instance_id is required');
-    const c = await provider.get(id);
+    const c = await timed('get', () => provider.get(id));
     if (!c || c.owner !== user.id) throw new InstanceError('target_unavailable', `no computer ${id}; call list_computers`);
     return c;
   };
@@ -138,7 +199,7 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
   const overQuota = async () => {
     const max = deps.maxInstances;
     if (max === undefined) return null;
-    const existing = await provider.list(user.id);
+    const existing = await timed('list', () => provider.list(user.id));
     if (existing.length < max) return null;
     return {
       ...text({
@@ -157,37 +218,63 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: [...managementTools(deps.maxInstances), ...proxied] }));
 
-  server.setRequestHandler(CallToolRequestSchema, async (req): Promise<any> => {
+  server.setRequestHandler(CallToolRequestSchema, (req, extra): Promise<any> => {
     const { name } = req.params;
     const args = (req.params.arguments ?? {}) as Record<string, unknown>;
-    deps.log?.info({ tool: name, user: user.id, instance: args.instance_id }, 'tool call');
+    return tracer.startActiveSpan(`mcp.tools/call ${name}`, {
+      attributes: {
+        'mcp.method.name': 'tools/call', 'gen_ai.tool.name': name, 'enduser.id': user.id,
+        'ozwell.provider': provider.scheme, 'ozwell.tool.arguments': argsAttr(args),
+        ...(typeof args.instance_id === 'string' ? { 'ozwell.instance_id': args.instance_id } : {}),
+        ...(extra?.sessionId ? { 'mcp.session.id': extra.sessionId } : {}),
+      },
+    }, async (span) => {
+      const t0 = performance.now();
+      let outcome = 'error';
+      try {
+        const result = await callTool(name, args);
+        outcome = finishToolSpan(span, result);
+        return result;
+      } finally {
+        deps.metrics?.observeToolCall(name, outcome, (performance.now() - t0) / 1000);
+        span.end();
+      }
+    });
+  });
+
+  const callTool = async (name: string, args: Record<string, unknown>): Promise<any> => {
+    // Full arguments by decision (docs/observability-plan.md); no tokens travel in them.
+    deps.log?.info({ tool: name, user: user.id, instance: args.instance_id, args }, 'tool call');
     try {
       switch (name) {
         case 'list_computers':
-          return text({ computers: (await provider.list(user.id)).map(describe) });
+          return text({ computers: (await timed('list', () => provider.list(user.id))).map(describe) });
         case 'create_computer': {
           const over = await overQuota();
           if (over) return over;
           const display = typeof args.display_name === 'string' ? args.display_name.slice(0, 64) : undefined;
-          const created = await provider.create({ owner: user, displayName: display });
+          const created = await operation('create', undefined, () => provider.create({ owner: user, displayName: display }));
           const { c, ready } = await waitReady(provider, created, deps.readyTimeoutMs ?? CREATE_WAIT_MS);
-          return text({ ...describe(c), ready });
+          return observed(c, ready);
         }
         case 'get_computer': {
           const c0 = await mine(args.instance_id);
+          linkOp(ops?.inFlight(c0.id));
           const { c, ready } = await waitReady(provider, c0, deps.readyTimeoutMs ?? CREATE_WAIT_MS);
-          return text({ ...describe(c), ready });
+          return observed(c, ready);
         }
         case 'start_computer': {
           const c0 = await mine(args.instance_id);
           // Only stopped ones: a provider's start may restart a running computer.
-          const started = c0.stopped ? await provider.start(c0.id) : c0;
+          // A start already in flight (another call) is joined, not counted twice.
+          const started = c0.stopped ? await operation('start', c0.id, () => provider.start(c0.id)) : c0;
+          if (!c0.stopped) linkOp(ops?.inFlight(c0.id));
           const { c, ready } = await waitReady(provider, started, deps.readyTimeoutMs ?? CREATE_WAIT_MS, c0.stopped);
-          return text({ ...describe(c), ready });
+          return observed(c, ready);
         }
         case 'destroy_computer': {
           const c = await mine(args.instance_id);
-          await provider.destroy(c.id);
+          await operation('destroy', c.id, () => provider.destroy(c.id));
           return text({ ok: true, instance_id: c.id });
         }
         default: {
@@ -198,7 +285,11 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
           const { instance_id: _drop, ...rest } = args;
           // The computer shows this as the agent's name, so never the user's.
           const agent = user.agentName ?? 'agent';
-          return await client.callTool(`${c.id}\u0000${user.id}\u0000${agent}`, c.internalUrl, c.token, agent, name, rest)
+          const url = c.internalUrl, token = c.token;
+          return await tracer.startActiveSpan('instance.callTool', { attributes: { 'ozwell.instance_id': c.id, 'gen_ai.tool.name': name } },
+            (span) => client.callTool(`${c.id}\u0000${user.id}\u0000${agent}`, url, token, agent, name, rest)
+              .catch((e) => { span.recordException(e); span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message }); throw e; })
+              .finally(() => span.end()))
             .catch(async (e) => {
               if (!(e instanceof InstanceError && e.unreachable)) throw e;
               // Best effort: a failed lookup keeps the original error.
@@ -213,6 +304,6 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
       deps.log?.warn({ tool: name, err: (e as Error).message }, 'tool failed');
       return fail('internal', (e as Error).message);
     }
-  });
+  };
   return server;
 }

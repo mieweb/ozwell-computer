@@ -113,11 +113,17 @@ export class DockerProvider implements Provider {
   }
 
   async list(owner: string): Promise<Computer[]> {
-    const filters = encodeURIComponent(JSON.stringify({ label: [`${LABEL.managed}=true`, `${LABEL.owner}=${owner}`] }));
+    return (await this.listLabelled([`${LABEL.owner}=${owner}`])).filter((c) => c.owner === owner);
+  }
+
+  listAll(): Promise<Computer[]> { return this.listLabelled([]); }
+
+  private async listLabelled(extra: string[]): Promise<Computer[]> {
+    const filters = encodeURIComponent(JSON.stringify({ label: [`${LABEL.managed}=true`, ...extra] }));
     const rows: any[] = await this.api.ok('GET', `/containers/json?all=1&filters=${filters}`);
     // List entries lack env (token) and full network detail: inspect each.
     const out = await Promise.all(rows.map((r) => this.get(r.Id)));
-    return out.filter((c): c is Computer => c !== null && c.owner === owner);
+    return out.filter((c): c is Computer => c !== null);
   }
 
   async get(id: string): Promise<Computer | null> {
