@@ -213,15 +213,18 @@ HTTP) with the header `Authorization: Bearer <psk>`. Put TLS in front of it.
 
 ### With Docker Compose and the observability stack
 
-`orchestrator/deploy/compose.yml` runs the orchestrator image (`orchestrator/Dockerfile`)
+`orchestrator/compose.yml` runs the orchestrator image (`orchestrator/Dockerfile`)
 and, with `--profile observability`, VictoriaMetrics, vmagent, VictoriaLogs,
-VictoriaTraces and Grafana with read-only dashboards. See docs/observability-plan.md.
+VictoriaTraces and Grafana with read-only dashboards (their configuration is in
+`orchestrator/deploy/`). It reads the same `.env` as `npm start`. See
+docs/observability-plan.md.
 
 ```bash
-cd orchestrator/deploy
-cp .env.example .env    # set ORCHESTRATOR_TOKEN, GF_SECURITY_ADMIN_PASSWORD, PROVIDER_URI, ...
+cd orchestrator
+cp .env.example .env    # set ORCHESTRATOR_TOKEN; for the profile, uncomment the OTEL_* and
+                        # ORCHESTRATOR_LOG_SHIP_URL lines and set GF_SECURITY_ADMIN_PASSWORD
 docker compose --profile observability up -d --build
-./smoke.sh              # a trace, a metric series and a log line arrive
+deploy/smoke.sh         # a trace, a metric series and a log line arrive
 ```
 
 Only the orchestrator and Grafana (`GRAFANA_PORT`, default 3000) publish ports, on

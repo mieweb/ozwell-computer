@@ -1,6 +1,6 @@
 # ozwell-computer orchestrator. Build from the repo root (it needs docs/mcp-tools.json):
 #   docker build -f orchestrator/Dockerfile -t ozwell-computer-orchestrator .
-# Usually run through orchestrator/deploy/compose.yml.
+# Usually run through orchestrator/compose.yml.
 FROM node:26-trixie-slim
 ENV NODE_ENV=production
 WORKDIR /app/orchestrator

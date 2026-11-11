@@ -19,7 +19,7 @@ The "Later" items are not.
 
 | Topic | Decision |
 |---|---|
-| Packaging | New `orchestrator/Dockerfile` + `orchestrator/deploy/compose.yml`. Observability services are an optional compose profile. |
+| Packaging | New `orchestrator/Dockerfile` + `orchestrator/compose.yml` (its config files in `orchestrator/deploy/`). Observability services are an optional compose profile. |
 | Host | The stack runs on the same host as the orchestrator. |
 | Backends | VictoriaMetrics, VictoriaLogs, VictoriaTraces, vmagent, Grafana. |
 | OTel Collector | None. The SDK exports OTLP directly to VictoriaLogs and VictoriaTraces. |
