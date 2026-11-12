@@ -109,7 +109,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "label_replace(label_replace(label_replace(label_replace(max by (user, display_name, provider, created_at) (up{job=\"computers\", instance_id=\"$instance_id\"}), \"user\", \"none\", \"user\", \"\"), \"display_name\", \"none\", \"display_name\", \"\"), \"provider\", \"none\", \"provider\", \"\"), \"created_at\", \"none\", \"created_at\", \"\")",
+          "expr": "label_replace(label_replace(label_replace(label_replace(max by (user, display_name, provider, created_at) (ozwell_orchestrator_computer_info{instance_id=\"$instance_id\"}), \"user\", \"none\", \"user\", \"\"), \"display_name\", \"none\", \"display_name\", \"\"), \"provider\", \"none\", \"provider\", \"\"), \"created_at\", \"none\", \"created_at\", \"\")",
           "instant": true,
           "format": "table"
         },
@@ -360,7 +360,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "rate(ozwell_cgroup_cpu_seconds_total{instance_id=\"$instance_id\"}[$__rate_interval])",
+          "expr": "max by (instance_id) (rate(ozwell_cgroup_cpu_seconds_total{instance_id=\"$instance_id\"}[$__rate_interval]))",
           "legendFormat": "cpu",
           "exemplar": false
         }
@@ -393,7 +393,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "topk(8, ozwell_process_pss_bytes{instance_id=\"$instance_id\"})",
+          "expr": "topk(8, max by (command) (ozwell_process_pss_bytes{instance_id=\"$instance_id\"}))",
           "legendFormat": "{{command}}",
           "exemplar": false
         }

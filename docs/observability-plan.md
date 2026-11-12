@@ -43,6 +43,7 @@ The "Later" items are not.
 | Propagation | `traceparent` HTTP header plus `params._meta.traceparent`. |
 | Sampling | 100%, configurable. |
 | Tool argument capture | Full arguments. PHI handling and anonymization are a later layer. |
+| Computer metadata | An info metric (`ozwell_orchestrator_computer_info`), not labels on scraped series, so metadata changes never split a computer's series. Dashboards aggregate per `instance_id`, which also merges series split before this change. |
 | User identity | Email (`X-Ozwell-User-Email`, or the computer's stored owner email); the user id only when there is no email. Access is still enforced by user id. |
 | `/internal/*` security | A separate port and listener (`ORCHESTRATOR_INTERNAL_PORT`), not exposed publicly. Off loopback it requires a bearer token (`ORCHESTRATOR_INTERNAL_TOKEN`), which vmagent sends. |
 | Compose networks | `compose.yml` has only its default network, with no computers on it. `compose.docker.yml` puts docker:// computers on their own `ozwell-computers` network, shared only with the orchestrator. |
@@ -156,7 +157,11 @@ All scrape routes are served **only on the internal listener**.
 1. **Service discovery.** `GET /sd` returns Prometheus `http_sd` JSON built from
    `provider.list()`, cached for about 15 s. It returns one target per running instance,
    with labels:
-   - `instance_id`, `provider`, `user` (the owner's email)
+   - `instance_id` and `provider` only. These go on every scraped series, and a label that
+     changes starts new series, so metadata isn't put here. The owner (email), display name
+     and creation time are `ozwell_orchestrator_computer_info{instance_id, user,
+     display_name, created_at} 1` on the orchestrator's `/metrics`, joined in queries on
+     `instance_id`.
    - `__metrics_path__=/instances/<id>/metrics`
    - `__address__=orchestrator:8091`
 2. **Scrape proxy.** `GET /instances/:id/metrics` fetches

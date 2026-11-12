@@ -4,6 +4,7 @@
 import { trace } from '@opentelemetry/api';
 import { Counter, Gauge, Histogram, Registry, collectDefaultMetrics, type OpenMetricsContentType } from 'prom-client';
 import type { ProviderCallObserver } from './instrument-provider.ts';
+import { observedOwner, type Computer } from './providers/types.ts';
 
 /** trace_id of the active span, as exemplar labels; none when untraced. */
 export function exemplar(): Record<string, string> | undefined {
@@ -82,6 +83,28 @@ export class Metrics {
     buckets: [1, 2.5, 5, 10, 20, 30, 40, 60, 90, 120, 180, 300, 600, 900],
     registers: [this.registry],
   });
+
+  // Computer metadata as its own series (the "info metric" pattern): computers' scraped
+  // series carry only instance_id and provider, so changing metadata never splits them.
+  // Join it in queries: ... * on (instance_id) group_left (user) ozwell_orchestrator_computer_info
+  readonly computerInfo = new Gauge({
+    name: 'ozwell_orchestrator_computer_info',
+    help: 'Always 1, one series per computer; labels carry its metadata (user is the owner email, else id)',
+    labelNames: ['instance_id', 'provider', 'user', 'display_name', 'created_at'] as const,
+    registers: [this.registry],
+  });
+
+  /** Replace the computer metadata series with these computers. */
+  setComputers(computers: Computer[], provider: string) {
+    this.computerInfo.reset();
+    for (const c of computers) {
+      const labels: Partial<Record<'instance_id' | 'provider' | 'user' | 'display_name' | 'created_at', string>> =
+        { instance_id: c.id, provider, user: observedOwner(c) };
+      if (c.displayName) labels.display_name = c.displayName;
+      if (c.createdAt) labels.created_at = c.createdAt;
+      this.computerInfo.set(labels, 1);
+    }
+  }
 
   readonly computerCache = new Counter({
     name: 'ozwell_orchestrator_computer_cache_total',

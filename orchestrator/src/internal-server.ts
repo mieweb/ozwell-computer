@@ -10,7 +10,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { tokenOk } from './server.ts';
 import { untraced } from './untraced.ts';
 import type { Metrics } from './metrics.ts';
-import { observedOwner, type Computer, type Provider } from './providers/types.ts';
+import type { Computer, Provider } from './providers/types.ts';
 
 export interface InternalServerOptions {
   metrics: Metrics;
@@ -35,13 +35,9 @@ export function sdTargets(computers: Computer[], provider: string, address: stri
     .filter((c) => !c.stopped && c.internalUrl && c.token)
     .map((c) => ({
       targets: [address],
-      labels: {
-        instance_id: c.id, provider, user: observedOwner(c),
-        // Fixed at create: one value per computer, so no extra series.
-        ...(c.displayName ? { display_name: c.displayName } : {}),
-        ...(c.createdAt ? { created_at: c.createdAt } : {}),
-        __metrics_path__: `/instances/${encodeURIComponent(c.id)}/metrics`,
-      },
+      // Identity only: these labels go on every scraped series, and a label that changes
+      // starts new series. Metadata (owner, display name, ...) is ozwell_orchestrator_computer_info.
+      labels: { instance_id: c.id, provider, __metrics_path__: `/instances/${encodeURIComponent(c.id)}/metrics` },
     }));
 }
 
@@ -60,32 +56,42 @@ export async function buildInternalServer(opts: InternalServerOptions): Promise<
       }
     });
   }
-  app.get('/metrics', noTrace, async (_req, reply) =>
-    reply.type(opts.metrics.registry.contentType).send(await opts.metrics.registry.metrics()));
 
   const provider = opts.provider;
+  // One provider listing, shared by /sd and the computer metadata in /metrics, reused for
+  // sdCacheMs; concurrent requests share one call.
+  const cacheMs = opts.sdCacheMs ?? 15_000;
+  let cache: { at: number; computers: Computer[] } | undefined;
+  let inflight: Promise<Computer[]> | undefined;
+  const listing = provider && ((): Promise<Computer[]> => {
+    if (cache && Date.now() - cache.at < cacheMs) return Promise.resolve(cache.computers);
+    inflight ??= provider.listAll()
+      .then((computers) => {
+        cache = { at: Date.now(), computers };
+        opts.metrics.setComputers(computers, provider.scheme);
+        return computers;
+      })
+      .finally(() => { inflight = undefined; });
+    return inflight;
+  });
+
+  app.get('/metrics', noTrace, (_req, reply) => untraced(async () => {
+    // A failed listing keeps the last metadata series.
+    await listing?.().catch(() => undefined);
+    return reply.type(opts.metrics.registry.contentType).send(await opts.metrics.registry.metrics());
+  }));
+
   if (!provider) return app;
 
   const address = opts.sdAddress ?? '127.0.0.1:8091';
-  const cacheMs = opts.sdCacheMs ?? 15_000;
-  let cache: { at: number; body: SdTarget[] } | undefined;
-  let inflight: Promise<SdTarget[]> | undefined;
-
   app.get('/sd', noTrace, (req, reply) => untraced(async () => {
-    if (!cache || Date.now() - cache.at >= cacheMs) {
-      // Concurrent discovery requests share one provider listing.
-      inflight ??= provider.listAll()
-        .then((all) => { cache = { at: Date.now(), body: sdTargets(all, provider.scheme, address) }; return cache.body; })
-        .finally(() => { inflight = undefined; });
-      try {
-        await inflight;
-      } catch (e) {
-        // vmagent keeps its last good target list when discovery fails.
-        req.log.warn({ err: (e as Error).message }, 'service discovery failed');
-        return reply.code(502).send({ error: { reason: 'provider_error', message: (e as Error).message } });
-      }
+    try {
+      return reply.send(sdTargets(await listing!(), provider!.scheme, address));
+    } catch (e) {
+      // vmagent keeps its last good target list when discovery fails.
+      req.log.warn({ err: (e as Error).message }, 'service discovery failed');
+      return reply.code(502).send({ error: { reason: 'provider_error', message: (e as Error).message } });
     }
-    return reply.send(cache!.body);
   }));
 
   app.get<{ Params: { id: string } }>('/instances/:id/metrics', noTrace, (req, reply) => untraced(async () => {
