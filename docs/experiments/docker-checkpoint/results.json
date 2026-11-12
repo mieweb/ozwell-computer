@@ -1,0 +1,601 @@
+{
+  "started_at": "2026-10-31T21:44:49.047Z",
+  "passed": true,
+  "idle_ms": 1500,
+  "daemon_id": "9aa33635-df40-41fc-b0b5-f4b3f8c68edd",
+  "source_image": "ozwell-computer:checkpoint-arm64-flat",
+  "scope": "Real native flat-v1 desktop, production DockerCheckpointProvider + IdleController + HTTP/WebSocket/MCP wake gateway on an isolated Docker daemon.",
+  "limitations": [
+    "Controller restart is tested; host reboot, storage corruption and cross-host restore are not simulated.",
+    "A small network namespace anchor and the external control plane remain running while application PID/RAM must be zero.",
+    "CRIU recreates kernel tasks: process start_ticks may change although PID, RAM nonce/hash, GUI window and unsaved application state persist."
+  ],
+  "cycles": [
+    {
+      "label": "viewer-wake",
+      "automatic_save_wait_ms": 4085,
+      "application_state": "hibernated",
+      "saved_containers": {
+        "main": {
+          "id": "b896722a128421d51f8713528ddb2c8a2772a95aa0e270d5b3892abb12a9cba5",
+          "name": "/ozc-udoaqgohki--saved-e217b38e8ed887dc",
+          "pid": 0,
+          "running": false,
+          "status": "exited",
+          "memory_bytes": 0,
+          "memory_stats": {},
+          "cpu_total_usage": 0,
+          "metrics_available": true
+        },
+        "anchor": {
+          "id": "a4a38d7fd4b290e71061289b2bcaefd568961f1a7b1ca9856bb29eaad1263278",
+          "name": "/ozc-net-ozc-udoaqgohki",
+          "pid": 498,
+          "running": true,
+          "status": "running",
+          "memory_bytes": 45056,
+          "memory_stats": {
+            "usage": 45056,
+            "stats": {
+              "active_anon": 45056,
+              "active_file": 0,
+              "anon": 45056,
+              "anon_thp": 0,
+              "file": 4096,
+              "file_dirty": 0,
+              "file_mapped": 0,
+              "file_writeback": 0,
+              "inactive_anon": 0,
+              "inactive_file": 4096,
+              "kernel_stack": 0,
+              "pgactivate": 0,
+              "pgdeactivate": 0,
+              "pgfault": 1065,
+              "pglazyfree": 0,
+              "pglazyfreed": 0,
+              "pgmajfault": 0,
+              "pgrefill": 0,
+              "pgscan": 0,
+              "pgsteal": 0,
+              "shmem": 0,
+              "slab": 0,
+              "slab_reclaimable": 0,
+              "slab_unreclaimable": 0,
+              "sock": 0,
+              "thp_collapse_alloc": 0,
+              "thp_fault_alloc": 0,
+              "unevictable": 0,
+              "workingset_activate": 0,
+              "workingset_nodereclaim": 0,
+              "workingset_refault": 0
+            },
+            "limit": 16818278400
+          },
+          "cpu_total_usage": 11087000,
+          "metrics_available": true
+        }
+      },
+      "passive_no_wake": {
+        "authenticated /health": 503,
+        "authenticated /api/v1/metrics": 503,
+        "authenticated /api/v1/lifecycle": 503,
+        "anonymous /api/v1/capabilities": 401,
+        "anonymous /": 200
+      },
+      "wake_to_viewer_ms": 1755,
+      "after_probe": {
+        "token": "2513f1213f20059632154a29488146f282a8e1f46ec75e72172eedb217da5e8f",
+        "pid": 140,
+        "start_ticks": "108673566",
+        "boot_id": "af98e822-4159-4463-bd56-2e8cdf512733",
+        "payload_sha256": "613473dc212a367652e2ffe04b5e95556120fe6c8b94015823e789886c7b96aa",
+        "payload_bytes": 67108864,
+        "counter": 53
+      },
+      "after_gui": {
+        "window_id": "0x1200003",
+        "pid": 141,
+        "start_ticks": "108673566",
+        "unsaved_text": "unsaved-c48c87a9-cf68-44d3-bc69-91be5547de0b",
+        "clipboard_generation": 4,
+        "a11y_text_field_matches": 1,
+        "a11y_snapshot_id": "s2"
+      },
+      "after_png": {
+        "file": "gui-after-viewer.png",
+        "bytes": 6869,
+        "sha256": "4b63274965f6d110b606aa176e5b6a15b2a2520cb41502dbbec5e2e342f39370"
+      },
+      "screenshot_identical": true,
+      "after_containers": {
+        "main": {
+          "id": "b896722a128421d51f8713528ddb2c8a2772a95aa0e270d5b3892abb12a9cba5",
+          "name": "/ozc-udoaqgohki",
+          "pid": 924,
+          "running": true,
+          "status": "running",
+          "memory_bytes": null,
+          "memory_stats": null,
+          "cpu_total_usage": null,
+          "metrics_available": false
+        },
+        "anchor": {
+          "id": "a4a38d7fd4b290e71061289b2bcaefd568961f1a7b1ca9856bb29eaad1263278",
+          "name": "/ozc-net-ozc-udoaqgohki",
+          "pid": 498,
+          "running": true,
+          "status": "running",
+          "memory_bytes": 45056,
+          "memory_stats": {
+            "usage": 45056,
+            "stats": {
+              "active_anon": 0,
+              "active_file": 0,
+              "anon": 45056,
+              "anon_thp": 0,
+              "file": 0,
+              "file_dirty": 0,
+              "file_mapped": 0,
+              "file_writeback": 0,
+              "inactive_anon": 45056,
+              "inactive_file": 0,
+              "kernel_stack": 0,
+              "pgactivate": 0,
+              "pgdeactivate": 0,
+              "pgfault": 1065,
+              "pglazyfree": 0,
+              "pglazyfreed": 0,
+              "pgmajfault": 0,
+              "pgrefill": 0,
+              "pgscan": 1,
+              "pgsteal": 1,
+              "shmem": 0,
+              "slab": 0,
+              "slab_reclaimable": 0,
+              "slab_unreclaimable": 0,
+              "sock": 0,
+              "thp_collapse_alloc": 0,
+              "thp_fault_alloc": 0,
+              "unevictable": 0,
+              "workingset_activate": 0,
+              "workingset_nodereclaim": 0,
+              "workingset_refault": 0
+            },
+            "limit": 16818278400
+          },
+          "cpu_total_usage": 11087000,
+          "metrics_available": true
+        }
+      },
+      "passed": true
+    },
+    {
+      "label": "mcp-wake",
+      "automatic_save_wait_ms": 4105,
+      "application_state": "hibernated",
+      "saved_containers": {
+        "main": {
+          "id": "b896722a128421d51f8713528ddb2c8a2772a95aa0e270d5b3892abb12a9cba5",
+          "name": "/ozc-udoaqgohki--saved-1c69865335c4cd1f",
+          "pid": 0,
+          "running": false,
+          "status": "exited",
+          "memory_bytes": 0,
+          "memory_stats": {},
+          "cpu_total_usage": 0,
+          "metrics_available": true
+        },
+        "anchor": {
+          "id": "a4a38d7fd4b290e71061289b2bcaefd568961f1a7b1ca9856bb29eaad1263278",
+          "name": "/ozc-net-ozc-udoaqgohki",
+          "pid": 498,
+          "running": true,
+          "status": "running",
+          "memory_bytes": 45056,
+          "memory_stats": {
+            "usage": 45056,
+            "stats": {
+              "active_anon": 32768,
+              "active_file": 0,
+              "anon": 45056,
+              "anon_thp": 0,
+              "file": 0,
+              "file_dirty": 0,
+              "file_mapped": 0,
+              "file_writeback": 0,
+              "inactive_anon": 12288,
+              "inactive_file": 0,
+              "kernel_stack": 0,
+              "pgactivate": 0,
+              "pgdeactivate": 0,
+              "pgfault": 1065,
+              "pglazyfree": 0,
+              "pglazyfreed": 0,
+              "pgmajfault": 0,
+              "pgrefill": 0,
+              "pgscan": 1,
+              "pgsteal": 1,
+              "shmem": 0,
+              "slab": 0,
+              "slab_reclaimable": 0,
+              "slab_unreclaimable": 0,
+              "sock": 0,
+              "thp_collapse_alloc": 0,
+              "thp_fault_alloc": 0,
+              "unevictable": 0,
+              "workingset_activate": 0,
+              "workingset_nodereclaim": 0,
+              "workingset_refault": 0
+            },
+            "limit": 16818278400
+          },
+          "cpu_total_usage": 11087000,
+          "metrics_available": true
+        }
+      },
+      "wake_to_mcp_result_ms": 2056,
+      "mcp_probe": {
+        "token": "2513f1213f20059632154a29488146f282a8e1f46ec75e72172eedb217da5e8f",
+        "pid": 140,
+        "start_ticks": "108678755",
+        "boot_id": "af98e822-4159-4463-bd56-2e8cdf512733",
+        "payload_sha256": "613473dc212a367652e2ffe04b5e95556120fe6c8b94015823e789886c7b96aa",
+        "payload_bytes": 67108864,
+        "counter": 556
+      },
+      "after_probe": {
+        "token": "2513f1213f20059632154a29488146f282a8e1f46ec75e72172eedb217da5e8f",
+        "pid": 140,
+        "start_ticks": "108678755",
+        "boot_id": "af98e822-4159-4463-bd56-2e8cdf512733",
+        "payload_sha256": "613473dc212a367652e2ffe04b5e95556120fe6c8b94015823e789886c7b96aa",
+        "payload_bytes": 67108864,
+        "counter": 559
+      },
+      "after_gui": {
+        "window_id": "0x1200003",
+        "pid": 141,
+        "start_ticks": "108678755",
+        "unsaved_text": "unsaved-c48c87a9-cf68-44d3-bc69-91be5547de0b",
+        "clipboard_generation": 6,
+        "a11y_text_field_matches": 1,
+        "a11y_snapshot_id": "s3"
+      },
+      "after_png": {
+        "file": "gui-after-mcp.png",
+        "bytes": 6869,
+        "sha256": "4b63274965f6d110b606aa176e5b6a15b2a2520cb41502dbbec5e2e342f39370"
+      },
+      "screenshot_identical": true,
+      "after_containers": {
+        "main": {
+          "id": "b896722a128421d51f8713528ddb2c8a2772a95aa0e270d5b3892abb12a9cba5",
+          "name": "/ozc-udoaqgohki",
+          "pid": 1230,
+          "running": true,
+          "status": "running",
+          "memory_bytes": null,
+          "memory_stats": null,
+          "cpu_total_usage": null,
+          "metrics_available": false
+        },
+        "anchor": {
+          "id": "a4a38d7fd4b290e71061289b2bcaefd568961f1a7b1ca9856bb29eaad1263278",
+          "name": "/ozc-net-ozc-udoaqgohki",
+          "pid": 498,
+          "running": true,
+          "status": "running",
+          "memory_bytes": 45056,
+          "memory_stats": {
+            "usage": 45056,
+            "stats": {
+              "active_anon": 32768,
+              "active_file": 0,
+              "anon": 45056,
+              "anon_thp": 0,
+              "file": 0,
+              "file_dirty": 0,
+              "file_mapped": 0,
+              "file_writeback": 0,
+              "inactive_anon": 12288,
+              "inactive_file": 0,
+              "kernel_stack": 0,
+              "pgactivate": 0,
+              "pgdeactivate": 0,
+              "pgfault": 1065,
+              "pglazyfree": 0,
+              "pglazyfreed": 0,
+              "pgmajfault": 0,
+              "pgrefill": 0,
+              "pgscan": 1,
+              "pgsteal": 1,
+              "shmem": 0,
+              "slab": 0,
+              "slab_reclaimable": 0,
+              "slab_unreclaimable": 0,
+              "sock": 0,
+              "thp_collapse_alloc": 0,
+              "thp_fault_alloc": 0,
+              "unevictable": 0,
+              "workingset_activate": 0,
+              "workingset_nodereclaim": 0,
+              "workingset_refault": 0
+            },
+            "limit": 16818278400
+          },
+          "cpu_total_usage": 11087000,
+          "metrics_available": true
+        }
+      },
+      "passed": true
+    },
+    {
+      "label": "controller-restart",
+      "automatic_save_wait_ms": 3714,
+      "application_state": "hibernated",
+      "saved_containers": {
+        "main": {
+          "id": "b896722a128421d51f8713528ddb2c8a2772a95aa0e270d5b3892abb12a9cba5",
+          "name": "/ozc-udoaqgohki--saved-c81597f76bdd1824",
+          "pid": 0,
+          "running": false,
+          "status": "exited",
+          "memory_bytes": 0,
+          "memory_stats": {},
+          "cpu_total_usage": 0,
+          "metrics_available": true
+        },
+        "anchor": {
+          "id": "a4a38d7fd4b290e71061289b2bcaefd568961f1a7b1ca9856bb29eaad1263278",
+          "name": "/ozc-net-ozc-udoaqgohki",
+          "pid": 498,
+          "running": true,
+          "status": "running",
+          "memory_bytes": 45056,
+          "memory_stats": {
+            "usage": 45056,
+            "stats": {
+              "active_anon": 32768,
+              "active_file": 0,
+              "anon": 45056,
+              "anon_thp": 0,
+              "file": 0,
+              "file_dirty": 0,
+              "file_mapped": 0,
+              "file_writeback": 0,
+              "inactive_anon": 12288,
+              "inactive_file": 0,
+              "kernel_stack": 0,
+              "pgactivate": 0,
+              "pgdeactivate": 0,
+              "pgfault": 1065,
+              "pglazyfree": 0,
+              "pglazyfreed": 0,
+              "pgmajfault": 0,
+              "pgrefill": 0,
+              "pgscan": 1,
+              "pgsteal": 1,
+              "shmem": 0,
+              "slab": 0,
+              "slab_reclaimable": 0,
+              "slab_unreclaimable": 0,
+              "sock": 0,
+              "thp_collapse_alloc": 0,
+              "thp_fault_alloc": 0,
+              "unevictable": 0,
+              "workingset_activate": 0,
+              "workingset_nodereclaim": 0,
+              "workingset_refault": 0
+            },
+            "limit": 16818278400
+          },
+          "cpu_total_usage": 11087000,
+          "metrics_available": true
+        }
+      },
+      "passive_no_wake": {
+        "authenticated /health": 503,
+        "authenticated /api/v1/metrics": 503,
+        "authenticated /api/v1/lifecycle": 503,
+        "anonymous /api/v1/capabilities": 401,
+        "anonymous /": 200
+      },
+      "wake_after_restart_ms": 1697,
+      "after_probe": {
+        "token": "2513f1213f20059632154a29488146f282a8e1f46ec75e72172eedb217da5e8f",
+        "pid": 140,
+        "start_ticks": "108680047",
+        "boot_id": "af98e822-4159-4463-bd56-2e8cdf512733",
+        "payload_sha256": "613473dc212a367652e2ffe04b5e95556120fe6c8b94015823e789886c7b96aa",
+        "payload_bytes": 67108864,
+        "counter": 678
+      },
+      "after_gui": {
+        "window_id": "0x1200003",
+        "pid": 141,
+        "start_ticks": "108680047",
+        "unsaved_text": "unsaved-c48c87a9-cf68-44d3-bc69-91be5547de0b",
+        "clipboard_generation": 8,
+        "a11y_text_field_matches": 1,
+        "a11y_snapshot_id": "s4"
+      },
+      "after_png": {
+        "file": "gui-after-controller-restart.png",
+        "bytes": 6869,
+        "sha256": "4b63274965f6d110b606aa176e5b6a15b2a2520cb41502dbbec5e2e342f39370"
+      },
+      "screenshot_identical": true,
+      "after_containers": {
+        "main": {
+          "id": "b896722a128421d51f8713528ddb2c8a2772a95aa0e270d5b3892abb12a9cba5",
+          "name": "/ozc-udoaqgohki",
+          "pid": 1527,
+          "running": true,
+          "status": "running",
+          "memory_bytes": null,
+          "memory_stats": null,
+          "cpu_total_usage": null,
+          "metrics_available": false
+        },
+        "anchor": {
+          "id": "a4a38d7fd4b290e71061289b2bcaefd568961f1a7b1ca9856bb29eaad1263278",
+          "name": "/ozc-net-ozc-udoaqgohki",
+          "pid": 498,
+          "running": true,
+          "status": "running",
+          "memory_bytes": 45056,
+          "memory_stats": {
+            "usage": 45056,
+            "stats": {
+              "active_anon": 32768,
+              "active_file": 0,
+              "anon": 45056,
+              "anon_thp": 0,
+              "file": 0,
+              "file_dirty": 0,
+              "file_mapped": 0,
+              "file_writeback": 0,
+              "inactive_anon": 12288,
+              "inactive_file": 0,
+              "kernel_stack": 0,
+              "pgactivate": 0,
+              "pgdeactivate": 0,
+              "pgfault": 1065,
+              "pglazyfree": 0,
+              "pglazyfreed": 0,
+              "pgmajfault": 0,
+              "pgrefill": 0,
+              "pgscan": 1,
+              "pgsteal": 1,
+              "shmem": 0,
+              "slab": 0,
+              "slab_reclaimable": 0,
+              "slab_unreclaimable": 0,
+              "sock": 0,
+              "thp_collapse_alloc": 0,
+              "thp_fault_alloc": 0,
+              "unevictable": 0,
+              "workingset_activate": 0,
+              "workingset_nodereclaim": 0,
+              "workingset_refault": 0
+            },
+            "limit": 16818278400
+          },
+          "cpu_total_usage": 11087000,
+          "metrics_available": true
+        }
+      },
+      "passed": true
+    }
+  ],
+  "checks": {
+    "keep_awake_blocks_save": true,
+    "sse_blocks_save": true,
+    "websocket_blocks_save": true,
+    "command_job_blocks_save": true,
+    "controller_restart_preserves_sleep": true
+  },
+  "versions": {
+    "docker": {
+      "Platform": {
+        "Name": "Docker Engine - Community"
+      },
+      "Version": "29.8.2",
+      "ApiVersion": "1.56",
+      "MinAPIVersion": "1.40",
+      "Os": "linux",
+      "Arch": "arm64",
+      "Components": [
+        {
+          "Name": "Engine",
+          "Version": "29.8.2",
+          "Details": {
+            "ApiVersion": "1.56",
+            "Arch": "arm64",
+            "BuildTime": "2026-09-30T19:32:49.000000000+00:00",
+            "Experimental": "true",
+            "GitCommit": "8af9fe3",
+            "GoVersion": "go1.26.8",
+            "KernelVersion": "7.2.9-orbstack-00391-g2b298d05fbd4",
+            "MinAPIVersion": "1.40",
+            "Module": "github.com/moby/moby/v2",
+            "ModuleVersion": "v2.0.0+unknown",
+            "Os": "linux"
+          }
+        },
+        {
+          "Name": "containerd",
+          "Version": "v2.3.6",
+          "Details": {
+            "GitCommit": "ee2735368117d2eb259779949d5e75cdafec9761"
+          }
+        },
+        {
+          "Name": "runc",
+          "Version": "1.5.2",
+          "Details": {
+            "GitCommit": "29dd3dc2b13b4123162e5fe132504bb4b15569f1"
+          }
+        },
+        {
+          "Name": "docker-init",
+          "Version": "0.19.0",
+          "Details": {
+            "GitCommit": ""
+          }
+        }
+      ],
+      "GitCommit": "8af9fe3",
+      "GoVersion": "go1.26.8",
+      "KernelVersion": "7.2.9-orbstack-00391-g2b298d05fbd4",
+      "Experimental": true,
+      "BuildTime": "2026-09-30T19:32:49.000000000+00:00"
+    },
+    "node": "v24.22.1",
+    "host": "Linux version 7.2.9-orbstack-00391-g2b298d05fbd4 (orbstack@builder) (ClangBuiltLinux clang version 22.1.3 (https://github.com/llvm/llvm-project.git e9846648fd6183ee6d8cbdb4502213fcf902a211), ClangBuiltLinux LLD 22.1.3 (https://github.com/llvm/llvm-project.git e9846648fd6183ee6d8cbdb4502213fcf902a211)) #1 SMP PREEMPT Mon Oct 12 05:39:36 UTC 2026"
+  },
+  "instance_id": "ozc-udoaqgohki",
+  "application_container_id": "b896722a128421d51f8713528ddb2c8a2772a95aa0e270d5b3892abb12a9cba5",
+  "anchor_container_id": "a4a38d7fd4b290e71061289b2bcaefd568961f1a7b1ca9856bb29eaad1263278",
+  "application_image_id": "sha256:663c21f279981015755cf99ba23e4398f9b26cd760d923bf261f43723b68a8ab",
+  "criu_config": "/opt/ozc-criu/ozwell.conf",
+  "first_boot_ready_ms": 1898,
+  "guest_environment": {
+    "kernel": "7.2.9-orbstack-00391-g2b298d05fbd4",
+    "architecture": "aarch64",
+    "os_release": "PRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"12\"\nVERSION=\"12 (bookworm)\"\nVERSION_CODENAME=bookworm\nID=debian\nHOME_URL=\"https://www.debian.org/\"\nSUPPORT_URL=\"https://www.debian.org/support\"\nBUG_REPORT_URL=\"https://bugs.debian.org/\"\n",
+    "ozwell_package": null,
+    "app_version": "0.0.0",
+    "revision": "c32969e80023668569e16e520191eb097981b4a3-dirty",
+    "dist_sha256": {
+      "server.js": "6f1e215b323091fa9bc257c4d136e1e796ac9b540da084f1a120f44679be3971",
+      "lifecycle.js": "35dea22c1c74b83ea1bd5aeadc7636cf4678aa9d354842fd8056ba1178e06e75",
+      "routes/lifecycle.js": "84462e928e9c8c84b1dd75b4afe134b95e8b4f3319744728ae04cabe1569dd34"
+    }
+  },
+  "guest_capabilities_version": "0.0.0",
+  "initial_probe": {
+    "token": "2513f1213f20059632154a29488146f282a8e1f46ec75e72172eedb217da5e8f",
+    "pid": 140,
+    "start_ticks": "108672991",
+    "boot_id": "af98e822-4159-4463-bd56-2e8cdf512733",
+    "payload_sha256": "613473dc212a367652e2ffe04b5e95556120fe6c8b94015823e789886c7b96aa",
+    "payload_bytes": 67108864,
+    "counter": 2
+  },
+  "initial_gui": {
+    "window_id": "0x1200003",
+    "pid": 141,
+    "start_ticks": "108672991",
+    "unsaved_text": "unsaved-c48c87a9-cf68-44d3-bc69-91be5547de0b",
+    "clipboard_generation": 2,
+    "a11y_text_field_matches": 1,
+    "a11y_snapshot_id": "s1"
+  },
+  "initial_png": {
+    "file": "gui-before.png",
+    "bytes": 6869,
+    "sha256": "4b63274965f6d110b606aa176e5b6a15b2a2520cb41502dbbec5e2e342f39370"
+  },
+  "finished_at": "2026-10-31T21:46:25.617Z"
+}

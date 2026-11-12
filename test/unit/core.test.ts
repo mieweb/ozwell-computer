@@ -193,6 +193,12 @@ describe('a11y helpers', () => {
     expect(mapRole('push button')).toBe('button');
     expect(mapRole('some new role')).toBe('some_new_role');
   });
+  it('recognizes GTK3 editable single-line text without changing static or multiline text', () => {
+    expect(mapRole('text', ['editable', 'single_line', 'enabled'])).toBe('text_field');
+    expect(mapRole('text', ['single_line', 'read_only'])).toBe('text');
+    expect(mapRole('text', ['editable', 'multi_line'])).toBe('text');
+    expect(mapRole('entry')).toBe('text_field');
+  });
 });
 
 import { runCommand } from '../../src/process/exec.js';
