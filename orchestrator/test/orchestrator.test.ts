@@ -408,6 +408,7 @@ describe('computers that report stopped while they are created (opensource-serve
   function provisioningProvider(url: string, offlineReads: number) {
     const all = new Map<string, Computer>();
     const reads = new Map<string, number>();
+    const created = new Set<string>();
     let starts = 0;
     const p: Provider & { starts: () => number; add: (c: Computer) => void } = {
       scheme: 'memory',
@@ -417,7 +418,7 @@ describe('computers that report stopped while they are created (opensource-serve
       async listAll() { return [...all.values()]; },
       async get(id) {
         const c = all.get(id);
-        if (!c || c.createdAt && Date.now() - Date.parse(c.createdAt) > 60_000) return c ?? null; // an old computer: as stored
+        if (!c || !created.has(id)) return c ?? null; // added by the test: as stored
         const n = (reads.get(id) ?? 0) + 1;
         reads.set(id, n);
         return n <= offlineReads ? { ...c, status: 'offline', stopped: true } : { ...c, status: 'running', stopped: false };
@@ -425,6 +426,7 @@ describe('computers that report stopped while they are created (opensource-serve
       async create({ owner }) {
         const c: Computer = { id: generateId(), owner: owner.id, status: 'creating', stopped: false, internalUrl: url, token: 'inst-token', createdAt: new Date().toISOString() };
         all.set(c.id, c);
+        created.add(c.id);
         return c;
       },
       async start(id) { starts++; return all.get(id)!; },
@@ -461,11 +463,16 @@ describe('computers that report stopped while they are created (opensource-serve
       const click = await tool('gus', 'click', { instance_id: id, x: 1, y: 1 });
       expect(click.isError).toBe(true);
       expect(click.data.error.message).toMatch(/still starting; call get_computer/);
+      // A new computer that exited (a Docker container that crashed) is stopped, not starting.
+      p.add({ id: 'ozc-crashed', owner: 'gus', status: 'exited', stopped: true, internalUrl: instance.url, token: 'inst-token', createdAt: new Date().toISOString() });
+      expect((await tool('gus', 'list_computers')).data.computers.find((c: any) => c.instance_id === 'ozc-crashed')).toMatchObject({ stopped: true, status: 'exited' });
+      await tool('gus', 'start_computer', { instance_id: 'ozc-crashed' });
+      expect(p.starts()).toBe(1);
       // A computer created long ago that is stopped is really stopped.
       p.add({ id: 'ozc-old', owner: 'gus', status: 'offline', stopped: true, internalUrl: instance.url, token: 'inst-token', createdAt: new Date(Date.now() - 3600_000).toISOString() });
       expect((await tool('gus', 'list_computers')).data.computers.find((c: any) => c.instance_id === 'ozc-old')).toMatchObject({ stopped: true, status: 'offline' });
       await tool('gus', 'start_computer', { instance_id: 'ozc-old' });
-      expect(p.starts()).toBe(1);
+      expect(p.starts()).toBe(2);
     });
   });
 });

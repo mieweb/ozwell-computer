@@ -245,6 +245,14 @@ docker rollout orchestrator   # builds, starts the new one, then drains and remo
 docker compose up -d          # the other services (the orchestrator is already current)
 ```
 
+With the docker:// provider, pass both files to both commands (otherwise the new
+orchestrator starts without the Docker socket and the computers network):
+
+```bash
+docker rollout -f compose.yml -f compose.docker.yml orchestrator
+docker compose -f compose.yml -f compose.docker.yml up -d
+```
+
 `proxy` (Caddy) owns port 8090 and sends calls to whichever orchestrators are running.
 A stopping orchestrator finishes its in-flight calls (up to 11 min) and refuses new ones,
 which Caddy retries on the new one. Plain `docker compose up -d` still updates the

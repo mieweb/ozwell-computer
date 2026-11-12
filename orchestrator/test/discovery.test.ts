@@ -89,6 +89,24 @@ describe('internal server', () => {
     }
   });
 
+  it('serves /metrics without waiting on a slow provider listing', async () => {
+    let release!: () => void;
+    const slow: Provider = { ...provider(() => []), listAll: () => new Promise((r) => { release = () => r([comp('a')]); }) };
+    const app = await buildInternalServer({ metrics: new Metrics({ defaultMetrics: false }), provider: slow, metadataWaitMs: 50 });
+    try {
+      const t0 = Date.now();
+      const r = await app.inject('/metrics');
+      expect(r.statusCode).toBe(200);
+      expect(Date.now() - t0).toBeLessThan(1000);
+      expect(r.body).toContain('# TYPE ozwell_orchestrator_tool_calls counter'); // the other metrics are all there
+      release();
+      await new Promise((r) => setTimeout(r, 10));
+      expect((await app.inject('/metrics')).body).toContain('ozwell_orchestrator_computer_info{instance_id="a"');
+    } finally {
+      await app.close();
+    }
+  });
+
   it('proxies an instance scrape with its token, and 404s/503s otherwise', async () => {
     const all = [comp('a'), comp('stopped', { stopped: true, status: 'offline' }), comp('gone', { internalUrl: deadUrl }), comp('badtoken', { token: 'bad' })];
     const app = await buildInternalServer({ metrics: new Metrics({ defaultMetrics: false }), provider: provider(() => all) });

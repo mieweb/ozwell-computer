@@ -20,6 +20,8 @@ export interface InternalServerOptions {
   sdAddress?: string;
   /** How long a /sd answer is reused (default 15 s). */
   sdCacheMs?: number;
+  /** How long /metrics waits for a computer listing before serving the last one (default 2 s). */
+  metadataWaitMs?: number;
   /** Instance scrape timeout (default 10 s). */
   scrapeTimeoutMs?: number;
   /** Bearer token required on every route but /health; undefined means none. */
@@ -76,8 +78,14 @@ export async function buildInternalServer(opts: InternalServerOptions): Promise<
   });
 
   app.get('/metrics', noTrace, (_req, reply) => untraced(async () => {
-    // A failed listing keeps the last metadata series.
-    await listing?.().catch(() => undefined);
+    // Refresh the computer metadata, but never hold the scrape for it: a slow or failing
+    // provider leaves the last snapshot in place while the refresh carries on.
+    const refresh = listing?.().catch(() => undefined);
+    if (refresh) {
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([refresh, new Promise((r) => { timer = setTimeout(r, opts.metadataWaitMs ?? 2000); })]);
+      clearTimeout(timer);
+    }
     return reply.type(opts.metrics.registry.contentType).send(await opts.metrics.registry.metrics());
   }));
 

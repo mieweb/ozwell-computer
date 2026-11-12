@@ -195,7 +195,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "count by (user) (ozwell_orchestrator_computer_info and on (instance_id) up{job=\"computers\"})",
+          "expr": "count by (user) (max by (instance_id, user) (ozwell_orchestrator_computer_info) and on (instance_id) up{job=\"computers\"})",
           "legendFormat": "{{user}}",
           "exemplar": false
         }
@@ -473,7 +473,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "count by (version) (ozwell_build_info{job=\"computers\"}) or label_replace(count(up{job=\"computers\"} unless on (instance_id) ozwell_build_info), \"version\", \"older (no version metric)\", \"\", \"\")",
+          "expr": "count by (version) (ozwell_build_info{job=\"computers\"}) or label_replace(count((up{job=\"computers\"} == 1) unless on (instance_id) ozwell_build_info), \"version\", \"older (no version metric)\", \"\", \"\") or label_replace(count(up{job=\"computers\"} == 0), \"version\", \"unknown (scrape failing)\", \"\", \"\")",
           "legendFormat": "{{version}}",
           "instant": true
         }

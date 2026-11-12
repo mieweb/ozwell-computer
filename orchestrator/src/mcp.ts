@@ -26,9 +26,10 @@ const fail = (reason: string, message: string) => ({ ...text({ error: { reason, 
 export const SETTLE_MS = 10 * 60_000;
 
 /** A new computer can report stopped while its platform provisions it (opensource-server:
- * creating → offline → running). It isn't stopped: it's starting, and needs no start_computer. */
+ * creating → offline → running). It isn't stopped: it's starting, and needs no start_computer.
+ * Only that transient "offline": a Docker container that exited (crashed) is really stopped. */
 export function settling(c: Computer | null | undefined, now = Date.now()): boolean {
-  if (!c?.stopped || !c.createdAt) return false;
+  if (!c?.stopped || c.status !== 'offline' || !c.createdAt) return false;
   const t = Date.parse(c.createdAt);
   return Number.isFinite(t) && now - t >= -60_000 && now - t < SETTLE_MS;
 }
