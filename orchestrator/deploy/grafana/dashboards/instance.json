@@ -69,35 +69,38 @@
   },
   "panels": [
     {
-      "type": "stat",
-      "title": "Owner",
+      "type": "table",
+      "title": "Computer",
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
       },
       "gridPos": {
-        "w": 4,
-        "h": 3,
+        "w": 8,
+        "h": 8,
         "x": 0,
         "y": 0
       },
       "options": {
-        "textMode": "name",
-        "colorMode": "none",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
+        "showHeader": false,
+        "cellHeight": "sm"
       },
       "fieldConfig": {
-        "defaults": {
-          "noValue": "unknown"
-        },
-        "overrides": []
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Field"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          }
+        ]
       },
       "targets": [
         {
@@ -106,41 +109,76 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "label_replace(max by (user) (up{job=\"computers\", instance_id=\"$instance_id\"}), \"user\", \"none\", \"user\", \"\")",
-          "legendFormat": "{{user}}",
-          "instant": true
+          "expr": "label_replace(label_replace(label_replace(label_replace(max by (user, display_name, provider, created_at) (up{job=\"computers\", instance_id=\"$instance_id\"}), \"user\", \"none\", \"user\", \"\"), \"display_name\", \"none\", \"display_name\", \"\"), \"provider\", \"none\", \"provider\", \"\"), \"created_at\", \"none\", \"created_at\", \"\")",
+          "instant": true,
+          "format": "table"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "max by (version) (ozwell_build_info{instance_id=\"$instance_id\"}) or on() label_replace(max(up{job=\"computers\", instance_id=\"$instance_id\"}), \"version\", \"older (no version metric)\", \"\", \"\")",
+          "instant": true,
+          "format": "table"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "joinByField",
+          "options": {
+            "byField": "Time",
+            "mode": "outer"
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Value #A": true,
+              "Value #B": true
+            },
+            "renameByName": {
+              "user": "Owner",
+              "version": "Version",
+              "display_name": "Display name",
+              "provider": "Provider",
+              "created_at": "Created"
+            },
+            "indexByName": {
+              "Time": 0,
+              "user": 1,
+              "version": 2,
+              "display_name": 3,
+              "provider": 4,
+              "created_at": 5
+            }
+          }
+        },
+        {
+          "id": "transpose",
+          "options": {}
         }
       ],
       "id": 1
     },
     {
       "type": "stat",
-      "title": "Version",
+      "title": "Scrape up",
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
       },
       "gridPos": {
-        "w": 4,
-        "h": 3,
-        "x": 4,
-        "y": 0
-      },
-      "options": {
-        "textMode": "name",
-        "colorMode": "none",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
+        "x": 8,
+        "y": 0,
+        "w": 5,
+        "h": 4
       },
       "fieldConfig": {
         "defaults": {
-          "noValue": "unknown"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -151,8 +189,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "max by (version) (ozwell_build_info{instance_id=\"$instance_id\"}) or on() label_replace(max(up{job=\"computers\", instance_id=\"$instance_id\"}), \"version\", \"older version (no version metric)\", \"\", \"\")",
-          "legendFormat": "{{version}}",
+          "expr": "max(up{job=\"computers\", instance_id=\"$instance_id\"})",
           "instant": true
         }
       ],
@@ -160,32 +197,20 @@
     },
     {
       "type": "stat",
-      "title": "Display name",
+      "title": "X connected",
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
       },
       "gridPos": {
-        "w": 4,
-        "h": 3,
-        "x": 8,
-        "y": 0
-      },
-      "options": {
-        "textMode": "name",
-        "colorMode": "none",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
+        "x": 13,
+        "y": 0,
+        "w": 5,
+        "h": 4
       },
       "fieldConfig": {
         "defaults": {
-          "noValue": "unknown"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -196,102 +221,11 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "label_replace(max by (display_name) (up{job=\"computers\", instance_id=\"$instance_id\"}), \"display_name\", \"none\", \"display_name\", \"\")",
-          "legendFormat": "{{display_name}}",
+          "expr": "max(ozwell_x_connected{instance_id=\"$instance_id\"})",
           "instant": true
         }
       ],
       "id": 3
-    },
-    {
-      "type": "stat",
-      "title": "Provider",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "victoriametrics"
-      },
-      "gridPos": {
-        "w": 4,
-        "h": 3,
-        "x": 12,
-        "y": 0
-      },
-      "options": {
-        "textMode": "name",
-        "colorMode": "none",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "unknown"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "victoriametrics"
-          },
-          "expr": "label_replace(max by (provider) (up{job=\"computers\", instance_id=\"$instance_id\"}), \"provider\", \"none\", \"provider\", \"\")",
-          "legendFormat": "{{provider}}",
-          "instant": true
-        }
-      ],
-      "id": 4
-    },
-    {
-      "type": "stat",
-      "title": "Created",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "victoriametrics"
-      },
-      "gridPos": {
-        "w": 4,
-        "h": 3,
-        "x": 16,
-        "y": 0
-      },
-      "options": {
-        "textMode": "name",
-        "colorMode": "none",
-        "graphMode": "none",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "noValue": "unknown"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "victoriametrics"
-          },
-          "expr": "label_replace(max by (created_at) (up{job=\"computers\", instance_id=\"$instance_id\"}), \"created_at\", \"none\", \"created_at\", \"\")",
-          "legendFormat": "{{created_at}}",
-          "instant": true
-        }
-      ],
-      "id": 5
     },
     {
       "type": "stat",
@@ -301,10 +235,10 @@
         "uid": "victoriametrics"
       },
       "gridPos": {
-        "w": 4,
-        "h": 3,
-        "x": 20,
-        "y": 0
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
       },
       "options": {
         "colorMode": "none",
@@ -334,71 +268,7 @@
           "instant": true
         }
       ],
-      "id": 6
-    },
-    {
-      "type": "stat",
-      "title": "Scrape up",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "victoriametrics"
-      },
-      "gridPos": {
-        "w": 6,
-        "h": 4,
-        "x": 0,
-        "y": 3
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "victoriametrics"
-          },
-          "expr": "max(up{job=\"computers\", instance_id=\"$instance_id\"})",
-          "instant": true
-        }
-      ],
-      "id": 7
-    },
-    {
-      "type": "stat",
-      "title": "X connected",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "victoriametrics"
-      },
-      "gridPos": {
-        "w": 6,
-        "h": 4,
-        "x": 6,
-        "y": 3
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "datasource": {
-            "type": "prometheus",
-            "uid": "victoriametrics"
-          },
-          "expr": "max(ozwell_x_connected{instance_id=\"$instance_id\"})",
-          "instant": true
-        }
-      ],
-      "id": 8
+      "id": 4
     },
     {
       "type": "stat",
@@ -408,10 +278,10 @@
         "uid": "victoriametrics"
       },
       "gridPos": {
-        "w": 6,
-        "h": 4,
-        "x": 12,
-        "y": 3
+        "x": 8,
+        "y": 4,
+        "w": 8,
+        "h": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -430,7 +300,7 @@
           "instant": true
         }
       ],
-      "id": 9
+      "id": 5
     },
     {
       "type": "stat",
@@ -440,10 +310,10 @@
         "uid": "victoriametrics"
       },
       "gridPos": {
-        "w": 6,
-        "h": 4,
-        "x": 18,
-        "y": 3
+        "x": 16,
+        "y": 4,
+        "w": 8,
+        "h": 4
       },
       "fieldConfig": {
         "defaults": {
@@ -462,7 +332,7 @@
           "instant": true
         }
       ],
-      "id": 10
+      "id": 6
     },
     {
       "type": "timeseries",
@@ -475,7 +345,7 @@
         "w": 12,
         "h": 8,
         "x": 0,
-        "y": 7
+        "y": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -495,7 +365,7 @@
           "exemplar": false
         }
       ],
-      "id": 11
+      "id": 7
     },
     {
       "type": "timeseries",
@@ -508,7 +378,7 @@
         "w": 12,
         "h": 8,
         "x": 12,
-        "y": 7
+        "y": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -528,7 +398,7 @@
           "exemplar": false
         }
       ],
-      "id": 12
+      "id": 8
     },
     {
       "type": "timeseries",
@@ -541,7 +411,7 @@
         "w": 12,
         "h": 8,
         "x": 0,
-        "y": 15
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -561,7 +431,7 @@
           "exemplar": false
         }
       ],
-      "id": 13
+      "id": 9
     },
     {
       "type": "timeseries",
@@ -574,7 +444,7 @@
         "w": 12,
         "h": 8,
         "x": 12,
-        "y": 15
+        "y": 16
       },
       "fieldConfig": {
         "defaults": {
@@ -594,7 +464,7 @@
           "exemplar": false
         }
       ],
-      "id": 14
+      "id": 10
     },
     {
       "type": "logs",
@@ -607,7 +477,7 @@
         "w": 24,
         "h": 14,
         "x": 0,
-        "y": 23
+        "y": 24
       },
       "options": {
         "showTime": true,
@@ -626,7 +496,7 @@
           "queryType": "instant"
         }
       ],
-      "id": 15
+      "id": 11
     }
   ],
   "links": [
