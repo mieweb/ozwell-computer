@@ -305,6 +305,8 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
           const url = c.internalUrl, token = c.token;
           return await tracer.startActiveSpan('instance.callTool', { attributes: { 'ozwell.instance_id': c.id, 'gen_ai.tool.name': name } },
             (span) => client.callTool(`${c.id}\u0000${user.id}\u0000${agent}`, url, token, agent, name, rest)
+              // The computer answered: for a new one, that's the client seeing it ready.
+              .then((r) => { ops?.observe(c, true); return r; })
               .catch((e) => { span.recordException(e); span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message }); throw e; })
               .finally(() => span.end()))
             .catch(async (e) => {

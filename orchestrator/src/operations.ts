@@ -198,8 +198,9 @@ export class OperationTracker {
   }
 
   /**
-   * A tool call saw this computer's readiness (create/get/start_computer). Feeds the in-flight
-   * operation, and the first ready:true after a create records observed time-to-ready.
+   * A tool call saw this computer's readiness: create/get/start_computer, or a desktop tool
+   * that the computer answered. Feeds the in-flight operation, and the first ready after a
+   * create records observed time-to-ready.
    */
   observe(c: Computer, ready: boolean) {
     this.inFlight(c.id)?.progress(c, ready);

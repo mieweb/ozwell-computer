@@ -198,6 +198,12 @@ describe('operations through tool calls', () => {
   beforeAll(async () => {
     inst = Fastify();
     inst.get('/health', async (_r, reply) => reply.code(healthy ? 204 : 503).send());
+    inst.post('/mcp', async (req, reply) => {
+      const m = req.body as any;
+      if (m.method === 'initialize') return reply.header('mcp-session-id', 's1').send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-06-18' } });
+      if (!m.id) return reply.code(202).send();
+      return reply.send({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text: '{}' }] } });
+    });
     await inst.listen({ port: 0, host: '127.0.0.1' });
     const url = `http://127.0.0.1:${(inst.server.address() as any).port}`;
     const all = new Map<string, Computer>();
@@ -213,7 +219,7 @@ describe('operations through tool calls', () => {
     const { isReady } = await import('../src/mcp.ts');
     // No watcher: the clients' polls alone must drive the operation to completion.
     const operations = new OperationTracker({ provider: 'memory', metrics, probe: (id) => isReady(provider, id) });
-    app = await buildServer({ provider, catalog: [], client: new InstanceClient(), version: 't', psk: 'p', readyTimeoutMs: 0, metrics, operations });
+    app = await buildServer({ provider, catalog: [{ name: 'click', inputSchema: { type: 'object', properties: {} } }], client: new InstanceClient(), version: 't', psk: 'p', readyTimeoutMs: 0, metrics, operations });
     await app.listen({ port: 0, host: '127.0.0.1' });
     base = `http://127.0.0.1:${(app.server.address() as any).port}`;
   });
@@ -252,5 +258,15 @@ describe('operations through tool calls', () => {
     const gets = spans.filter((s) => s.name === 'operation.get');
     const getCall = calls.find((s) => s.name === 'mcp.tools/call get_computer')!;
     expect(getCall.links.map((l) => l.context.spanId)).toEqual(expect.arrayContaining([gets[0].spanContext().spanId]));
+  });
+
+  it('records observed time-to-ready from the first desktop tool the new computer answers', async () => {
+    healthy = false;
+    const created = await tool('create_computer');
+    expect(created.ready).toBe(false);
+    const before = (await hist(metrics, 'timeToReadyObserved', { provider: 'memory' })).count;
+    healthy = true;
+    await tool('click', { instance_id: created.instance_id, x: 1, y: 1 });
+    expect((await hist(metrics, 'timeToReadyObserved', { provider: 'memory' })).count).toBe(before + 1);
   });
 });
