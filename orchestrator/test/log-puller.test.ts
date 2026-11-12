@@ -78,7 +78,7 @@ describe('LogPuller', () => {
     });
     return { puller, metrics, logs, advance: (s: number) => { now += s * 1000; } };
   }
-  const comp = (over: Partial<Computer> = {}): Computer => ({ id: 'ozc-1', owner: 'alice', status: 'running', stopped: false, internalUrl: instUrl, token: 't', ...over });
+  const comp = (over: Partial<Computer> = {}): Computer => ({ id: 'ozc-1', owner: 'u-1', ownerEmail: 'alice@example.com', status: 'running', stopped: false, internalUrl: instUrl, token: 't', ...over });
   const count = async (m: Metrics, outcome: string) => (await m.logPulls.get()).values.find((v) => v.labels.outcome === outcome)?.value ?? 0;
 
   it('starts at now, tags and ships entries, then continues after the last cursor', async () => {
@@ -87,7 +87,7 @@ describe('LogPuller', () => {
     await puller.tick();
     expect(requests[0]).toEqual({ range: 'realtime=1000::0:1000', accept: JOURNAL_EXPORT });
     expect(shipped).toHaveLength(1);
-    expect(shipped[0]).toContain('MESSAGE=line 1\nOZWELL_INSTANCE_ID=ozc-1\nOZWELL_USER=alice\nOZWELL_PROVIDER=memory\n\n');
+    expect(shipped[0]).toContain('MESSAGE=line 1\nOZWELL_INSTANCE_ID=ozc-1\nOZWELL_USER=alice@example.com\nOZWELL_PROVIDER=memory\n\n');
 
     await puller.tick(); // not due yet
     expect(requests).toHaveLength(1);

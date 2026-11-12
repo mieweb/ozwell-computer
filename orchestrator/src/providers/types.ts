@@ -71,3 +71,8 @@ export function generateId(prefix = 'ozc'): string {
   for (const b of bytes) out += alphabet[b & 31];
   return `${prefix}-${out}`;
 }
+
+/** The user as observability records it (metrics, logs, traces): the email, else the id. */
+export const observedUser = (r: Requester): string => r.email || r.id;
+/** The same for a computer's owner. */
+export const observedOwner = (c: Computer): string => c.ownerEmail || c.owner;

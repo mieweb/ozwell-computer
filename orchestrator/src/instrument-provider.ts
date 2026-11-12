@@ -1,7 +1,7 @@
 // Wraps any Provider so every method call is a `provider.<method>` span (and, later, timed
 // into metrics through `onCall`). Provider implementations need no changes.
 import { SpanStatusCode, trace, type Attributes } from '@opentelemetry/api';
-import type { Computer, CreateOptions, Provider } from './providers/types.ts';
+import { observedUser, type Computer, type CreateOptions, type Provider } from './providers/types.ts';
 
 export type ProviderMethod = 'list' | 'listAll' | 'get' | 'create' | 'start' | 'destroy';
 export type CallOutcome = 'ok' | 'error';
@@ -38,10 +38,11 @@ export function instrumentProvider(inner: Provider, onCall?: ProviderCallObserve
 
   return {
     scheme,
-    list: (owner: string) => run('list', { 'enduser.id': owner }, () => inner.list(owner), (r) => ({ 'ozwell.count': r.length })),
+    // Only the owner id is passed here; the tool-call span above carries the user.
+    list: (owner: string) => run('list', {}, () => inner.list(owner), (r) => ({ 'ozwell.count': r.length })),
     listAll: () => run('listAll', {}, () => inner.listAll(), (r) => ({ 'ozwell.count': r.length })),
     get: (id: string) => run('get', { 'ozwell.instance_id': id }, () => inner.get(id), describe),
-    create: (opts: CreateOptions) => run('create', { 'enduser.id': opts.owner.id }, () => inner.create(opts), describe),
+    create: (opts: CreateOptions) => run('create', { 'enduser.id': observedUser(opts.owner) }, () => inner.create(opts), describe),
     start: (id: string) => run('start', { 'ozwell.instance_id': id }, () => inner.start(id), describe),
     destroy: (id: string) => run('destroy', { 'ozwell.instance_id': id }, () => inner.destroy(id)),
   };

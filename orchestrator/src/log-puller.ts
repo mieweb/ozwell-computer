@@ -13,7 +13,7 @@
 //   other failures back off exponentially. One instance never delays another.
 // - Stopped or destroyed instances are dropped; there is no drain before destroy.
 import type { Metrics } from './metrics.ts';
-import type { Computer, Provider } from './providers/types.ts';
+import { observedOwner, type Computer, type Provider } from './providers/types.ts';
 
 export interface LogLogger { info: (o: object, m: string) => void; warn: (o: object, m: string) => void }
 
@@ -274,7 +274,7 @@ export class LogPuller {
       return res.status >= 500 ? 'unavailable' : 'error';
     }
     const extra = Buffer.concat([
-      exportField('OZWELL_INSTANCE_ID', c.id), exportField('OZWELL_USER', c.owner), exportField('OZWELL_PROVIDER', this.o.provider.scheme),
+      exportField('OZWELL_INSTANCE_ID', c.id), exportField('OZWELL_USER', observedOwner(c)), exportField('OZWELL_PROVIDER', this.o.provider.scheme),
     ]);
     // The instance is agent-controlled: never buffer an unbounded response.
     const { buf, truncated } = await readBounded(res, this.o.maxResponseBytes);

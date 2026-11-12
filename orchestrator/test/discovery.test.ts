@@ -42,10 +42,10 @@ function provider(computers: () => Computer[], calls = { listAll: 0 }): Provider
 
 describe('sdTargets', () => {
   it('lists running, reachable computers pointed at the scrape proxy', () => {
-    const t = sdTargets([comp('a'), comp('b', { stopped: true }), comp('c', { token: undefined }), comp('d', { owner: 'bob' })], 'memory', 'orchestrator:8091');
+    const t = sdTargets([comp('a'), comp('b', { stopped: true }), comp('c', { token: undefined }), comp('d', { owner: 'u-9', ownerEmail: 'bob@example.com' })], 'memory', 'orchestrator:8091');
     expect(t).toEqual([
       { targets: ['orchestrator:8091'], labels: { instance_id: 'a', provider: 'memory', user: 'alice', __metrics_path__: '/instances/a/metrics' } },
-      { targets: ['orchestrator:8091'], labels: { instance_id: 'd', provider: 'memory', user: 'bob', __metrics_path__: '/instances/d/metrics' } },
+      { targets: ['orchestrator:8091'], labels: { instance_id: 'd', provider: 'memory', user: 'bob@example.com', __metrics_path__: '/instances/d/metrics' } },
     ]);
   });
 });

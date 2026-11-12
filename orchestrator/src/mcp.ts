@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import type { Computer, Provider, Requester } from './providers/types.ts';
+import { observedUser, type Computer, type Provider, type Requester } from './providers/types.ts';
 import { InstanceClient, InstanceError } from './instance-client.ts';
 import { SpanStatusCode, trace, type Span } from '@opentelemetry/api';
 import type { Metrics } from './metrics.ts';
@@ -223,7 +223,7 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
     const args = (req.params.arguments ?? {}) as Record<string, unknown>;
     return tracer.startActiveSpan(`mcp.tools/call ${name}`, {
       attributes: {
-        'mcp.method.name': 'tools/call', 'gen_ai.tool.name': name, 'enduser.id': user.id,
+        'mcp.method.name': 'tools/call', 'gen_ai.tool.name': name, 'enduser.id': observedUser(user),
         'ozwell.provider': provider.scheme, 'ozwell.tool.arguments': argsAttr(args),
         ...(typeof args.instance_id === 'string' ? { 'ozwell.instance_id': args.instance_id } : {}),
         ...(extra?.sessionId ? { 'mcp.session.id': extra.sessionId } : {}),
@@ -244,7 +244,7 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
 
   const callTool = async (name: string, args: Record<string, unknown>): Promise<any> => {
     // Full arguments by decision (docs/observability-plan.md); no tokens travel in them.
-    deps.log?.info({ tool: name, user: user.id, instance: args.instance_id, args }, 'tool call');
+    deps.log?.info({ tool: name, user: observedUser(user), instance: args.instance_id, args }, 'tool call');
     try {
       switch (name) {
         case 'list_computers':

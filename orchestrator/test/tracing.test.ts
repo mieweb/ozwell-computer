@@ -45,7 +45,7 @@ function memoryProvider(url: string): Provider {
 async function tool(name: string, args: object, headers: Record<string, string> = {}) {
   const r = await fetch(`${base}/mcp`, {
     method: 'POST',
-    headers: { authorization: `Bearer ${PSK}`, 'x-ozwell-user-id': 'alice', 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
+    headers: { authorization: `Bearer ${PSK}`, 'x-ozwell-user-id': 'alice', 'x-ozwell-user-email': 'alice@example.com', 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers },
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
   });
   const data = (await r.text()).split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5)).join('');
@@ -89,7 +89,7 @@ describe('tool-call tracing', () => {
     const created = await tool('create_computer', {});
     expect(created.data.ready).toBe(true);
     const [create] = byName('mcp.tools/call create_computer');
-    expect(create.attributes).toMatchObject({ 'mcp.method.name': 'tools/call', 'gen_ai.tool.name': 'create_computer', 'enduser.id': 'alice', 'ozwell.provider': 'memory', 'ozwell.ready': true });
+    expect(create.attributes).toMatchObject({ 'mcp.method.name': 'tools/call', 'gen_ai.tool.name': 'create_computer', 'enduser.id': 'alice@example.com', 'ozwell.provider': 'memory', 'ozwell.ready': true });
     const [pcreate] = byName('provider.create');
     expect(parentOf(pcreate)).toBe(create.spanContext().spanId);
     const [poll] = byName('readiness.poll');

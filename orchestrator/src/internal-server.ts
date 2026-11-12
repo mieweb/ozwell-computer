@@ -9,7 +9,7 @@ import { Readable } from 'node:stream';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { tokenOk } from './server.ts';
 import type { Metrics } from './metrics.ts';
-import type { Computer, Provider } from './providers/types.ts';
+import { observedOwner, type Computer, type Provider } from './providers/types.ts';
 
 export interface InternalServerOptions {
   metrics: Metrics;
@@ -34,7 +34,7 @@ export function sdTargets(computers: Computer[], provider: string, address: stri
     .filter((c) => !c.stopped && c.internalUrl && c.token)
     .map((c) => ({
       targets: [address],
-      labels: { instance_id: c.id, provider, user: c.owner, __metrics_path__: `/instances/${encodeURIComponent(c.id)}/metrics` },
+      labels: { instance_id: c.id, provider, user: observedOwner(c), __metrics_path__: `/instances/${encodeURIComponent(c.id)}/metrics` },
     }));
 }
 

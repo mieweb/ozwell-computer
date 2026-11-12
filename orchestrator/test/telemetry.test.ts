@@ -29,19 +29,22 @@ describe('instrumentProvider', () => {
     expect(p.scheme).toBe('fake');
     expect(await p.list('alice')).toEqual([comp]);
     expect(await p.get('nope')).toBeNull();
-    await p.create({ owner: { id: 'alice' } });
+    await p.create({ owner: { id: 'alice' } }); // no email: the id
+    await p.create({ owner: { id: 'u-7', email: 'bob@example.com' } });
     await p.start('ozc-1');
     await expect(p.destroy('ozc-1')).rejects.toThrow('boom');
 
     const spans = exporter.getFinishedSpans();
-    expect(spans.map((s) => s.name)).toEqual(['provider.list', 'provider.get', 'provider.create', 'provider.start', 'provider.destroy']);
-    expect(spans[0].attributes).toMatchObject({ 'ozwell.provider': 'fake', 'enduser.id': 'alice', 'ozwell.count': 1 });
+    expect(spans.map((s) => s.name)).toEqual(['provider.list', 'provider.get', 'provider.create', 'provider.create', 'provider.start', 'provider.destroy']);
+    expect(spans[0].attributes).toMatchObject({ 'ozwell.provider': 'fake', 'ozwell.count': 1 });
+    expect(spans[0].attributes['enduser.id']).toBeUndefined();
     expect(spans[1].attributes).toMatchObject({ 'ozwell.instance_id': 'nope', 'ozwell.found': false });
     expect(spans[2].attributes).toMatchObject({ 'enduser.id': 'alice', 'ozwell.instance_id': 'ozc-1', 'ozwell.status': 'running' });
-    expect(spans[4].status.code).toBe(2); // ERROR
-    expect(spans[4].attributes['error.type']).toBe('Error');
+    expect(spans[3].attributes['enduser.id']).toBe('bob@example.com');
+    expect(spans[5].status.code).toBe(2); // ERROR
+    expect(spans[5].attributes['error.type']).toBe('Error');
 
-    expect(calls.map((c) => `${c.method}:${c.outcome}`)).toEqual(['list:ok', 'get:ok', 'create:ok', 'start:ok', 'destroy:error']);
+    expect(calls.map((c) => `${c.method}:${c.outcome}`)).toEqual(['list:ok', 'get:ok', 'create:ok', 'create:ok', 'start:ok', 'destroy:error']);
     expect(calls.every((c) => c.provider === 'fake' && c.seconds >= 0)).toBe(true);
   });
 });

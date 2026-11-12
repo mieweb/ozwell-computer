@@ -390,7 +390,9 @@ describe('logging', () => {
     try {
       await tool('erin', 'list_computers', { extra: 1 });
       const line = lines.find((x) => x.msg === 'tool call');
-      expect(line).toMatchObject({ component: 'mcp', tool: 'list_computers', user: 'erin', args: { extra: 1 } });
+      expect(line).toMatchObject({ component: 'mcp', tool: 'list_computers', user: 'erin', args: { extra: 1 } }); // no email: the id
+      await tool('erin', 'list_computers', {}, { 'x-ozwell-user-email': 'erin@example.com' });
+      expect(lines.filter((x) => x.msg === 'tool call').at(-1)).toMatchObject({ user: 'erin@example.com' });
     } finally {
       base = prev;
       await l.close();

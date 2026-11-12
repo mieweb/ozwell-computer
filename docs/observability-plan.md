@@ -42,7 +42,7 @@ The "Later" items are not.
 | Propagation | `traceparent` HTTP header plus `params._meta.traceparent`. |
 | Sampling | 100%, configurable. |
 | Tool argument capture | Full arguments. PHI handling and anonymization are a later layer. |
-| User identity | Raw user id. |
+| User identity | Email (`X-Ozwell-User-Email`, or the computer's stored owner email); the user id only when there is no email. Access is still enforced by user id. |
 | `/internal/*` security | A separate port and listener (`ORCHESTRATOR_INTERNAL_PORT`), not exposed publicly. Off loopback it requires a bearer token (`ORCHESTRATOR_INTERNAL_TOKEN`), which vmagent sends. |
 | Compose networks | `compose.yml` has only its default network, with no computers on it. `compose.docker.yml` puts docker:// computers on their own `ozwell-computers` network, shared only with the orchestrator. |
 | opensource-server pull path | Same path as MCP traffic: public HTTPS unless `internal=ip`. |
@@ -155,7 +155,7 @@ All scrape routes are served **only on the internal listener**.
 1. **Service discovery.** `GET /sd` returns Prometheus `http_sd` JSON built from
    `provider.list()`, cached for about 15 s. It returns one target per running instance,
    with labels:
-   - `instance_id`, `provider`, `user` (the raw user id)
+   - `instance_id`, `provider`, `user` (the owner's email)
    - `__metrics_path__=/instances/<id>/metrics`
    - `__address__=orchestrator:8091`
 2. **Scrape proxy.** `GET /instances/:id/metrics` fetches
@@ -274,7 +274,7 @@ All scrape routes are served **only on the internal listener**.
    ```
    Attributes:
    - `mcp.method.name`, `gen_ai.tool.name`, `mcp.session.id`
-   - `ozwell.instance_id`, `ozwell.provider`, `enduser.id` (raw)
+   - `ozwell.instance_id`, `ozwell.provider`, `enduser.id` (the user's email)
    - `ozwell.ready`, `error.type`
    - the full tool arguments as `ozwell.tool.arguments`, with large binary result
      payloads summarised by size
@@ -353,7 +353,7 @@ The instance gets no new runtime dependencies; it uses the existing `journalctl`
 
 - Restarting the orchestrator loses in-flight operation timings, and instance logs
   emitted while it was down are not backfilled.
-- Full arguments and raw user ids in logs and traces mean the observability stack holds
+- Full arguments and user emails in logs and traces mean the observability stack holds
   PHI. Access is limited to the Grafana admin on the same host until the anonymization
   layer lands.
 - Having no cardinality limit means a large fleet can grow VictoriaMetrics series
