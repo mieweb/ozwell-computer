@@ -89,6 +89,7 @@ describe('opensource-server provider', () => {
     os.containers.push({ id: 999, site: '1', hostname: 'someones-server', environmentVars: {} });
     expect((await p.list('u-1')).map((c) => c.owner)).toEqual(['u-1']);
     expect((await p.list('u-2')).length).toBe(1);
+    expect((await p.listAll()).map((c) => c.owner).sort()).toEqual(['u-1', 'u-2']);
     expect(await p.get('someones-server')).toBeNull();
     expect(await p.get('../../x')).toBeNull();
   });

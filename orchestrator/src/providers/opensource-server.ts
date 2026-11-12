@@ -123,8 +123,12 @@ export class OpensourceServerProvider implements Provider {
   }
 
   async list(owner: string): Promise<Computer[]> {
+    return (await this.listAll()).filter((c) => c.owner === owner);
+  }
+
+  async listAll(): Promise<Computer[]> {
     const { data } = await this.api<OsContainer[]>('GET', `/sites/${this.site}/containers?${ALL_OWNERS}`);
-    return (data ?? []).filter((c) => this.managed(c) && c.environmentVars?.[TAG.owner] === owner).map((c) => this.toComputer(c));
+    return (data ?? []).filter((c) => this.managed(c)).map((c) => this.toComputer(c));
   }
 
   async get(id: string): Promise<Computer | null> {

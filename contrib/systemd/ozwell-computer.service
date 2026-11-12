@@ -21,6 +21,10 @@ ExecStart=/usr/bin/node @PREFIX@/dist/cli.js
 Restart=always
 RestartSec=1
 NoNewPrivileges=yes
+# GET /api/v1/logs/entries runs journalctl: read the whole system journal. Processes the
+# server starts (run_command, the terminal) inherit this too; that is accepted
+# (docs/observability-plan.md, "Journal access").
+SupplementaryGroups=systemd-journal
 # Apps launched through the API run in this service's cgroup; restarting the
 # server (e.g. after an upgrade) must not close them.
 KillMode=process

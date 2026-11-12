@@ -1,0 +1,95 @@
+# The orchestrator with VictoriaMetrics, vmagent, VictoriaLogs, VictoriaTraces and Grafana.
+# Setup and rollout: README.md, "With Docker Compose".
+name: ozwell-orchestrator
+
+services:
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: orchestrator/Dockerfile
+    image: ozwell-computer-orchestrator:dev
+    # Rebuild on every `docker compose up`, so a `git pull` always takes effect.
+    pull_policy: build
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      ORCHESTRATOR_HOST: 0.0.0.0
+      ORCHESTRATOR_PORT: 8090
+      # Internal listener for vmagent; vmagent gets the same token.
+      ORCHESTRATOR_INTERNAL_HOST: 0.0.0.0
+      ORCHESTRATOR_INTERNAL_PORT: 8091
+      ORCHESTRATOR_INTERNAL_TOKEN: ${ORCHESTRATOR_INTERNAL_TOKEN:?set ORCHESTRATOR_INTERNAL_TOKEN in .env}
+      ORCHESTRATOR_SD_ADDRESS: orchestrator:8091
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://victoriatraces:10428/insert/opentelemetry/v1/traces
+      OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://victorialogs:9428/insert/opentelemetry/v1/logs
+      ORCHESTRATOR_LOG_SHIP_URL: http://victorialogs:9428/insert/journald
+    ports:
+      - "${ORCHESTRATOR_BIND:-127.0.0.1}:${ORCHESTRATOR_PUBLISH_PORT:-8090}:8090"
+
+  victoriametrics:
+    image: victoriametrics/victoria-metrics:v1.156.0
+    restart: unless-stopped
+    command: [-storageDataPath=/storage, -retentionPeriod=30d]
+    volumes: [vmdata:/storage]
+
+  vmagent:
+    image: victoriametrics/vmagent:v1.156.0
+    restart: unless-stopped
+    command:
+      - -promscrape.config=/etc/vmagent/scrape.yml
+      - -promscrape.httpSDCheckInterval=30s
+      - -remoteWrite.url=http://victoriametrics:8428/api/v1/write
+      - -remoteWrite.tmpDataPath=/tmp/vmagent
+    environment:
+      # scrape.yml reads it as %{ORCHESTRATOR_INTERNAL_TOKEN}.
+      ORCHESTRATOR_INTERNAL_TOKEN: ${ORCHESTRATOR_INTERNAL_TOKEN:?set ORCHESTRATOR_INTERNAL_TOKEN in .env}
+    volumes: [./deploy/vmagent/scrape.yml:/etc/vmagent/scrape.yml:ro]
+    depends_on: [victoriametrics]
+
+  victorialogs:
+    image: victoriametrics/victoria-logs:v1.53.0
+    restart: unless-stopped
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod=14d
+      # Instance journals: one stream per computer and unit.
+      - -journald.streamFields=OZWELL_INSTANCE_ID,_SYSTEMD_UNIT
+    volumes: [vldata:/storage]
+
+  victoriatraces:
+    image: victoriametrics/victoria-traces:v0.13.0
+    restart: unless-stopped
+    command: [-storageDataPath=/storage, -retentionPeriod=7d]
+    volumes: [vtdata:/storage]
+
+  grafana:
+    image: grafana/grafana:13.2.6
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:?set GF_SECURITY_ADMIN_PASSWORD in .env}
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_ORG_CREATE: "false"
+      GF_SERVER_ROOT_URL: ${GF_SERVER_ROOT_URL:-http://localhost:3000/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: ${GF_SERVER_SERVE_FROM_SUB_PATH:-false}
+      GF_PLUGINS_PREINSTALL: victoriametrics-logs-datasource
+      # Land on the Fleet dashboard after login (the others are linked from it).
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/fleet.json
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana:/var/lib/grafana
+    ports:
+      - "${GRAFANA_BIND:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"
+    depends_on: [victoriametrics, victorialogs, victoriatraces]
+
+volumes:
+  vmdata:
+  vldata:
+  vtdata:
+  grafana:

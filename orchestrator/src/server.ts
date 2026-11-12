@@ -3,6 +3,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { context, propagation, trace } from '@opentelemetry/api';
 import { buildMcpServer, type OrchestratorDeps } from './mcp.ts';
 import type { Requester } from './providers/types.ts';
 
@@ -35,6 +36,8 @@ export interface ServerOptions extends OrchestratorDeps {
 
 export async function buildServer(opts: ServerOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 32 * 1024 * 1024 });
+  // Tool-call logging goes to the app's logger unless the caller supplied one.
+  const deps: OrchestratorDeps = { ...opts, log: opts.log ?? app.log.child({ component: 'mcp' }) };
 
   app.get('/health', async (_req, reply) => reply.code(204).send());
 
@@ -54,7 +57,7 @@ export async function buildServer(opts: ServerOptions): Promise<FastifyInstance>
 
   const handle = async (req: FastifyRequest, reply: any) => {
     const user = requesterOf(req)!;
-    const server = buildMcpServer(opts, user);
+    const server = buildMcpServer(deps, user);
     // Stateless mode: no MCP session; each request stands alone. Responses are SSE, not
     // buffered JSON, so headers go out immediately: clients such as Ozwell abort if
     // headers take longer than 15 s, and tool calls (run_command, apps) often do.
@@ -62,13 +65,15 @@ export async function buildServer(opts: ServerOptions): Promise<FastifyInstance>
     reply.hijack();
     reply.raw.on('close', () => { void transport.close(); void server.close(); });
     await server.connect(transport);
-    await transport.handleRequest(req.raw, reply.raw, req.body);
+    // @fastify/otel (telemetry.ts) already continues an incoming traceparent; without it, do so here.
+    const ctx = trace.getActiveSpan() ? context.active() : propagation.extract(context.active(), req.headers);
+    await context.with(ctx, () => transport.handleRequest(req.raw, reply.raw, req.body));
   };
   app.post('/mcp', handle);
   // No server-initiated streams or sessions in stateless mode.
   app.get('/mcp', async (_req, reply) => reply.code(405).header('allow', 'POST').send());
   app.delete('/mcp', async (_req, reply) => reply.code(405).header('allow', 'POST').send());
 
-  app.addHook('onClose', async () => opts.client.close());
+  app.addHook('onClose', async () => { opts.client.close(); opts.operations?.stop(); });
   return app;
 }

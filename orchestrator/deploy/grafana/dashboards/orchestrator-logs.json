@@ -1,0 +1,80 @@
+{
+  "uid": "orchestrator-logs",
+  "title": "Orchestrator logs",
+  "description": "The orchestrator's own log records (OTLP), with trace ids.",
+  "editable": false,
+  "tags": [
+    "ozwell-computer"
+  ],
+  "schemaVersion": 41,
+  "version": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "search",
+        "label": "Search",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        }
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "logs",
+      "title": "Orchestrator",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "victorialogs"
+      },
+      "gridPos": {
+        "w": 24,
+        "h": 20,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "victorialogs"
+          },
+          "expr": "service.name:=\"ozwell-computer-orchestrator\" $search | sort by (_time desc)",
+          "queryType": "instant"
+        }
+      ],
+      "id": 1
+    }
+  ],
+  "links": [
+    {
+      "title": "ozwell-computer dashboards",
+      "type": "dashboards",
+      "tags": [
+        "ozwell-computer"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ]
+}

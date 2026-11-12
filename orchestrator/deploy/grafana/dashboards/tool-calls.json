@@ -1,0 +1,217 @@
+{
+  "uid": "tool-calls",
+  "title": "Tool calls",
+  "description": "RED metrics per MCP tool, as seen by the orchestrator.",
+  "editable": false,
+  "tags": [
+    "ozwell-computer"
+  ],
+  "schemaVersion": 41,
+  "version": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "tool",
+        "label": "Tool",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(ozwell_orchestrator_tool_calls_total, tool)",
+          "refId": "V"
+        },
+        "definition": "label_values(ozwell_orchestrator_tool_calls_total, tool)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {}
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Rate by tool",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (tool) (rate(ozwell_orchestrator_tool_calls_total{tool=~\"$tool\"}[$__rate_interval]))",
+          "legendFormat": "{{tool}}",
+          "exemplar": false
+        }
+      ],
+      "id": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "Error ratio by tool",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (tool) (rate(ozwell_orchestrator_tool_calls_total{tool=~\"$tool\", outcome=\"error\"}[$__rate_interval])) / sum by (tool) (rate(ozwell_orchestrator_tool_calls_total{tool=~\"$tool\"}[$__rate_interval]))",
+          "legendFormat": "{{tool}}",
+          "exemplar": false
+        }
+      ],
+      "id": 2
+    },
+    {
+      "type": "timeseries",
+      "title": "Duration p50 by tool",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 0,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, tool) (rate(ozwell_orchestrator_tool_call_duration_seconds_bucket{tool=~\"$tool\"}[$__rate_interval])))",
+          "legendFormat": "{{tool}}",
+          "exemplar": false
+        }
+      ],
+      "id": 3
+    },
+    {
+      "type": "timeseries",
+      "title": "Duration p95 by tool",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 12,
+        "y": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, tool) (rate(ozwell_orchestrator_tool_call_duration_seconds_bucket{tool=~\"$tool\"}[$__rate_interval])))",
+          "legendFormat": "{{tool}}",
+          "exemplar": false
+        }
+      ],
+      "id": 4
+    },
+    {
+      "type": "table",
+      "title": "Recent tool-call traces",
+      "datasource": {
+        "type": "jaeger",
+        "uid": "victoriatraces"
+      },
+      "gridPos": {
+        "w": 24,
+        "h": 10,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "jaeger",
+            "uid": "victoriatraces"
+          },
+          "queryType": "search",
+          "service": "ozwell-computer-orchestrator",
+          "operation": "/mcp\\.tools\\/call.*/",
+          "limit": 20
+        }
+      ],
+      "id": 5
+    }
+  ],
+  "links": [
+    {
+      "title": "ozwell-computer dashboards",
+      "type": "dashboards",
+      "tags": [
+        "ozwell-computer"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ]
+}

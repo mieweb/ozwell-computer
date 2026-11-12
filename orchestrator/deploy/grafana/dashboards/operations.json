@@ -1,0 +1,493 @@
+{
+  "uid": "operations",
+  "title": "Operations",
+  "description": "Provider operations end to end (create/start to /health 204, destroy to gone), with phases.",
+  "editable": false,
+  "tags": [
+    "ozwell-computer"
+  ],
+  "schemaVersion": 41,
+  "version": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "provider",
+        "label": "Provider",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(ozwell_orchestrator_operations_total, provider)",
+          "refId": "V"
+        },
+        "definition": "label_values(ozwell_orchestrator_operations_total, provider)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {}
+      },
+      {
+        "name": "operation",
+        "label": "Operation",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(ozwell_orchestrator_operations_total, operation)",
+          "refId": "V"
+        },
+        "definition": "label_values(ozwell_orchestrator_operations_total, operation)",
+        "refresh": 2,
+        "includeAll": true,
+        "multi": true,
+        "allValue": ".*",
+        "current": {}
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "In flight",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 6,
+        "h": 4,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(ozwell_orchestrator_operations_in_flight{provider=~\"$provider\", operation=~\"$operation\"})",
+          "instant": true
+        }
+      ],
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "Failure rate (1h)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 6,
+        "h": 4,
+        "x": 6,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(increase(ozwell_orchestrator_operations_total{provider=~\"$provider\", operation=~\"$operation\", outcome!=\"ok\"}[1h])) / clamp_min(sum(increase(ozwell_orchestrator_operations_total{provider=~\"$provider\", operation=~\"$operation\"}[1h])), 1)",
+          "instant": true
+        }
+      ],
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "Creates ready, p95 (1h)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 6,
+        "h": 4,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=\"create\", outcome=\"ok\"}[1h])))",
+          "instant": true
+        }
+      ],
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "Timeouts (24h)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 6,
+        "h": 4,
+        "x": 18,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum(increase(ozwell_orchestrator_operations_total{provider=~\"$provider\", operation=~\"$operation\", outcome=\"timeout\"}[24h]))",
+          "instant": true
+        }
+      ],
+      "id": 4
+    },
+    {
+      "type": "timeseries",
+      "title": "Duration p50",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 8,
+        "h": 8,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le, provider, operation) (rate(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=~\"$operation\", outcome=\"ok\"}[$__rate_interval])))",
+          "legendFormat": "{{provider}} {{operation}}",
+          "exemplar": false
+        }
+      ],
+      "id": 5
+    },
+    {
+      "type": "timeseries",
+      "title": "Duration p95",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 8,
+        "h": 8,
+        "x": 8,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, provider, operation) (rate(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=~\"$operation\", outcome=\"ok\"}[$__rate_interval])))",
+          "legendFormat": "{{provider}} {{operation}}",
+          "exemplar": false
+        }
+      ],
+      "id": 6
+    },
+    {
+      "type": "timeseries",
+      "title": "Duration p99",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 8,
+        "h": 8,
+        "x": 16,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.99, sum by (le, provider, operation) (rate(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=~\"$operation\", outcome=\"ok\"}[$__rate_interval])))",
+          "legendFormat": "{{provider}} {{operation}}",
+          "exemplar": false
+        }
+      ],
+      "id": 7
+    },
+    {
+      "type": "timeseries",
+      "title": "Phase breakdown (mean)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 0,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (operation, phase) (rate(ozwell_orchestrator_operation_phase_seconds_sum{provider=~\"$provider\", operation=~\"$operation\"}[$__rate_interval])) / sum by (operation, phase) (rate(ozwell_orchestrator_operation_phase_seconds_count{provider=~\"$provider\", operation=~\"$operation\"}[$__rate_interval]))",
+          "legendFormat": "{{operation}} {{phase}}",
+          "exemplar": false
+        }
+      ],
+      "id": 8
+    },
+    {
+      "type": "timeseries",
+      "title": "Operations by outcome",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 12,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (operation, outcome) (rate(ozwell_orchestrator_operations_total{provider=~\"$provider\", operation=~\"$operation\"}[$__rate_interval]))",
+          "legendFormat": "{{operation}} {{outcome}}",
+          "exemplar": false
+        }
+      ],
+      "id": 9
+    },
+    {
+      "type": "timeseries",
+      "title": "Time to ready: observed by clients vs actual (p50/p95)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 24,
+        "h": 8,
+        "x": 0,
+        "y": 20
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(ozwell_orchestrator_time_to_ready_observed_seconds_bucket{provider=~\"$provider\"}[$__rate_interval])))",
+          "legendFormat": "observed p50",
+          "exemplar": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(ozwell_orchestrator_time_to_ready_observed_seconds_bucket{provider=~\"$provider\"}[$__rate_interval])))",
+          "legendFormat": "observed p95",
+          "exemplar": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (rate(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=\"create\", outcome=\"ok\"}[$__rate_interval])))",
+          "legendFormat": "actual p50",
+          "exemplar": false
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=\"create\", outcome=\"ok\"}[$__rate_interval])))",
+          "legendFormat": "actual p95",
+          "exemplar": false
+        }
+      ],
+      "id": 10
+    },
+    {
+      "type": "timeseries",
+      "title": "Provider API calls p95",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 24,
+        "h": 8,
+        "x": 0,
+        "y": 28
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, method) (rate(ozwell_orchestrator_provider_call_duration_seconds_bucket{provider=~\"$provider\"}[$__rate_interval])))",
+          "legendFormat": "{{method}}",
+          "exemplar": false
+        }
+      ],
+      "id": 11
+    },
+    {
+      "type": "table",
+      "title": "Recent operation traces",
+      "datasource": {
+        "type": "jaeger",
+        "uid": "victoriatraces"
+      },
+      "gridPos": {
+        "w": 24,
+        "h": 10,
+        "x": 0,
+        "y": 36
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "jaeger",
+            "uid": "victoriatraces"
+          },
+          "queryType": "search",
+          "service": "ozwell-computer-orchestrator",
+          "operation": "/operation\\..*/",
+          "limit": 20
+        }
+      ],
+      "id": 12
+    }
+  ],
+  "links": [
+    {
+      "title": "ozwell-computer dashboards",
+      "type": "dashboards",
+      "tags": [
+        "ozwell-computer"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ]
+}

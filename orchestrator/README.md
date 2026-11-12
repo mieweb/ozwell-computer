@@ -202,14 +202,42 @@ the environment take precedence.
 | `ORCHESTRATOR_MAX_INSTANCES` | unlimited | computers each user may have |
 | `COMPUTER_FRAME_ANCESTORS` | none | origins (e.g. `https://app.ozwell.ai`) allowed to embed the viewer in an iframe; passed to computers when they are created as `OZWELL_COMPUTER_FRAME_ANCESTORS`, so existing computers keep their value |
 | `LOG_LEVEL` | `info` | |
+| `ORCHESTRATOR_INTERNAL_HOST` / `ORCHESTRATOR_INTERNAL_PORT` | `127.0.0.1` / off | internal listener for vmagent: `/metrics`, `/sd`, `/instances/:id/metrics`. Never public |
+| `ORCHESTRATOR_INTERNAL_TOKEN` | none | bearer token the internal listener requires; required unless it's on loopback |
+| `ORCHESTRATOR_SD_ADDRESS` | the internal host:port | address vmagent uses to reach the internal listener |
+| `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | off | OTLP (HTTP, protobuf) export of traces and the orchestrator's logs |
+| `ORCHESTRATOR_LOG_SHIP_URL` | off | VictoriaLogs `…/insert/journald`: pull every computer's journal there |
+| `ORCHESTRATOR_LOG_POLL_MS` / `ORCHESTRATOR_OP_TIMEOUT_MS` | `5000` / `600000` | log pull interval; operation timing timeout |
 
 Configure Ozwell's workspace MCP server as `http(s)://<orchestrator>/mcp` (Streamable
 HTTP) with the header `Authorization: Bearer <psk>`. Put TLS in front of it.
 
+### With Docker Compose (orchestrator + metrics, logs, traces, Grafana)
+
+Rollout on the orchestrator host:
+
+1. `cd orchestrator && sudo install -m 600 -o $USER /etc/default/ozwell-computer-orchestrator .env`
+   (or `cp .env.example .env` on a new host).
+2. Add to `.env` (generate each with `openssl rand -base64 32`):
+   `ORCHESTRATOR_INTERNAL_TOKEN=…` and `GF_SECURITY_ADMIN_PASSWORD=…`.
+3. `sudo systemctl disable --now ozwell-computer-orchestrator`
+4. `docker compose up -d --build`, then `deploy/smoke.sh`.
+5. Reverse proxy: the orchestrator is on `127.0.0.1:8090` (`ORCHESTRATOR_PUBLISH_PORT`). Add Grafana at
+   `127.0.0.1:3000` and set `GF_SERVER_ROOT_URL` in `.env` to its public URL.
+
+Rollback: `docker compose down && sudo systemctl enable --now ozwell-computer-orchestrator`.
+
+Computers need no change: they get the logs route from the next release. Until then
+their metrics are scraped but their logs aren't collected.
+
+docker:// provider: also set `DOCKER_GID` (`stat -c %g /var/run/docker.sock`) and add
+`-f compose.yml -f compose.docker.yml` to the `docker compose` and `deploy/smoke.sh`
+commands.
+
 ## Providers
 
 `PROVIDER_URI`'s scheme selects a provider (`src/providers/index.ts`). The rest of the
-URI, and the environment, are passed to it. A provider implements `list(owner)`,
+URI, and the environment, are passed to it. A provider implements `list(owner)`, `listAll()`,
 `get(id)`, `create({ owner, displayName })`, `start(id)` and `destroy(id)`. Each computer reports:
 - `id`: provider-generated and DNS-compatible;
 - `owner` and metadata;

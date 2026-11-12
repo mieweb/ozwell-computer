@@ -1,0 +1,14 @@
+# Optional: the docker:// provider. Computers get their own network, shared only with
+# the orchestrator, so they can't reach the observability services.
+services:
+  orchestrator:
+    environment:
+      PROVIDER_URI: docker:///var/run/docker.sock?network=ozwell-computers
+    group_add: ["${DOCKER_GID:?set DOCKER_GID in .env}"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [default, computers]
+
+networks:
+  computers:
+    name: ozwell-computers

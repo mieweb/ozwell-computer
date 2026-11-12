@@ -9,11 +9,30 @@
 //   ORCHESTRATOR_MAX_INSTANCES  computers each user may have (default unlimited)
 //   COMPUTER_FRAME_ANCESTORS  origins allowed to embed new computers' viewers in an iframe
 //                        (passed to them as OZWELL_COMPUTER_FRAME_ANCESTORS)
+//   OTEL_EXPORTER_OTLP_TRACES_ENDPOINT / OTEL_EXPORTER_OTLP_LOGS_ENDPOINT  optional OTLP
+//                        export (see src/telemetry.ts, preloaded by `npm start`)
+//   ORCHESTRATOR_INTERNAL_HOST / ORCHESTRATOR_INTERNAL_PORT  internal listener for vmagent
+//                        (/metrics, /sd, /instances/:id/metrics); unset port disables it.
+//                        Unauthenticated: never public.
+//   ORCHESTRATOR_INTERNAL_TOKEN  bearer token the internal listener requires (vmagent sends
+//                        it); required unless the internal listener is on loopback
+//   ORCHESTRATOR_SD_ADDRESS  host:port vmagent reaches the internal listener at, put in /sd
+//                        targets (default the internal host:port; compose: orchestrator:8091)
+//   ORCHESTRATOR_LOG_SHIP_URL  VictoriaLogs journald ingest (…/insert/journald): pull every
+//                        running computer's journal there. Unset disables the puller.
+//   ORCHESTRATOR_LOG_POLL_MS  between pulls of one computer (default 5000)
+//   ORCHESTRATOR_OP_TIMEOUT_MS  give up timing a create/start/destroy after this (default 600000)
 import { readFileSync } from 'node:fs';
 import { providerFromUri } from './providers/index.ts';
 import { InstanceClient } from './instance-client.ts';
-import { loadCatalog } from './mcp.ts';
+import { isReady, loadCatalog } from './mcp.ts';
 import { buildServer } from './server.ts';
+import { instrumentProvider } from './instrument-provider.ts';
+import { shutdownTelemetry } from './telemetry.ts';
+import { Metrics } from './metrics.ts';
+import { buildInternalServer } from './internal-server.ts';
+import { OperationTracker } from './operations.ts';
+import { LogPuller } from './log-puller.ts';
 
 const env = process.env;
 const die = (m: string) => { process.stderr.write(`ozwell-computer-orchestrator: ${m}\n`); process.exit(2); };
@@ -25,15 +44,52 @@ const version: string = JSON.parse(readFileSync(new URL('../package.json', impor
 const rawMax = env.ORCHESTRATOR_MAX_INSTANCES;
 if (rawMax !== undefined && !/^\d+$/.test(rawMax)) die('ORCHESTRATOR_MAX_INSTANCES must be a non-negative integer');
 const maxInstances = rawMax === undefined ? undefined : Number(rawMax);
+const rawInternal = env.ORCHESTRATOR_INTERNAL_PORT;
+if (rawInternal && !/^\d+$/.test(rawInternal)) die('ORCHESTRATOR_INTERNAL_PORT must be a port number');
+const internalHost = env.ORCHESTRATOR_INTERNAL_HOST || '127.0.0.1';
+const internalToken = env.ORCHESTRATOR_INTERNAL_TOKEN || undefined;
+// It serves every computer's metrics (each user's): never unauthenticated off loopback.
+if (rawInternal && !internalToken && !['127.0.0.1', '::1', 'localhost'].includes(internalHost)) {
+  die(`ORCHESTRATOR_INTERNAL_TOKEN is required when the internal listener is on ${internalHost}`);
+}
+const rawOpTimeout = env.ORCHESTRATOR_OP_TIMEOUT_MS;
+if (rawOpTimeout && !/^\d+$/.test(rawOpTimeout)) die('ORCHESTRATOR_OP_TIMEOUT_MS must be a number of milliseconds');
+const rawLogPoll = env.ORCHESTRATOR_LOG_POLL_MS;
+if (rawLogPoll && !/^\d+$/.test(rawLogPoll)) die('ORCHESTRATOR_LOG_POLL_MS must be a number of milliseconds');
+const logger = { level: env.LOG_LEVEL || 'info', redact: ['req.headers.authorization'] };
+const metrics = new Metrics();
 
-const provider = await providerFromUri(uri as string, env);
+const provider = instrumentProvider(await providerFromUri(uri as string, env), metrics.onProviderCall);
+// Operation timing only when something can see it (metrics on the internal listener, or
+// traces): otherwise its readiness watcher would add provider lookups and /health probes.
+const observed = Boolean(rawInternal || env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT);
+const operations = observed
+  ? new OperationTracker({
+    provider: provider.scheme, metrics, probe: (id) => isReady(provider, id),
+    timeoutMs: rawOpTimeout ? Number(rawOpTimeout) : undefined,
+  })
+  : undefined;
+operations?.start();
 const catalog = loadCatalog(env.TOOL_CATALOG || new URL('../../docs/mcp-tools.json', import.meta.url));
 const app = await buildServer({
-  provider, catalog, client: new InstanceClient(), version, psk: psk as string | null, maxInstances,
-  logger: { level: env.LOG_LEVEL || 'info', redact: ['req.headers.authorization'] },
+  provider, catalog, client: new InstanceClient(), version, psk: psk as string | null, maxInstances, metrics, operations, logger,
 });
 app.log.info({ provider: provider.scheme, tools: catalog.length, maxInstances: maxInstances ?? 'unlimited' }, 'orchestrator configured');
 if (authDisabled) app.log.warn('AUTHENTICATION IS DISABLED: any caller can act as any X-Ozwell-User-Id');
 await app.listen({ host: env.ORCHESTRATOR_HOST || '127.0.0.1', port: Number(env.ORCHESTRATOR_PORT || 8090) });
+const sdHost = ['0.0.0.0', '::'].includes(internalHost) ? '127.0.0.1' : internalHost;
+const sdAddress = env.ORCHESTRATOR_SD_ADDRESS || `${sdHost.includes(':') ? `[${sdHost}]` : sdHost}:${rawInternal}`;
+const internal = rawInternal ? await buildInternalServer({ metrics, provider, sdAddress, token: internalToken, logger: { ...logger, level: env.LOG_LEVEL || 'warn' } }) : null;
+await internal?.listen({ host: internalHost, port: Number(rawInternal) });
 
-for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { void app.close().then(() => process.exit(0)); });
+const logPuller = env.ORCHESTRATOR_LOG_SHIP_URL
+  ? new LogPuller({
+    provider, shipUrl: env.ORCHESTRATOR_LOG_SHIP_URL, metrics, log: app.log.child({ component: 'log-puller' }),
+    pollMs: rawLogPoll ? Number(rawLogPoll) : undefined,
+  })
+  : null;
+logPuller?.start();
+if (logPuller) app.log.info({ shipUrl: env.ORCHESTRATOR_LOG_SHIP_URL }, 'pulling instance logs');
+
+const stop = () => Promise.all([app.close(), internal?.close(), logPuller?.stop()]).then(shutdownTelemetry).then(() => process.exit(0));
+for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { void stop(); });

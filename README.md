@@ -307,6 +307,10 @@ are in `contrib/`.
 - **Toolbar metrics:** the viewer polls `/api/v1/metrics` (Prometheus text format)
   every 5 s and shows container CPU, memory (against the limit, if any) and VNC
   throughput.
+- **Logs:** `GET /api/v1/logs/entries` serves the journal with
+  [`systemd-journal-gatewayd`](https://www.freedesktop.org/software/systemd/man/latest/systemd-journal-gatewayd.service.html)'s
+  `/entries` API (a subset, via `journalctl`). The orchestrator collects it. Log lines
+  carry `trace_id` from an incoming `traceparent`.
 
 ## Run without Docker
 

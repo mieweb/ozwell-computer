@@ -3,7 +3,16 @@
 // Plain JSON-RPC over fetch: no background SSE stream (the SDK client's stream abort
 // surfaces as an unhandled error). Sessions are cached per instance+user as an
 // optimisation only; a lost session (instance restarted) is simply re-initialised.
+import { context, propagation } from '@opentelemetry/api';
+
 const PROTOCOL = '2025-06-18';
+
+/** W3C trace context of the active span (`traceparent`, maybe `tracestate`); empty when untraced. */
+export function traceCarrier(): Record<string, string> {
+  const carrier: Record<string, string> = {};
+  propagation.inject(context.active(), carrier);
+  return carrier;
+}
 const IDLE_MS = 5 * 60_000;
 // Longer than any tool's own limit (run_command allows timeout_ms up to 10 min).
 const CALL_TIMEOUT_MS = 11 * 60_000;
@@ -40,6 +49,7 @@ export class InstanceClient {
     const headers: Record<string, string> = {
       authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream',
       ...(session ? { 'mcp-session-id': session.id, 'mcp-protocol-version': session.protocol } : {}),
+      ...traceCarrier(),
     };
     let res: Response;
     try {
@@ -86,7 +96,11 @@ export class InstanceClient {
         this.sessions.set(key, s);
       }
       s.lastUsed = Date.now();
-      const r = await this.post(url, token, { jsonrpc: '2.0', id: ++this.seq, method: 'tools/call', params: { name, arguments: args } }, s);
+      // Also in _meta: the instance can correlate even if a proxy drops the header.
+      const { traceparent, tracestate } = traceCarrier();
+      const _meta = traceparent ? { traceparent, ...(tracestate ? { tracestate } : {}) } : undefined;
+      const params = { name, arguments: args, ...(_meta ? { _meta } : {}) };
+      const r = await this.post(url, token, { jsonrpc: '2.0', id: ++this.seq, method: 'tools/call', params }, s);
       if (r.res.status === 404 || r.res.status === 400) { this.sessions.delete(key); continue; } // session gone: re-init once
       if (!r.res.ok) throw new InstanceError('target_unavailable', `tool call failed (HTTP ${r.res.status})`);
       if (r.msg?.error) throw new InstanceError('internal', r.msg.error.message ?? 'tool call failed');

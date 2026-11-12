@@ -1,0 +1,28 @@
+# vmagent: everything is pulled (docs/observability-plan.md, workstream 2).
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  # The orchestrator's own metrics (internal listener).
+  # The internal listener requires ORCHESTRATOR_INTERNAL_TOKEN (vmagent's environment).
+  - job_name: orchestrator
+    authorization:
+      credentials: "%{ORCHESTRATOR_INTERNAL_TOKEN}"
+    static_configs:
+      - targets: [orchestrator:8091]
+
+  # Every running computer, discovered from the orchestrator's /sd. Each target points at
+  # the orchestrator's scrape proxy (/instances/<id>/metrics), which adds the instance
+  # token. Labels: instance_id, provider, user. No sample_limit for now (by decision).
+  - job_name: computers
+    authorization:
+      credentials: "%{ORCHESTRATOR_INTERNAL_TOKEN}"
+    http_sd_configs:
+      - url: http://orchestrator:8091/sd
+        authorization:
+          credentials: "%{ORCHESTRATOR_INTERNAL_TOKEN}"
+    relabel_configs:
+      # One series per computer, named by its id rather than the shared proxy address.
+      - source_labels: [instance_id]
+        target_label: instance

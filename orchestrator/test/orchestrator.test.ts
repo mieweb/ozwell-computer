@@ -47,6 +47,7 @@ function memoryProvider(url: string, token: string): Provider & { all: Map<strin
     scheme: 'memory',
     all,
     async list(owner) { return [...all.values()].filter((c) => c.owner === owner); },
+    async listAll() { return [...all.values()]; },
     async get(id) { return all.get(id) ?? null; },
     async create({ owner, displayName }) {
       const c: Computer = { id: generateId(), owner: owner.id, ownerName: owner.name, displayName, status: 'running', stopped: false, internalUrl: url, externalUrl: 'https://view.example', token };
@@ -372,5 +373,29 @@ describe('providers', () => {
     await docker.close();
     expect(created[0].Env).toContain('OZWELL_COMPUTER_FRAME_ANCESTORS=https://app.ozwell.ai');
     expect(created[0].Env).toContain(`OZWELL_COMPUTER_TOKEN=${c.token}`);
+  });
+});
+
+describe('logging', () => {
+  it('logs tool calls with full arguments through the app logger by default', async () => {
+    const lines: any[] = [];
+    const stream = { write: (s: string) => { lines.push(JSON.parse(s)); } };
+    const l = await buildServer({
+      provider: memoryProvider(instance.url, 'inst-token'), catalog, client: new InstanceClient(), version: 't', psk: PSK,
+      readyTimeoutMs: 5000, logger: { level: 'info', stream },
+    });
+    await l.listen({ port: 0, host: '127.0.0.1' });
+    const prev = base;
+    base = `http://127.0.0.1:${(l.server.address() as any).port}`;
+    try {
+      await tool('erin', 'list_computers', { extra: 1 });
+      const line = lines.find((x) => x.msg === 'tool call');
+      expect(line).toMatchObject({ component: 'mcp', tool: 'list_computers', user: 'erin', args: { extra: 1 } }); // no email: the id
+      await tool('erin', 'list_computers', {}, { 'x-ozwell-user-email': 'erin@example.com' });
+      expect(lines.filter((x) => x.msg === 'tool call').at(-1)).toMatchObject({ user: 'erin@example.com' });
+    } finally {
+      base = prev;
+      await l.close();
+    }
   });
 });

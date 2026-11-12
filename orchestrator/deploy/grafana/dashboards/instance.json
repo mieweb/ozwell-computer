@@ -1,0 +1,376 @@
+{
+  "uid": "instance",
+  "title": "Instance drill-down",
+  "description": "One computer: metrics and its journal. Unit defaults to ozwell-computer.service.",
+  "editable": false,
+  "tags": [
+    "ozwell-computer"
+  ],
+  "schemaVersion": 41,
+  "version": 1,
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "timezone": "browser",
+  "templating": {
+    "list": [
+      {
+        "name": "instance_id",
+        "label": "Computer",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "victoriametrics"
+        },
+        "query": {
+          "query": "label_values(up{job=\"computers\"}, instance_id)",
+          "refId": "V"
+        },
+        "definition": "label_values(up{job=\"computers\"}, instance_id)",
+        "refresh": 2,
+        "includeAll": false,
+        "multi": false,
+        "allValue": ".*",
+        "current": {}
+      },
+      {
+        "name": "unit",
+        "label": "Unit",
+        "type": "custom",
+        "query": "ozwell-computer.service : ozwell-computer\\\\.service,ozwell-computer-desktop.service : ozwell-computer-desktop\\\\.service,all units : .*",
+        "current": {
+          "text": "ozwell-computer.service",
+          "value": "ozwell-computer\\\\.service"
+        },
+        "options": [
+          {
+            "text": "ozwell-computer.service",
+            "value": "ozwell-computer\\\\.service",
+            "selected": true
+          },
+          {
+            "text": "ozwell-computer-desktop.service",
+            "value": "ozwell-computer-desktop\\\\.service",
+            "selected": false
+          },
+          {
+            "text": "all units",
+            "value": ".*",
+            "selected": false
+          }
+        ]
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Scrape up",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 6,
+        "h": 4,
+        "x": 0,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "max(up{job=\"computers\", instance_id=\"$instance_id\"})",
+          "instant": true
+        }
+      ],
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "X connected",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 6,
+        "h": 4,
+        "x": 6,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "max(ozwell_x_connected{instance_id=\"$instance_id\"})",
+          "instant": true
+        }
+      ],
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "Memory",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 6,
+        "h": 4,
+        "x": 12,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "max(ozwell_cgroup_memory_bytes{scope=\"container\", instance_id=\"$instance_id\"})",
+          "instant": true
+        }
+      ],
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "Memory limit",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 6,
+        "h": 4,
+        "x": 18,
+        "y": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "max(ozwell_cgroup_memory_limit_bytes{instance_id=\"$instance_id\"})",
+          "instant": true
+        }
+      ],
+      "id": 4
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU (cores)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 0,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "rate(ozwell_cgroup_cpu_seconds_total{instance_id=\"$instance_id\"}[$__rate_interval])",
+          "legendFormat": "cpu",
+          "exemplar": false
+        }
+      ],
+      "id": 5
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory by command (PSS)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 12,
+        "y": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "topk(8, ozwell_process_pss_bytes{instance_id=\"$instance_id\"})",
+          "legendFormat": "{{command}}",
+          "exemplar": false
+        }
+      ],
+      "id": 6
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP p95 by route",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 0,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le, route) (rate(ozwell_http_request_duration_seconds_bucket{instance_id=\"$instance_id\"}[$__rate_interval])))",
+          "legendFormat": "{{route}}",
+          "exemplar": false
+        }
+      ],
+      "id": 7
+    },
+    {
+      "type": "timeseries",
+      "title": "MCP tool calls",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 12,
+        "y": 12
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "sum by (tool, outcome) (rate(ozwell_mcp_tool_calls_total{instance_id=\"$instance_id\"}[$__rate_interval]))",
+          "legendFormat": "{{tool}} {{outcome}}",
+          "exemplar": false
+        }
+      ],
+      "id": 8
+    },
+    {
+      "type": "logs",
+      "title": "Journal",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "victorialogs"
+      },
+      "gridPos": {
+        "w": 24,
+        "h": 14,
+        "x": 0,
+        "y": 20
+      },
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "victorialogs"
+          },
+          "expr": "OZWELL_INSTANCE_ID:=\"$instance_id\" _SYSTEMD_UNIT:~\"^($unit)$\" | sort by (_time desc)",
+          "queryType": "instant"
+        }
+      ],
+      "id": 9
+    }
+  ],
+  "links": [
+    {
+      "title": "ozwell-computer dashboards",
+      "type": "dashboards",
+      "tags": [
+        "ozwell-computer"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true
+    }
+  ]
+}
