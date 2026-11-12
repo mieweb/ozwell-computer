@@ -27,6 +27,7 @@ const DEAD = ['failed', 'missing', 'dead'];
 const RUNNING = ['running', 'online'];
 const tracer = trace.getTracer('ozwell-computer-orchestrator');
 const PROBE_TIMEOUT_MS = 30_000;
+class TimeoutError extends Error {}
 
 export class Operation {
   id: string | undefined;
@@ -122,6 +123,8 @@ export interface OperationTrackerOptions {
   timeoutMs?: number;
   /** Probes run at once (default 8). */
   concurrency?: number;
+  /** Stop waiting for one probe after this long (default 30 s); it keeps its slot until it settles. */
+  probeTimeoutMs?: number;
   /** Clock, in epoch ms (tests). */
   now?: () => number;
 }
@@ -139,7 +142,7 @@ export class OperationTracker {
   constructor(opts: OperationTrackerOptions) {
     this.metrics = opts.metrics;
     this.now = opts.now ?? Date.now;
-    this.opts = { provider: opts.provider, probe: opts.probe, pollMs: opts.pollMs ?? 1500, timeoutMs: opts.timeoutMs ?? 600_000, concurrency: opts.concurrency ?? 8 };
+    this.opts = { provider: opts.provider, probe: opts.probe, pollMs: opts.pollMs ?? 1500, timeoutMs: opts.timeoutMs ?? 600_000, concurrency: opts.concurrency ?? 8, probeTimeoutMs: opts.probeTimeoutMs ?? PROBE_TIMEOUT_MS };
   }
 
   /** Start the background watcher. */
@@ -204,6 +207,8 @@ export class OperationTracker {
   }
 
   private pass: Promise<void> | undefined;
+  /** Provider probes not yet settled, including ones a pass stopped waiting for. */
+  private outstanding = 0;
 
   /** One watcher pass: probe every in-flight create/start/destroy (capped concurrency). A pass
    * still running is shared, so slow probes never overlap and the cap holds across ticks. */
@@ -227,23 +232,33 @@ export class OperationTracker {
     const now = this.now();
     // Probed only once the provider call returned (enqueue is timed by the call itself).
     const queue = [...this.byId.values()].filter((op) => !op.done && !op.polling && op.phase !== 'enqueue');
+    // A probe that timed out keeps its slot (and its operation stays `polling`) until the
+    // provider request actually settles: abandoned requests can't pile up past the cap.
     const worker = async () => {
       for (let op = queue.shift(); op; op = queue.shift()) {
-        op.polling = true;
+        const target = op;
+        target.polling = true;
+        this.outstanding++;
+        const probe = this.opts.probe(target.id!);
+        void probe.catch(() => undefined).finally(() => { this.outstanding--; target.polling = false; });
+        let timer: NodeJS.Timeout | undefined;
         try {
-          // Bounded, so a hung provider call can't hold this worker (and the pass) forever.
-          let timer: NodeJS.Timeout | undefined;
           const { c, ready } = await Promise.race([
-            this.opts.probe(op.id!),
-            new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('probe timed out')), PROBE_TIMEOUT_MS); }),
-          ]).finally(() => clearTimeout(timer));
-          op.progress(c, ready);
-        } catch { /* transient: try again next pass */ } finally {
-          op.polling = false;
+            probe,
+            new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new TimeoutError()), this.opts.probeTimeoutMs); }),
+          ]);
+          target.progress(c, ready);
+        } catch (e) {
+          // Timed out: this worker's slot is still taken, so it stops for this pass.
+          if (e instanceof TimeoutError) return;
+          /* transient provider error: try again next pass */
+        } finally {
+          clearTimeout(timer);
         }
       }
     };
-    await Promise.all(Array.from({ length: Math.min(this.opts.concurrency, queue.length) }, worker));
+    const slots = Math.max(0, this.opts.concurrency - this.outstanding);
+    await Promise.all(Array.from({ length: Math.min(slots, queue.length) }, worker));
     // Forget observed-time-to-ready starts nobody ever polled to ready.
     for (const [id, t0] of this.createdAt) if (now - t0 > this.opts.timeoutMs * 2) this.createdAt.delete(id);
   }

@@ -141,6 +141,24 @@ describe('OperationTracker', () => {
     expect(a.outcome).toBe('timeout');
   });
 
+  it('keeps a timed-out probe\'s slot until the provider request settles', async () => {
+    const pending = new Map<string, () => void>();
+    const probed: string[] = [];
+    const tracker = new OperationTracker({
+      provider: 'fake', concurrency: 1, probeTimeoutMs: 20,
+      probe: (id) => { probed.push(id); return new Promise((r) => pending.set(id, () => r({ c: comp({ id }), ready: false }))); },
+    });
+    tracker.begin('start', 'ozc-1').enqueued(comp({ stopped: true }));
+    tracker.begin('start', 'ozc-2').enqueued(comp({ id: 'ozc-2', stopped: true }));
+    await tracker.pollOnce(); // ozc-1's probe times out; its request is still running
+    await tracker.pollOnce();
+    expect(probed).toEqual(['ozc-1']); // the cap of 1 holds
+    pending.get('ozc-1')!();
+    await new Promise((r) => setTimeout(r, 0));
+    await tracker.pollOnce();
+    expect(probed).toEqual(['ozc-1', 'ozc-1']); // the slot is free again
+  });
+
   it('shares a running watcher pass, so slow probes never overlap', async () => {
     let probes = 0, release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
