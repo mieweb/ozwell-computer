@@ -107,6 +107,16 @@ describe('OperationTracker', () => {
     expect(await counter(metrics, { operation: 'get', outcome: 'ok' })).toBe(1);
   });
 
+  it('a start during a create joins it instead of failing it', async () => {
+    const { metrics, tracker } = setup(() => ({ c: comp(), ready: false }));
+    const create = tracker.begin('create');
+    create.enqueued(comp({ status: 'creating' }));
+    expect(tracker.begin('start', 'ozc-1')).toBe(create);
+    create.progress(comp(), true);
+    expect(create.outcome).toBe('ok');
+    expect(await counter(metrics, { operation: 'create', outcome: 'error' })).toBe(0);
+  });
+
   it('does not reset a joined start when its repeated provider call returns', async () => {
     const { metrics, tracker, at } = setup(() => ({ c: comp(), ready: false }));
     const op = tracker.begin('start', 'ozc-1');

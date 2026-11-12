@@ -399,3 +399,70 @@ describe('logging', () => {
     }
   });
 });
+
+describe('computers that report stopped while they are created (opensource-server)', () => {
+  /** creating → offline (stopped) → running, one step per provider read after `offlineReads`. */
+  function provisioningProvider(url: string, offlineReads: number) {
+    const all = new Map<string, Computer>();
+    const reads = new Map<string, number>();
+    let starts = 0;
+    const p: Provider & { starts: () => number; add: (c: Computer) => void } = {
+      scheme: 'memory',
+      starts: () => starts,
+      add: (c) => { all.set(c.id, c); },
+      async list(owner) { return [...all.values()].filter((c) => c.owner === owner); },
+      async listAll() { return [...all.values()]; },
+      async get(id) {
+        const c = all.get(id);
+        if (!c || c.createdAt && Date.now() - Date.parse(c.createdAt) > 60_000) return c ?? null; // an old computer: as stored
+        const n = (reads.get(id) ?? 0) + 1;
+        reads.set(id, n);
+        return n <= offlineReads ? { ...c, status: 'offline', stopped: true } : { ...c, status: 'running', stopped: false };
+      },
+      async create({ owner }) {
+        const c: Computer = { id: generateId(), owner: owner.id, status: 'creating', stopped: false, internalUrl: url, token: 'inst-token', createdAt: new Date().toISOString() };
+        all.set(c.id, c);
+        return c;
+      },
+      async start(id) { starts++; return all.get(id)!; },
+      async destroy(id) { all.delete(id); },
+    };
+    return p;
+  }
+
+  async function withServer(p: Provider, readyTimeoutMs: number, fn: () => Promise<void>) {
+    const s = await buildServer({ provider: p, catalog, client: new InstanceClient(), version: 't', psk: PSK, readyTimeoutMs });
+    await s.listen({ port: 0, host: '127.0.0.1' });
+    const prev = base;
+    base = `http://127.0.0.1:${(s.server.address() as any).port}`;
+    try { await fn(); } finally { base = prev; await s.close(); }
+  }
+
+  it('create_computer waits through the brief offline and comes back ready', async () => {
+    const p = provisioningProvider(instance.url, 2);
+    await withServer(p, 8000, async () => {
+      const r = await tool('fay', 'create_computer');
+      expect(r.data).toMatchObject({ ready: true, stopped: false, status: 'running' });
+      expect(p.starts()).toBe(0);
+    });
+  });
+
+  it('while still offline it reads as starting: no start job, and desktop tools say to wait', async () => {
+    const p = provisioningProvider(instance.url, 1000);
+    await withServer(p, 0, async () => {
+      const r = await tool('gus', 'create_computer');
+      expect(r.data).toMatchObject({ ready: false, stopped: false, status: 'starting' });
+      const id = r.data.instance_id;
+      expect((await tool('gus', 'start_computer', { instance_id: id })).data).toMatchObject({ stopped: false, status: 'starting' });
+      expect(p.starts()).toBe(0);
+      const click = await tool('gus', 'click', { instance_id: id, x: 1, y: 1 });
+      expect(click.isError).toBe(true);
+      expect(click.data.error.message).toMatch(/still starting; call get_computer/);
+      // A computer created long ago that is stopped is really stopped.
+      p.add({ id: 'ozc-old', owner: 'gus', status: 'offline', stopped: true, internalUrl: instance.url, token: 'inst-token', createdAt: new Date(Date.now() - 3600_000).toISOString() });
+      expect((await tool('gus', 'list_computers')).data.computers.find((c: any) => c.instance_id === 'ozc-old')).toMatchObject({ stopped: true, status: 'offline' });
+      await tool('gus', 'start_computer', { instance_id: 'ozc-old' });
+      expect(p.starts()).toBe(1);
+    });
+  });
+});

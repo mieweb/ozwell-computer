@@ -164,6 +164,8 @@ export class OperationTracker {
     if (id && kind !== 'list' && kind !== 'get') {
       const cur = this.byId.get(id);
       if (cur && !cur.done && cur.kind === kind) return cur;
+      // A start during a create is part of it (the computer was still coming up).
+      if (cur && !cur.done && kind === 'start' && cur.kind === 'create') return cur;
       // e.g. destroy during a create: the create never completes, so end it now.
       if (cur && !cur.done) cur.finish('error', `superseded by ${kind}`);
     }
