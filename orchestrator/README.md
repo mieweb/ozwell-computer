@@ -227,6 +227,29 @@ Rollout on the orchestrator host:
 
 Rollback: `docker compose down && sudo systemctl enable --now ozwell-computer-orchestrator`.
 
+#### Updating without dropping calls
+
+Install [docker-rollout](https://github.com/wowu/docker-rollout) once:
+
+```bash
+mkdir -p ~/.docker/cli-plugins
+curl -fsSL https://raw.githubusercontent.com/wowu/docker-rollout/main/docker-rollout -o ~/.docker/cli-plugins/docker-rollout
+chmod +x ~/.docker/cli-plugins/docker-rollout
+```
+
+Then update with:
+
+```bash
+git pull
+docker rollout orchestrator   # builds, starts the new one, then drains and removes the old one
+docker compose up -d          # the other services (the orchestrator is already current)
+```
+
+`proxy` (Caddy) owns port 8090 and sends calls to whichever orchestrators are running.
+A stopping orchestrator finishes its in-flight calls (up to 11 min) and refuses new ones,
+which Caddy retries on the new one. Plain `docker compose up -d` still updates the
+orchestrator, but by stopping it first: calls wait up to 30 s in Caddy for the new one.
+
 Computers need no change: they get the logs route from the next release. Until then
 their metrics are scraped but their logs aren't collected.
 

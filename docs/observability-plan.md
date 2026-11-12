@@ -51,7 +51,7 @@ The "Later" items are not.
 | Grafana auth | Local admin only, with credentials set in compose. Dashboards are committed to the repo and read-only in the UI. |
 | Grafana access | Grafana publishes its own dedicated port (`GRAFANA_PORT`, default 3000). The existing external reverse proxy handles routing and TLS. The orchestrator does not proxy Grafana. |
 | Alerting | Later phase. |
-| Replicas | A single orchestrator replica. |
+| Replicas | One orchestrator replica, two briefly during an update: `docker rollout orchestrator` (docker-rollout plugin) starts the new one, then the old one drains. Caddy (`proxy`) owns port 8090 and retries refused connections on the other replica. Computer logs may be pulled twice for the few seconds of overlap. |
 | Retention | Metrics 30 days, logs 14 days, traces 7 days. |
 
 ## Current state (summary)
