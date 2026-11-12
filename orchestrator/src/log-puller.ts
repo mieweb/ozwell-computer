@@ -35,6 +35,8 @@ export interface LogPullerOptions {
   maxBackoffMs?: number;
   /** Entries per pull (default 1000). */
   batch?: number;
+  /** Bytes read from one journal response (default 16 MiB); the rest waits for the next pull. */
+  maxResponseBytes?: number;
   requestTimeoutMs?: number;
   now?: () => number;
 }
@@ -110,6 +112,24 @@ export function tagExport(buf: Buffer, extra: Buffer): { body: Buffer; entries: 
   return { body: Buffer.concat(out), entries, cursor };
 }
 
+/** Read at most `limit` bytes of a body, then cancel the rest. */
+export async function readBounded(res: Response, limit: number): Promise<{ buf: Buffer; truncated: boolean }> {
+  if (!res.body) return { buf: Buffer.alloc(0), truncated: false };
+  const reader = res.body.getReader();
+  const parts: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return { buf: Buffer.concat(parts), truncated: false };
+    parts.push(value);
+    size += value.length;
+    if (size >= limit) {
+      await reader.cancel().catch(() => undefined);
+      return { buf: Buffer.concat(parts).subarray(0, limit), truncated: true };
+    }
+  }
+}
+
 export class LogPuller {
   private readonly o: Required<Omit<LogPullerOptions, 'metrics' | 'log'>> & Pick<LogPullerOptions, 'metrics' | 'log'>;
   private readonly states = new Map<string, InstanceState>();
@@ -125,7 +145,7 @@ export class LogPuller {
     const given = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined)) as LogPullerOptions;
     this.o = {
       pollMs: 5000, concurrency: 8, discoverMs: 15_000, recheckMs: 600_000, maxBackoffMs: 300_000,
-      batch: 1000, requestTimeoutMs: 30_000, now: Date.now, ...given,
+      batch: 1000, maxResponseBytes: 16 * 1024 * 1024, requestTimeoutMs: 30_000, now: Date.now, ...given,
     };
   }
 
@@ -256,8 +276,17 @@ export class LogPuller {
     const extra = Buffer.concat([
       exportField('OZWELL_INSTANCE_ID', c.id), exportField('OZWELL_USER', c.owner), exportField('OZWELL_PROVIDER', this.o.provider.scheme),
     ]);
-    const { body, entries, cursor } = tagExport(Buffer.from(await res.arrayBuffer()), extra);
-    if (entries === 0) return 'ok';
+    // The instance is agent-controlled: never buffer an unbounded response.
+    const { buf, truncated } = await readBounded(res, this.o.maxResponseBytes);
+    const { body, entries, cursor } = tagExport(buf, extra);
+    if (entries === 0) {
+      if (!truncated) return 'ok';
+      // One entry is larger than the whole budget: it can never be read. Skip to now.
+      s.cursor = undefined;
+      s.since = Math.floor(this.o.now() / 1000);
+      this.report(c, s, 'error', `a journal entry exceeds ${this.o.maxResponseBytes} bytes; skipped to now`);
+      return 'error';
+    }
     let shipped: Response;
     try {
       shipped = await fetch(this.o.shipUrl, {
@@ -273,7 +302,8 @@ export class LogPuller {
     if (cursor) s.cursor = cursor;
     this.o.metrics?.logEntriesShipped.inc(entries);
     // A full batch: more is waiting, pull again right away.
-    s.more = entries >= n;
+    // A full batch, or a response cut at the byte budget: more is waiting.
+    s.more = entries >= n || truncated;
     return 'ok';
   }
 }

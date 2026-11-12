@@ -77,7 +77,8 @@ const app = await buildServer({
 app.log.info({ provider: provider.scheme, tools: catalog.length, maxInstances: maxInstances ?? 'unlimited' }, 'orchestrator configured');
 if (authDisabled) app.log.warn('AUTHENTICATION IS DISABLED: any caller can act as any X-Ozwell-User-Id');
 await app.listen({ host: env.ORCHESTRATOR_HOST || '127.0.0.1', port: Number(env.ORCHESTRATOR_PORT || 8090) });
-const sdAddress = env.ORCHESTRATOR_SD_ADDRESS || `${['0.0.0.0', '::'].includes(internalHost) ? '127.0.0.1' : internalHost}:${rawInternal}`;
+const sdHost = ['0.0.0.0', '::'].includes(internalHost) ? '127.0.0.1' : internalHost;
+const sdAddress = env.ORCHESTRATOR_SD_ADDRESS || `${sdHost.includes(':') ? `[${sdHost}]` : sdHost}:${rawInternal}`;
 const internal = rawInternal ? await buildInternalServer({ metrics, provider, sdAddress, token: internalToken, logger: { ...logger, level: env.LOG_LEVEL || 'warn' } }) : null;
 await internal?.listen({ host: internalHost, port: Number(rawInternal) });
 

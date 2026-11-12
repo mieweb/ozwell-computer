@@ -118,6 +118,29 @@ describe('OperationTracker', () => {
     expect((await hist(metrics, 'operationPhase', { operation: 'start', phase: 'provision' })).count).toBe(1);
   });
 
+  it('finishes list/get in enqueue, and enters boot only once the provider reports running', async () => {
+    const { metrics, tracker } = setup(() => ({ c: comp(), ready: false }));
+    await tracker.timed('get', async () => null);
+    expect((await hist(metrics, 'operationPhase', { operation: 'get', phase: 'provision' })).count).toBe(0);
+    expect(exporter.getFinishedSpans().find((s) => s.name === 'operation.get')!.attributes['ozwell.final_phase']).toBe('enqueue');
+    const op = tracker.begin('create');
+    op.enqueued(comp({ status: 'creating' })); // has a URL already, not running yet
+    expect(op.phase).toBe('provision');
+    op.progress(comp(), false);
+    expect(op.phase).toBe('boot');
+  });
+
+  it('times operations out every tick, even while a probe hangs', async () => {
+    let now = 0;
+    const tracker = new OperationTracker({ provider: 'fake', timeoutMs: 1000, now: () => now, probe: () => new Promise(() => {}) });
+    const a = tracker.begin('start', 'ozc-1');
+    a.enqueued(comp({ stopped: true }));
+    void tracker.pollOnce(); // its probe never returns
+    now = 2000;
+    void tracker.pollOnce();
+    expect(a.outcome).toBe('timeout');
+  });
+
   it('shares a running watcher pass, so slow probes never overlap', async () => {
     let probes = 0, release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });

@@ -23,7 +23,10 @@ export type Outcome = 'ok' | 'error' | 'failed' | 'timeout';
 export type Probe = (id: string) => Promise<{ c: Computer | null; ready: boolean }>;
 
 const DEAD = ['failed', 'missing', 'dead'];
+/** Provider states meaning provisioning is done (docker and opensource-server: running). */
+const RUNNING = ['running', 'online'];
 const tracer = trace.getTracer('ozwell-computer-orchestrator');
+const PROBE_TIMEOUT_MS = 30_000;
 
 export class Operation {
   id: string | undefined;
@@ -62,11 +65,11 @@ export class Operation {
   enqueued(c?: Computer | null) {
     // A repeated start joins this operation: its provider call returning must not reset the phase.
     if (this.done || this.phase !== 'enqueue') { if (c && !this.done) this.progress(c, false); return; }
+    // list/get are only the provider call: they finish in enqueue.
+    if (this.kind === 'list' || this.kind === 'get') { this.finish('ok'); return; }
     if (c?.id && !this.id) this.tracker.bind(this, c.id);
     this.enterPhase('provision');
-    if (this.kind === 'list' || this.kind === 'get') this.finish('ok');
-    else if (this.kind === 'destroy') return;
-    else if (c) this.progress(c, false);
+    if (this.kind !== 'destroy' && c) this.progress(c, false);
   }
 
   /** Apply one observation of the computer (from the watcher or a client's poll). */
@@ -74,7 +77,8 @@ export class Operation {
     if (this.done) return;
     if (this.kind === 'destroy') { if (!c) this.finish('ok'); return; }
     if (!c || DEAD.includes(c.status)) { this.finish('failed', c ? `status ${c.status}` : 'computer disappeared'); return; }
-    if (this.phase === 'provision' && !c.stopped && c.internalUrl) this.enterPhase('boot');
+    // Boot starts once the provider reports it running (a URL alone can come earlier).
+    if (this.phase === 'provision' && !c.stopped && c.internalUrl && RUNNING.includes(c.status)) this.enterPhase('boot');
     if (healthy && !c.stopped) {
       if (this.phase === 'provision') this.enterPhase('boot');
       this.finish('ok');
@@ -204,23 +208,35 @@ export class OperationTracker {
   /** One watcher pass: probe every in-flight create/start/destroy (capped concurrency). A pass
    * still running is shared, so slow probes never overlap and the cap holds across ticks. */
   pollOnce(): Promise<void> {
+    // Deadlines every tick, even while an earlier pass waits on a hung probe.
+    this.expire();
     this.pass ??= this.runPass().finally(() => { this.pass = undefined; });
     return this.pass;
   }
 
-  private async runPass(): Promise<void> {
+  /** Time out create/start/destroy operations past ORCHESTRATOR_OP_TIMEOUT_MS. */
+  private expire() {
     const now = this.now();
     for (const op of this.unbound) if (now - op.startedAt >= this.opts.timeoutMs) op.finish('timeout', 'no computer id');
     for (const op of this.byId.values()) {
       if (!op.done && now - op.startedAt >= this.opts.timeoutMs) op.finish('timeout', `not done after ${this.opts.timeoutMs} ms`);
     }
+  }
+
+  private async runPass(): Promise<void> {
+    const now = this.now();
     // Probed only once the provider call returned (enqueue is timed by the call itself).
     const queue = [...this.byId.values()].filter((op) => !op.done && !op.polling && op.phase !== 'enqueue');
     const worker = async () => {
       for (let op = queue.shift(); op; op = queue.shift()) {
         op.polling = true;
         try {
-          const { c, ready } = await this.opts.probe(op.id!);
+          // Bounded, so a hung provider call can't hold this worker (and the pass) forever.
+          let timer: NodeJS.Timeout | undefined;
+          const { c, ready } = await Promise.race([
+            this.opts.probe(op.id!),
+            new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('probe timed out')), PROBE_TIMEOUT_MS); }),
+          ]).finally(() => clearTimeout(timer));
           op.progress(c, ready);
         } catch { /* transient: try again next pass */ } finally {
           op.polling = false;

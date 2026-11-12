@@ -2,7 +2,7 @@
 // Format and a fake VictoriaLogs.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
-import { LogPuller, exportField, tagExport, JOURNAL_EXPORT } from '../src/log-puller.ts';
+import { LogPuller, exportField, readBounded, tagExport, JOURNAL_EXPORT } from '../src/log-puller.ts';
 import { Metrics } from '../src/metrics.ts';
 import type { Computer, Provider } from '../src/providers/types.ts';
 
@@ -184,6 +184,27 @@ describe('LogPuller', () => {
     } finally {
       globalThis.fetch = orig;
     }
+  });
+
+  it('reads at most maxResponseBytes, ships the complete entries and continues at once', async () => {
+    journal = [0, 1, 2, 3];
+    const { puller } = setup(() => [comp()]);
+    (puller as any).o.maxResponseBytes = entry(0).length + entry(1).length + 5; // two entries and a bit
+    await puller.tick();
+    expect(shipped[0]).toContain('line 1');
+    expect(shipped[0]).not.toContain('line 2');
+    await puller.tick(); // truncated: due again immediately
+    expect(requests[1].range).toBe('entries=s=1;i=1:1:1000');
+  });
+
+  it('skips to now when one entry is larger than the whole budget', async () => {
+    journal = [0];
+    const { puller, metrics } = setup(() => [comp()]);
+    (puller as any).o.maxResponseBytes = 10;
+    await puller.tick();
+    expect(shipped).toHaveLength(0);
+    expect(await count(metrics, 'error')).toBe(1);
+    expect(await readBounded(new Response('abcdef'), 3)).toEqual({ buf: Buffer.from('abc'), truncated: true });
   });
 
   it('keeps defaults for options passed as undefined', () => {
