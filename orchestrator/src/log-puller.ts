@@ -2,7 +2,7 @@
 //
 // Every running computer's journal is pulled from its gatewayd-compatible
 // GET /api/v1/logs/entries in the Journal Export Format, tagged with OZWELL_INSTANCE_ID,
-// OZWELL_USER and OZWELL_PROVIDER, and forwarded to VictoriaLogs' /insert/journald.
+// OZWELL_USER and OZWELL_PROVIDER, and forwarded to VictoriaLogs' /insert/journald/upload.
 // Instances never need to know where logs go.
 //
 // - The first pull for an instance (including after an orchestrator restart) starts at
@@ -19,7 +19,8 @@ export interface LogLogger { info: (o: object, m: string) => void; warn: (o: obj
 
 export interface LogPullerOptions {
   provider: Provider;
-  /** VictoriaLogs journald ingest, e.g. http://victorialogs:9428/insert/journald */
+  /** VictoriaLogs journald ingest, e.g. http://victorialogs:9428/insert/journald/upload
+   * (the path systemd-journal-upload posts to: /insert/journald alone is a 400). */
   shipUrl: string;
   metrics?: Metrics;
   log?: LogLogger;

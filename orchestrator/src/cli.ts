@@ -18,7 +18,7 @@
 //                        it); required unless the internal listener is on loopback
 //   ORCHESTRATOR_SD_ADDRESS  host:port vmagent reaches the internal listener at, put in /sd
 //                        targets (default the internal host:port; compose: orchestrator:8091)
-//   ORCHESTRATOR_LOG_SHIP_URL  VictoriaLogs journald ingest (…/insert/journald): pull every
+//   ORCHESTRATOR_LOG_SHIP_URL  VictoriaLogs journald ingest (…/insert/journald/upload): pull every
 //                        running computer's journal there. Unset disables the puller.
 //   ORCHESTRATOR_LOG_POLL_MS  between pulls of one computer (default 5000)
 //   ORCHESTRATOR_OP_TIMEOUT_MS  give up timing a create/start/destroy after this (default 600000)

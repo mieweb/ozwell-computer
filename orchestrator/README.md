@@ -206,7 +206,7 @@ the environment take precedence.
 | `ORCHESTRATOR_INTERNAL_TOKEN` | none | bearer token the internal listener requires; required unless it's on loopback |
 | `ORCHESTRATOR_SD_ADDRESS` | the internal host:port | address vmagent uses to reach the internal listener |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | off | OTLP (HTTP, protobuf) export of traces and the orchestrator's logs |
-| `ORCHESTRATOR_LOG_SHIP_URL` | off | VictoriaLogs `…/insert/journald`: pull every computer's journal there |
+| `ORCHESTRATOR_LOG_SHIP_URL` | off | VictoriaLogs `…/insert/journald/upload`: pull every computer's journal there |
 | `ORCHESTRATOR_LOG_POLL_MS` / `ORCHESTRATOR_OP_TIMEOUT_MS` | `5000` / `600000` | log pull interval; operation timing timeout |
 
 Configure Ozwell's workspace MCP server as `http(s)://<orchestrator>/mcp` (Streamable

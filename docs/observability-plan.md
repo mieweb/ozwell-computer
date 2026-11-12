@@ -31,7 +31,7 @@ The "Later" items are not.
 | Phase timing | Yes: enqueue, provision, boot. |
 | Observed time-to-ready | Yes. |
 | Operation timeout | 10 minutes, configurable. |
-| Instance logs | Pulled through a new `/api/v1/logs/entries`, a gatewayd-compatible subset implemented with `journalctl` (not the gatewayd package, not `sd-journal`). Journal Export Format forwarded to VictoriaLogs `/insert/journald`. Polling only. Older instances without the route are skipped and re-checked. |
+| Instance logs | Pulled through a new `/api/v1/logs/entries`, a gatewayd-compatible subset implemented with `journalctl` (not the gatewayd package, not `sd-journal`). Journal Export Format forwarded to VictoriaLogs `/insert/journald/upload`. Polling only. Older instances without the route are skipped and re-checked. |
 | Journal access | `ozwell-computer.service` gets `SupplementaryGroups=systemd-journal`, in the image and the `.deb` alike. The `desktop` user's processes (agent commands, the terminal) can read the whole journal as a result, including on bare metal: accepted. |
 | Log units | All journald units are collected. Dashboards filter to `ozwell-computer.service` by default. |
 | Cursor on restart | Resume from "now". A small gap is acceptable. |
@@ -75,7 +75,7 @@ The "Later" items are not.
 │  internal :8091 GET /metrics, /sd, /instances/:id/metrics                             │
 │  OTel SDK ──OTLP traces──► VictoriaTraces                                             │
 │           ──OTLP logs────► VictoriaLogs                                               │
-│  log puller ──GET instance /api/v1/logs/entries──► VictoriaLogs (/insert/journald)    │
+│  log puller ──GET instance /api/v1/logs/entries──► VictoriaLogs (journald/upload)     │
 │                                                                                       │
 │ vmagent ──scrape──► :8091/metrics, :8091/instances/*/metrics (via http_sd :8091/sd)   │
 │         ──remote write──► VictoriaMetrics                                             │
@@ -97,7 +97,7 @@ the orchestrator behaves as it does today.
 | `ORCHESTRATOR_INTERNAL_HOST` / `_PORT` | Internal listener. Default `127.0.0.1` / unset (disabled). The compose file sets `0.0.0.0:8091` on its network. |
 | `ORCHESTRATOR_INTERNAL_TOKEN` | Bearer token the internal listener requires. Required unless it is on loopback; required by `compose.yml`, which gives vmagent the same value. |
 | `ORCHESTRATOR_SD_ADDRESS` | `host:port` vmagent reaches the internal listener at, used as `__address__` in `/sd` targets. Default: the internal host and port. Compose sets `orchestrator:8091`. |
-| `ORCHESTRATOR_LOG_SHIP_URL` | VictoriaLogs journald ingest (`…/insert/journald`). Unset disables the instance log puller. |
+| `ORCHESTRATOR_LOG_SHIP_URL` | VictoriaLogs journald ingest (`…/insert/journald/upload`). Unset disables the instance log puller. |
 | `ORCHESTRATOR_LOG_POLL_MS` | Default 5000. |
 | `ORCHESTRATOR_OP_TIMEOUT_MS` | Default 600000. |
 
@@ -229,7 +229,7 @@ All scrape routes are served **only on the internal listener**.
    - The first pull for an instance, including after an orchestrator restart, uses
      `Range: realtime=<now>:`. Logs from while the orchestrator was down are not
      backfilled, by decision. After that it uses the last `__CURSOR` with `skip` 1.
-   - It requests the export format and forwards it to VictoriaLogs `/insert/journald`
+   - It requests the export format and forwards it to VictoriaLogs `/insert/journald/upload`
      (native journald ingestion: `PRIORITY` becomes the level, `__REALTIME_TIMESTAMP`
      the time). It adds `OZWELL_INSTANCE_ID`, `OZWELL_USER` and `OZWELL_PROVIDER` lines
      to each entry (the format is `KEY=value` lines per entry), so it parses nothing

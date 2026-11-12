@@ -24,7 +24,7 @@ services:
       ORCHESTRATOR_SD_ADDRESS: orchestrator:8091
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://victoriatraces:10428/insert/opentelemetry/v1/traces
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://victorialogs:9428/insert/opentelemetry/v1/logs
-      ORCHESTRATOR_LOG_SHIP_URL: http://victorialogs:9428/insert/journald
+      ORCHESTRATOR_LOG_SHIP_URL: http://victorialogs:9428/insert/journald/upload
     ports:
       - "${ORCHESTRATOR_BIND:-127.0.0.1}:${ORCHESTRATOR_PUBLISH_PORT:-8090}:8090"
 
