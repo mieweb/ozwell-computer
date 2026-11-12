@@ -8,6 +8,8 @@ services:
       context: ..
       dockerfile: orchestrator/Dockerfile
     image: ozwell-computer-orchestrator:dev
+    # Rebuild on every `docker compose up`, so a `git pull` always takes effect.
+    pull_policy: build
     restart: unless-stopped
     env_file:
       - path: .env
