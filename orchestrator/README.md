@@ -214,34 +214,36 @@ HTTP) with the header `Authorization: Bearer <psk>`. Put TLS in front of it.
 
 ### With Docker Compose and the observability stack
 
-`orchestrator/compose.yml` runs the orchestrator image (`orchestrator/Dockerfile`)
-and, with `--profile observability`, VictoriaMetrics, vmagent, VictoriaLogs,
-VictoriaTraces and Grafana with read-only dashboards (their configuration is in
-`orchestrator/deploy/`). It reads the same `.env` as `npm start`. See
+`orchestrator/compose.yml` runs the orchestrator image (`orchestrator/Dockerfile`) with
+VictoriaMetrics, vmagent, VictoriaLogs, VictoriaTraces and Grafana (read-only dashboards;
+their configuration is in `orchestrator/deploy/`). It reads the same `.env` as
+`npm start` and points the orchestrator at the stack itself. See
 docs/observability-plan.md.
 
 ```bash
 cd orchestrator
-cp .env.example .env    # set ORCHESTRATOR_TOKEN, and PROVIDER_URI (see below); for the profile
-                        # set ORCHESTRATOR_INTERNAL_TOKEN and GF_SECURITY_ADMIN_PASSWORD and
-                        # uncomment the OTEL_* and ORCHESTRATOR_LOG_SHIP_URL lines
-docker compose --profile observability up -d --build
+cp .env.example .env    # set PROVIDER_URI, ORCHESTRATOR_TOKEN, ORCHESTRATOR_INTERNAL_TOKEN
+                        # and GF_SECURITY_ADMIN_PASSWORD
+docker compose up -d --build
 deploy/smoke.sh         # a trace, a metric series and a log line arrive
 ```
 
 Only the orchestrator and Grafana (`GRAFANA_PORT`, default 3000) publish ports, on
 127.0.0.1 by default: route to them from the existing reverse proxy, which terminates TLS.
+The internal listener (vmagent's scrapes) requires `ORCHESTRATOR_INTERNAL_TOKEN`; compose
+gives vmagent the same value.
 
-- **docker:// provider:** set
-  `PROVIDER_URI=docker:///var/run/docker.sock?network=ozwell-computers`. Without
-  `network=`, new computers land on Docker's default bridge, where the orchestrator can't
-  reach them.
-- **Networks:** computers share the `ozwell-computers` network with the orchestrator
-  only. The observability services and Grafana are on `ozwell-observability`, which
-  computers can't reach, because those services have no auth of their own.
-- **Internal listener:** computers can reach it on the shared network, so compose runs it
-  only when `ORCHESTRATOR_INTERNAL_TOKEN` is set, and it then requires that token.
-  vmagent sends it.
+**docker:// provider:** add `compose.docker.yml`, and set `DOCKER_GID` in `.env` to the
+group that owns `/var/run/docker.sock`:
+
+```bash
+docker compose -f compose.yml -f compose.docker.yml up -d --build
+deploy/smoke.sh -f compose.yml -f compose.docker.yml
+```
+
+It mounts the socket and puts computers on their own `ozwell-computers` network, shared
+only with the orchestrator, so they can't reach the observability services (which have no
+auth of their own).
 
 ## Providers
 

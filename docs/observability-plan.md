@@ -19,7 +19,7 @@ The "Later" items are not.
 
 | Topic | Decision |
 |---|---|
-| Packaging | New `orchestrator/Dockerfile` + `orchestrator/compose.yml` (its config files in `orchestrator/deploy/`). Observability services are an optional compose profile. |
+| Packaging | New `orchestrator/Dockerfile` + `orchestrator/compose.yml` (its config files in `orchestrator/deploy/`), which always runs the observability services on one default network. The docker:// provider is an optional override, `orchestrator/compose.docker.yml`. |
 | Host | The stack runs on the same host as the orchestrator. |
 | Backends | VictoriaMetrics, VictoriaLogs, VictoriaTraces, vmagent, Grafana. |
 | OTel Collector | None. The SDK exports OTLP directly to VictoriaLogs and VictoriaTraces. |
@@ -44,7 +44,7 @@ The "Later" items are not.
 | Tool argument capture | Full arguments. PHI handling and anonymization are a later layer. |
 | User identity | Raw user id. |
 | `/internal/*` security | A separate port and listener (`ORCHESTRATOR_INTERNAL_PORT`), not exposed publicly. Off loopback it requires a bearer token (`ORCHESTRATOR_INTERNAL_TOKEN`), which vmagent sends. |
-| Compose networks | Computers (`ozwell-computers`) and the observability services (`ozwell-observability`) never share a network; only the orchestrator is on both. |
+| Compose networks | `compose.yml` has only its default network, with no computers on it. `compose.docker.yml` puts docker:// computers on their own `ozwell-computers` network, shared only with the orchestrator. |
 | opensource-server pull path | Same path as MCP traffic: public HTTPS unless `internal=ip`. |
 | Metric cardinality | No limits for now. Revisit if series growth becomes a problem. |
 | Grafana auth | Local admin only, with credentials set in compose. Dashboards are committed to the repo and read-only in the UI. |
@@ -94,8 +94,8 @@ the orchestrator behaves as it does today.
 | `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` | VictoriaLogs OTLP endpoint. Unset disables orchestrator log export. |
 | `OTEL_SERVICE_NAME` | Default `ozwell-computer-orchestrator`. |
 | `OTEL_TRACES_SAMPLER` / `_ARG` | Default `parentbased_traceidratio` / `1.0`. |
-| `ORCHESTRATOR_INTERNAL_HOST` / `_PORT` | Internal listener. Default `127.0.0.1` / unset (disabled). The compose file sets `0.0.0.0:8091` on the compose network only. |
-| `ORCHESTRATOR_INTERNAL_TOKEN` | Bearer token the internal listener requires. Required unless it is on loopback; compose enables the listener only when it is set. |
+| `ORCHESTRATOR_INTERNAL_HOST` / `_PORT` | Internal listener. Default `127.0.0.1` / unset (disabled). The compose file sets `0.0.0.0:8091` on its network. |
+| `ORCHESTRATOR_INTERNAL_TOKEN` | Bearer token the internal listener requires. Required unless it is on loopback; required by `compose.yml`, which gives vmagent the same value. |
 | `ORCHESTRATOR_SD_ADDRESS` | `host:port` vmagent reaches the internal listener at, used as `__address__` in `/sd` targets. Default: the internal host and port. Compose sets `orchestrator:8091`. |
 | `ORCHESTRATOR_LOG_SHIP_URL` | VictoriaLogs journald ingest (`…/insert/journald`). Unset disables the instance log puller. |
 | `ORCHESTRATOR_LOG_POLL_MS` | Default 5000. |
@@ -333,7 +333,7 @@ All scrape routes are served **only on the internal listener**.
 | 3 | `/sd` + scrape proxy | fake instance serving metrics; 404/503 cases |
 | 4 | Instance `GET /api/v1/logs/entries` (gatewayd subset), journal group, trace_id log binding | root `typecheck` + `test:unit` (argument building, `Range` parsing, rejection of unsupported requests); `docker compose up -d --build`; new `test/integration/logs.test.ts` (route coverage, conformance against the real gatewayd in the test container) |
 | 5 | Log puller | fake instance + fake VictoriaLogs |
-| 6 | Dockerfile, compose (profile), vmagent config, Grafana provisioning + dashboards | manual bring-up; smoke script asserting a trace, a metric series and a log line arrive |
+| 6 | Dockerfile, compose (plus a docker:// override), vmagent config, Grafana provisioning + dashboards | manual bring-up; smoke script asserting a trace, a metric series and a log line arrive |
 | Later | Alerts; PHI/anonymization layer; instance SDK via relay; cardinality limits | — |
 
 If computer MCP tools change, regenerate the catalog: `make build && npm run mcp-tools`.

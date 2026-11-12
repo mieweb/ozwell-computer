@@ -1,0 +1,23 @@
+# Optional: run computers with the docker:// provider on this host.
+#
+#   docker compose -f compose.yml -f compose.docker.yml up -d --build
+#
+# Set DOCKER_GID in .env to the group that owns the socket (stat -c %g /var/run/docker.sock).
+# Docker socket access is root-equivalent on the host; prefer the opensource-server
+# provider where you can.
+#
+# Computers are agent-controlled, so they get their own network, shared only with the
+# orchestrator: from it they can't reach the observability services (which have no auth
+# of their own), and the orchestrator's internal listener requires its token.
+services:
+  orchestrator:
+    environment:
+      PROVIDER_URI: docker:///var/run/docker.sock?network=ozwell-computers
+    group_add: ["${DOCKER_GID:?set DOCKER_GID in .env}"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks: [default, computers]
+
+networks:
+  computers:
+    name: ozwell-computers
