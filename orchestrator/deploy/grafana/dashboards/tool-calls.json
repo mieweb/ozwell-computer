@@ -201,5 +201,17 @@
       ],
       "id": 5
     }
+  ],
+  "links": [
+    {
+      "title": "ozwell-computer dashboards",
+      "type": "dashboards",
+      "tags": [
+        "ozwell-computer"
+      ],
+      "asDropdown": true,
+      "includeVars": false,
+      "keepTime": true
+    }
   ]
 }
