@@ -83,6 +83,13 @@ export class Metrics {
     registers: [this.registry],
   });
 
+  readonly computerCache = new Counter({
+    name: 'ozwell_orchestrator_computer_cache_total',
+    help: 'Computer lookups for desktop tool calls: hit (no provider call), miss, or revalidated (a cached entry failed and was looked up again)',
+    labelNames: ['result'] as const,
+    registers: [this.registry],
+  });
+
   // Instance log puller (log-puller.ts).
   readonly logPulls = new Counter({
     name: 'ozwell_orchestrator_log_pulls_total',

@@ -9,6 +9,7 @@ import { InstanceClient, InstanceError } from './instance-client.ts';
 import { SpanStatusCode, trace, type Span } from '@opentelemetry/api';
 import type { Metrics } from './metrics.ts';
 import type { OpKind, Operation, OperationTracker } from './operations.ts';
+import type { ComputerCache } from './computer-cache.ts';
 
 const tracer = trace.getTracer('ozwell-computer-orchestrator');
 
@@ -101,6 +102,8 @@ export interface OrchestratorDeps {
   metrics?: Metrics;
   /** Operation timing (operations.ts); omitted means none is recorded. */
   operations?: OperationTracker;
+  /** Computers for desktop tool calls (computer-cache.ts); omitted means a lookup per call. */
+  cache?: ComputerCache | null;
 }
 
 /** Is the computer up? (Re-reads it: providers may only learn URLs while it starts.) */
@@ -204,8 +207,21 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
   const mine = async (id: unknown): Promise<Computer> => {
     if (typeof id !== 'string' || !id) throw new InstanceError('invalid_request', 'instance_id is required');
     const c = await timed('get', () => provider.get(id));
+    deps.cache?.set(c, id); // every fresh lookup refreshes (or drops) the cached entry
     if (!c || c.owner !== user.id) throw new InstanceError('target_unavailable', `no computer ${id}; call list_computers`);
     return c;
+  };
+
+  /** For desktop tools: a cached running computer, else a fresh lookup. */
+  const target = async (id: unknown): Promise<{ c: Computer; hit: boolean }> => {
+    const cached = typeof id === 'string' ? deps.cache?.get(id) : undefined;
+    if (cached && cached.owner === user.id) return { c: cached, hit: true };
+    return { c: await mine(id), hit: false };
+  };
+  const cacheResult = (result: 'hit' | 'miss' | 'revalidated') => {
+    if (!deps.cache) return;
+    deps.metrics?.computerCache.inc({ result });
+    trace.getActiveSpan()?.setAttribute('ozwell.cache', result);
   };
 
   /** The quota error when the requester is at the limit, else null. Counted from the provider so it survives restarts. */
@@ -285,6 +301,7 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
           // would queue a restart job against it): it is waited for like get_computer.
           const stopped = c0.stopped && !settling(c0);
           const started = stopped ? await operation('start', c0.id, () => provider.start(c0.id)) : c0;
+          deps.cache?.delete(c0.id); // its URL may change on start: the next desktop call looks it up
           if (!stopped) linkOp(ops?.inFlight(c0.id));
           const { c, ready } = await waitReady(provider, started, deps.readyTimeoutMs ?? CREATE_WAIT_MS, c0.stopped);
           return observed(c, ready);
@@ -292,30 +309,48 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
         case 'destroy_computer': {
           const c = await mine(args.instance_id);
           await operation('destroy', c.id, () => provider.destroy(c.id));
+          deps.cache?.delete(c.id);
           return text({ ok: true, instance_id: c.id });
         }
         default: {
           if (!proxiedNames.has(name)) return fail('invalid_request', `unknown tool ${name}`);
-          const c = await mine(args.instance_id);
-          if (c.stopped) return stoppedError(c);
-          if (!c.internalUrl || !c.token) return fail('target_unavailable', `computer ${c.id} is ${c.status} and not reachable`);
+          let { c, hit } = await target(args.instance_id);
+          cacheResult(hit ? 'hit' : 'miss');
           const { instance_id: _drop, ...rest } = args;
           // The computer shows this as the agent's name, so never the user's.
           const agent = user.agentName ?? 'agent';
-          const url = c.internalUrl, token = c.token;
-          return await tracer.startActiveSpan('instance.callTool', { attributes: { 'ozwell.instance_id': c.id, 'gen_ai.tool.name': name } },
-            (span) => client.callTool(`${c.id}\u0000${user.id}\u0000${agent}`, url, token, agent, name, rest)
-              // The computer answered: for a new one, that's the client seeing it ready.
-              .then((r) => { ops?.observe(c, true); return r; })
-              .catch((e) => { span.recordException(e); span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message }); throw e; })
-              .finally(() => span.end()))
-            .catch(async (e) => {
-              if (!(e instanceof InstanceError && e.unreachable)) throw e;
-              // Best effort: a failed lookup keeps the original error.
-              const now = await provider.get(c.id).catch(() => null);
-              if (now?.stopped) return stoppedError(now);
-              throw e;
-            });
+          const call = (c: Computer) => {
+            if (c.stopped) return stoppedError(c);
+            if (!c.internalUrl || !c.token) return fail('target_unavailable', `computer ${c.id} is ${c.status} and not reachable`);
+            const url = c.internalUrl, token = c.token;
+            return tracer.startActiveSpan('instance.callTool', { attributes: { 'ozwell.instance_id': c.id, 'gen_ai.tool.name': name } },
+              (span) => client.callTool(`${c.id}\u0000${user.id}\u0000${agent}`, url, token, agent, name, rest)
+                // The computer answered: for a new one, that's the client seeing it ready.
+                .then((r) => { ops?.observe(c, true); return r; })
+                .catch((e) => { span.recordException(e); span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message }); throw e; })
+                .finally(() => span.end()));
+          };
+          // Failures where the request certainly didn't reach (or wasn't accepted by) the
+          // computer: it may have stopped, moved, or been replaced. Safe to retry once.
+          const notDelivered = (e: unknown) => e instanceof InstanceError && (e.unreachable || e.reason === 'unauthenticated');
+          try {
+            return await call(c);
+          } catch (e) {
+            if (!notDelivered(e)) throw e;
+            deps.cache?.delete(c.id);
+            if (hit) {
+              // The cached entry may be stale: look it up again and retry once.
+              cacheResult('revalidated');
+              c = await mine(c.id);
+              hit = false;
+              return await call(c);
+            }
+            if (!(e instanceof InstanceError && e.unreachable)) throw e;
+            // Best effort: a failed lookup keeps the original error.
+            const now = await provider.get(c.id).catch(() => null);
+            if (now?.stopped) return stoppedError(now);
+            throw e;
+          }
         }
       }
     } catch (e) {

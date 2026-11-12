@@ -19,9 +19,13 @@ const CALL_TIMEOUT_MS = 11 * 60_000;
 
 interface Session { id: string; protocol: string; lastUsed: number; url: string; token: string }
 
+/** fetch failure codes meaning the connection was never made, so nothing was sent. */
+const NOT_SENT = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EHOSTDOWN', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT']);
+
 export class InstanceError extends Error {
   readonly reason: string;
-  /** A proxy 503 or a refused connection: the computer may have been stopped. */
+  /** A proxy 503 or a connection never made: the request didn't reach the computer, which may
+   * have been stopped or moved. */
   readonly unreachable: boolean;
   constructor(reason: string, message: string, unreachable = false) { super(message); this.reason = reason; this.unreachable = unreachable; }
 }
@@ -55,7 +59,8 @@ export class InstanceClient {
     try {
       res = await fetch(`${url}/mcp`, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(CALL_TIMEOUT_MS) });
     } catch (e) {
-      throw new InstanceError('target_unavailable', `cannot reach the computer: ${(e as Error).message}`, (e as any).cause?.code === 'ECONNREFUSED');
+      // Connection-phase failures: the request never reached the computer.
+      throw new InstanceError('target_unavailable', `cannot reach the computer: ${(e as Error).message}`, NOT_SENT.has((e as any).cause?.code));
     }
     // Failed statuses are classified without the body: a proxy's 503 may be HTML or a JSON-RPC-looking error.
     if (!res.ok) {
@@ -102,6 +107,8 @@ export class InstanceClient {
       const params = { name, arguments: args, ...(_meta ? { _meta } : {}) };
       const r = await this.post(url, token, { jsonrpc: '2.0', id: ++this.seq, method: 'tools/call', params }, s);
       if (r.res.status === 404 || r.res.status === 400) { this.sessions.delete(key); continue; } // session gone: re-init once
+      // Token rejected before anything ran (e.g. a different computer now at this address).
+      if (r.res.status === 401) { this.sessions.delete(key); throw new InstanceError('unauthenticated', 'the computer rejected its token'); }
       if (!r.res.ok) throw new InstanceError('target_unavailable', `tool call failed (HTTP ${r.res.status})`);
       if (r.msg?.error) throw new InstanceError('internal', r.msg.error.message ?? 'tool call failed');
       if (!r.msg?.result) throw new InstanceError('target_unavailable', 'tool call returned no result');

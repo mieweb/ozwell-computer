@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { buildServer } from '../src/server.ts';
 import { InstanceClient } from '../src/instance-client.ts';
+import { Metrics } from '../src/metrics.ts';
 import { proxiedTools, type ToolDef } from '../src/mcp.ts';
 import { providerFromUri, registerProvider } from '../src/providers/index.ts';
 import { generateId, type Computer, type Provider } from '../src/providers/types.ts';
@@ -14,7 +15,7 @@ const catalog: ToolDef[] = [
 ];
 
 /** Fake ozwell-computer MCP endpoint: records calls, checks its token. */
-async function fakeInstance(token: string) {
+async function fakeInstance(token: string, port = 0) {
   const calls: Array<{ name: string; args: any; client: string }> = [];
   const clients = new Map<string, string>();
   const app = Fastify();
@@ -36,7 +37,7 @@ async function fakeInstance(token: string) {
   });
   app.delete('/mcp', async (_r, reply) => reply.code(200).send());
   app.get('/health', async (_r, reply) => reply.code(204).send());
-  await app.listen({ port: 0, host: '127.0.0.1' });
+  await app.listen({ port, host: '127.0.0.1' });
   return { app, calls, url: `http://127.0.0.1:${(app.server.address() as any).port}` };
 }
 
@@ -117,7 +118,9 @@ const tool = async (user: string, name: string, args: object = {}, extra: Record
 beforeAll(async () => {
   instance = await fakeInstance('inst-token');
   provider = memoryProvider(instance.url, 'inst-token');
-  app = await buildServer({ provider, catalog, client: new InstanceClient(), version: 't', psk: PSK, readyTimeoutMs: 5000 });
+  // No cache: these tests edit the provider's records directly while the old address keeps
+  // answering, which a real stopped or moved computer can't (the cache is tested below).
+  app = await buildServer({ provider, catalog, client: new InstanceClient(), version: 't', psk: PSK, readyTimeoutMs: 5000, cache: null });
   await app.listen({ port: 0, host: '127.0.0.1' });
   base = `http://127.0.0.1:${(app.server.address() as any).port}`;
 });
@@ -463,6 +466,103 @@ describe('computers that report stopped while they are created (opensource-serve
       expect((await tool('gus', 'list_computers')).data.computers.find((c: any) => c.instance_id === 'ozc-old')).toMatchObject({ stopped: true, status: 'offline' });
       await tool('gus', 'start_computer', { instance_id: 'ozc-old' });
       expect(p.starts()).toBe(1);
+    });
+  });
+});
+
+describe('computer cache (desktop tools)', () => {
+  /** Counts provider lookups; computers point at fake instances the test controls. */
+  function countingProvider() {
+    const all = new Map<string, Computer>();
+    let gets = 0;
+    return {
+      all, gets: () => gets,
+      p: {
+        scheme: 'memory',
+        async list(owner: string) { return [...all.values()].filter((c) => c.owner === owner); },
+        async listAll() { return [...all.values()]; },
+        async get(id: string) { gets++; return all.get(id) ?? null; },
+        async create() { throw new Error('no'); },
+        async start(id: string) { const c = { ...all.get(id)!, status: 'running', stopped: false }; all.set(id, c); return c; },
+        async destroy(id: string) { all.delete(id); },
+      } satisfies Provider,
+    };
+  }
+  async function withServer(p: Provider, fn: (m: Metrics) => Promise<void>) {
+    const metrics = new Metrics({ defaultMetrics: false });
+    const s = await buildServer({ provider: p, catalog, client: new InstanceClient(), version: 't', psk: PSK, readyTimeoutMs: 2000, metrics });
+    await s.listen({ port: 0, host: '127.0.0.1' });
+    const prev = base;
+    base = `http://127.0.0.1:${(s.server.address() as any).port}`;
+    try { await fn(metrics); } finally { base = prev; await s.close(); }
+  }
+  const cacheCount = async (m: Metrics, result: string) => (await m.computerCache.get()).values.find((v) => v.labels.result === result)?.value ?? 0;
+  const running = (id: string, url: string, token = 'inst-token'): Computer => ({ id, owner: 'hal', status: 'running', stopped: false, internalUrl: url, token });
+
+  it('looks a computer up once, then serves desktop tools from the cache', async () => {
+    const t = countingProvider();
+    t.all.set('ozc-c1', running('ozc-c1', instance.url));
+    await withServer(t.p, async (m) => {
+      for (let i = 0; i < 3; i++) expect((await tool('hal', 'click', { instance_id: 'ozc-c1', x: 1, y: 1 })).isError).toBe(false);
+      expect(t.gets()).toBe(1);
+      expect(await cacheCount(m, 'miss')).toBe(1);
+      expect(await cacheCount(m, 'hit')).toBe(2);
+      // Ownership still holds for cached computers.
+      expect((await tool('ivy', 'click', { instance_id: 'ozc-c1', x: 1, y: 1 })).data.error.reason).toBe('target_unavailable');
+    });
+  });
+
+  it('revalidates when the cached address refuses (moved), and reports a stopped computer', async () => {
+    const t = countingProvider();
+    const first = await fakeInstance('inst-token');
+    t.all.set('ozc-c2', running('ozc-c2', first.url));
+    await withServer(t.p, async (m) => {
+      await tool('hal', 'click', { instance_id: 'ozc-c2', x: 1, y: 1 }); // cached at first.url
+      // It moved: the provider has the new address, and nothing answers at the old one.
+      const moved = await fakeInstance('inst-token');
+      t.all.set('ozc-c2', running('ozc-c2', moved.url));
+      await first.app.close();
+      expect(await tool('hal', 'click', { instance_id: 'ozc-c2', x: 1, y: 1 })).toEqual({ isError: false, data: 'did click' });
+      expect(moved.calls.at(-1)?.name).toBe('click');
+      expect(await cacheCount(m, 'revalidated')).toBe(1);
+      // Then it's stopped: the address refuses and the provider says stopped.
+      t.all.set('ozc-c2', { ...running('ozc-c2', moved.url), status: 'offline', stopped: true });
+      await moved.app.close();
+      expect((await tool('hal', 'click', { instance_id: 'ozc-c2', x: 1, y: 1 })).data.error.reason).toBe('computer_stopped');
+      // A stopped computer isn't cached: the next call asks the provider again.
+      const before = t.gets();
+      await tool('hal', 'click', { instance_id: 'ozc-c2', x: 1, y: 1 });
+      expect(t.gets()).toBe(before + 1);
+    });
+  });
+
+  it('revalidates when a different computer at the cached address rejects the token', async () => {
+    const t = countingProvider();
+    const a = await fakeInstance('tok-a');
+    const port = Number(new URL(a.url).port);
+    t.all.set('ozc-c3', running('ozc-c3', a.url, 'tok-a'));
+    await withServer(t.p, async (m) => {
+      await tool('hal', 'click', { instance_id: 'ozc-c3', x: 1, y: 1 }); // cached with tok-a
+      // Replaced by a new computer at the same address, with a new token.
+      await a.app.close();
+      const b = await fakeInstance('tok-b', port);
+      t.all.set('ozc-c3', running('ozc-c3', b.url, 'tok-b'));
+      try {
+        expect(await tool('hal', 'click', { instance_id: 'ozc-c3', x: 1, y: 1 })).toEqual({ isError: false, data: 'did click' });
+        expect(await cacheCount(m, 'revalidated')).toBe(1);
+      } finally {
+        await b.app.close();
+      }
+    });
+  });
+
+  it('forgets a destroyed computer', async () => {
+    const t = countingProvider();
+    t.all.set('ozc-c4', running('ozc-c4', instance.url));
+    await withServer(t.p, async () => {
+      await tool('hal', 'click', { instance_id: 'ozc-c4', x: 1, y: 1 });
+      expect((await tool('hal', 'destroy_computer', { instance_id: 'ozc-c4' })).data.ok).toBe(true);
+      expect((await tool('hal', 'click', { instance_id: 'ozc-c4', x: 1, y: 1 })).data.error.reason).toBe('target_unavailable');
     });
   });
 });

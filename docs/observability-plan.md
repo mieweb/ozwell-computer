@@ -26,6 +26,7 @@ The "Later" items are not.
 | Metrics transport | All metrics are pulled by vmagent. The orchestrator exposes `/metrics`, and there is no OTLP metrics push. |
 | Instance scrape auth | An orchestrator scrape proxy adds the instance token. |
 | Operation completion | A background readiness watcher. |
+| Computer lookups | Desktop tools use a cached lookup (running computers only), revalidated when a call fails without reaching the computer (refused, 503, 401) and after 1 h. Real lookups stay `get` operations; `ozwell_orchestrator_computer_cache_total{result}` counts hits, misses and revalidations. Management tools always ask the provider. |
 | Operation persistence | In memory only. In-flight operations are lost on orchestrator restart. |
 | Operation ↔ trace | Operation spans are separate traces; tool-call spans link to them. |
 | Phase timing | Yes: enqueue, provision, boot. |
