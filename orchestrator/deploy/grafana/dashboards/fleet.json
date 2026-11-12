@@ -432,6 +432,53 @@
         }
       ],
       "id": 12
+    },
+    {
+      "type": "piechart",
+      "title": "Versions",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 0,
+        "y": 36
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value"
+          ]
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "count by (version) (ozwell_build_info{job=\"computers\"}) or label_replace(count(up{job=\"computers\"} unless on (instance_id) ozwell_build_info), \"version\", \"older (no version metric)\", \"\", \"\")",
+          "legendFormat": "{{version}}",
+          "instant": true
+        }
+      ],
+      "id": 13
     }
   ],
   "links": [

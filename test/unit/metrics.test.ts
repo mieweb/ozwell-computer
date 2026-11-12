@@ -2,8 +2,18 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { availableCpus, parseCpuMax, render, setCpus } from '../../src/metrics.js';
+import { availableCpus, parseCpuMax, render, setCpus, setVersion } from '../../src/metrics.js';
 import { cpuPercent, perfTitle, readMetrics } from '../../web/src/metrics.js';
+
+describe('build info', () => {
+  it('exports the running version as ozwell_build_info', async () => {
+    setVersion('2026.11.3');
+    setVersion('2026.11.4'); // a restart under a new version: only the current one
+    const { body } = await render();
+    expect(body).toMatch(/^ozwell_build_info\{version="2026\.11\.4"\} 1$/m);
+    expect(body).not.toContain('2026.11.3');
+  });
+});
 
 describe('cpu count', () => {
   it('parses cgroup v2 cpu.max', () => {

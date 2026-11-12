@@ -35,7 +35,13 @@ export function sdTargets(computers: Computer[], provider: string, address: stri
     .filter((c) => !c.stopped && c.internalUrl && c.token)
     .map((c) => ({
       targets: [address],
-      labels: { instance_id: c.id, provider, user: observedOwner(c), __metrics_path__: `/instances/${encodeURIComponent(c.id)}/metrics` },
+      labels: {
+        instance_id: c.id, provider, user: observedOwner(c),
+        // Fixed at create: one value per computer, so no extra series.
+        ...(c.displayName ? { display_name: c.displayName } : {}),
+        ...(c.createdAt ? { created_at: c.createdAt } : {}),
+        __metrics_path__: `/instances/${encodeURIComponent(c.id)}/metrics`,
+      },
     }));
 }
 

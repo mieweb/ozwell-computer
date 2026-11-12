@@ -149,6 +149,15 @@ export function availableCpus(cgroup: string | null, parallelism = availablePara
   return Math.min(parallelism, ...quotas.filter((q) => q !== null));
 }
 
+const buildInfo = new client.Gauge({
+  name: 'ozwell_build_info',
+  help: 'Always 1; the version label is the running ozwell-computer version',
+  labelNames: ['version'],
+  registers: [registry],
+});
+/** Record the running version (the server calls this once at startup). */
+export const setVersion = (version: string) => { buildInfo.reset(); buildInfo.set({ version }, 1); };
+
 let cpusOverride: number | undefined;
 /** Use an admin-supplied CPU capacity instead of the detected one (config `cpus`). */
 export const setCpus = (n: number | undefined) => { cpusOverride = n; };
