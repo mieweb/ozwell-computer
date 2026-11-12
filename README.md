@@ -307,22 +307,10 @@ are in `contrib/`.
 - **Toolbar metrics:** the viewer polls `/api/v1/metrics` (Prometheus text format)
   every 5 s and shows container CPU, memory (against the limit, if any) and VNC
   throughput.
-- **Logs:** `GET /api/v1/logs/entries` serves the journal through a subset of
+- **Logs:** `GET /api/v1/logs/entries` serves the journal with
   [`systemd-journal-gatewayd`](https://www.freedesktop.org/software/systemd/man/latest/systemd-journal-gatewayd.service.html)'s
-  `/entries` API, by running `journalctl`.
-  - Formats follow `Accept`: the Journal Export Format, JSON, JSON-seq, server-sent
-    events, or text.
-  - Position and page with `Range: entries=<cursor>[:<skip>:<n>]` or
-    `Range: realtime=<since>:[<until>]`. Filter with `FIELD=value` query matches and
-    `boot`.
-  - At most 5000 entries per response. Anything outside the subset is refused (400,
-    416 or 501), never approximated. An integration test checks it against the real
-    gatewayd.
-  - `ozwell-computer.service` runs with `SupplementaryGroups=systemd-journal`, so it
-    reads the whole system journal. Processes it starts (`run_command`, the terminal)
-    can too.
-  - Requests that carry a W3C `traceparent` (header, or `_meta.traceparent` on MCP
-    tool calls) get its `trace_id` and `span_id` on their log lines.
+  `/entries` API (a subset, via `journalctl`). The orchestrator collects it. Log lines
+  carry `trace_id` from an incoming `traceparent`.
 
 ## Run without Docker
 
