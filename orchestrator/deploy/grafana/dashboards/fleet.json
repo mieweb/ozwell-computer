@@ -261,7 +261,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "ozwell_cgroup_memory_bytes{instance_id=~\"$instance_id\"}",
+          "expr": "ozwell_cgroup_memory_bytes{scope=\"container\", instance_id=~\"$instance_id\"}",
           "legendFormat": "{{instance_id}}",
           "exemplar": false
         }

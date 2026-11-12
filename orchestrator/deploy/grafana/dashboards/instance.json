@@ -158,7 +158,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "max(ozwell_cgroup_memory_bytes{instance_id=\"$instance_id\"})",
+          "expr": "max(ozwell_cgroup_memory_bytes{scope=\"container\", instance_id=\"$instance_id\"})",
           "instant": true
         }
       ],

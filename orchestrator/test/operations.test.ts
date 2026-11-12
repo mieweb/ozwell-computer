@@ -107,6 +107,28 @@ describe('OperationTracker', () => {
     expect(await counter(metrics, { operation: 'get', outcome: 'ok' })).toBe(1);
   });
 
+  it('does not reset a joined start when its repeated provider call returns', async () => {
+    const { metrics, tracker, at } = setup(() => ({ c: comp(), ready: false }));
+    const op = tracker.begin('start', 'ozc-1');
+    at(1); op.enqueued(comp({ stopped: true }));
+    at(5); op.progress(comp(), false);
+    expect(op.phase).toBe('boot');
+    at(6); tracker.begin('start', 'ozc-1').enqueued(comp()); // a second start_computer
+    expect(op.phase).toBe('boot');
+    expect((await hist(metrics, 'operationPhase', { operation: 'start', phase: 'provision' })).count).toBe(1);
+  });
+
+  it('shares a running watcher pass, so slow probes never overlap', async () => {
+    let probes = 0, release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const tracker = new OperationTracker({ provider: 'fake', probe: async () => { probes++; await gate; return { c: comp(), ready: false }; } });
+    tracker.begin('start', 'ozc-1').enqueued(comp({ stopped: true }));
+    const a = tracker.pollOnce(), b = tracker.pollOnce();
+    expect(a).toBe(b);
+    release(); await a;
+    expect(probes).toBe(1);
+  });
+
   it('records observed time-to-ready once, at the first ready:true', async () => {
     const { metrics, tracker, at } = setup(() => ({ c: comp(), ready: false }));
     tracker.begin('create').enqueued(comp());
@@ -175,5 +197,9 @@ describe('operations through tool calls', () => {
       expect(call.spanContext().traceId).not.toBe(opSpan.spanContext().traceId);
       expect(call.links.map((l) => l.context.spanId)).toContain(opSpan.spanContext().spanId);
     }
+    // get_computer's ownership lookup (a get operation) is linked too.
+    const gets = spans.filter((s) => s.name === 'operation.get');
+    const getCall = calls.find((s) => s.name === 'mcp.tools/call get_computer')!;
+    expect(getCall.links.map((l) => l.context.spanId)).toEqual(expect.arrayContaining([gets[0].spanContext().spanId]));
   });
 });

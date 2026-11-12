@@ -60,7 +60,8 @@ export class Operation {
 
   /** The provider API call returned. list/get are complete; the others are now provisioning. */
   enqueued(c?: Computer | null) {
-    if (this.done) return;
+    // A repeated start joins this operation: its provider call returning must not reset the phase.
+    if (this.done || this.phase !== 'enqueue') { if (c && !this.done) this.progress(c, false); return; }
     if (c?.id && !this.id) this.tracker.bind(this, c.id);
     this.enterPhase('provision');
     if (this.kind === 'list' || this.kind === 'get') this.finish('ok');
@@ -164,9 +165,11 @@ export class OperationTracker {
     return op;
   }
 
-  /** Time a list/get call as an operation that completes when it returns. */
-  async timed<T>(kind: 'list' | 'get', fn: () => Promise<T>): Promise<T> {
+  /** Time a list/get call as an operation that completes when it returns. `onBegin` sees the
+   * operation before the call (e.g. to link the tool-call span to it). */
+  async timed<T>(kind: 'list' | 'get', fn: () => Promise<T>, onBegin?: (op: Operation) => void): Promise<T> {
     const op = this.begin(kind);
+    onBegin?.(op);
     try {
       const r = await fn();
       op.enqueued();
@@ -196,8 +199,16 @@ export class OperationTracker {
     this.metrics?.timeToReadyObserved.observe({ provider: this.opts.provider }, (this.now() - t0) / 1000);
   }
 
-  /** One watcher pass: probe every in-flight create/start/destroy (capped concurrency). */
-  async pollOnce(): Promise<void> {
+  private pass: Promise<void> | undefined;
+
+  /** One watcher pass: probe every in-flight create/start/destroy (capped concurrency). A pass
+   * still running is shared, so slow probes never overlap and the cap holds across ticks. */
+  pollOnce(): Promise<void> {
+    this.pass ??= this.runPass().finally(() => { this.pass = undefined; });
+    return this.pass;
+  }
+
+  private async runPass(): Promise<void> {
     const now = this.now();
     for (const op of this.unbound) if (now - op.startedAt >= this.opts.timeoutMs) op.finish('timeout', 'no computer id');
     for (const op of this.byId.values()) {

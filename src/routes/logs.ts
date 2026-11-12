@@ -1,6 +1,7 @@
 // GET /api/v1/logs/entries: the journal, in systemd-journal-gatewayd's /entries API (a
 // subset; see src/journal.ts). The orchestrator pulls it into VictoriaLogs.
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import type { Readable } from 'node:stream';
 import { PassThrough } from 'node:stream';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { ApiError, unsupported } from '../errors.js';
@@ -73,12 +74,20 @@ function stream(reply: FastifyReply, bin: string, args: string[], mime: string, 
   return new Promise((resolve, reject) => {
     let gone = false;
     const release = () => { if (!gone) { gone = true; exited(); } };
-    const child = spawn(bin, args, {
-      stdio: ['ignore', 'pipe', 'pipe'],
-      // Its own process group, so a kill also reaches anything it started.
-      detached: true,
-      env: { ...process.env, SYSTEMD_COLORS: '0', SYSTEMD_PAGER: '', SYSTEMD_LESS: '' },
-    });
+    let child: ChildProcessByStdio<null, Readable, Readable>;
+    try {
+      child = spawn(bin, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        // Its own process group, so a kill also reaches anything it started.
+        detached: true,
+        env: { ...process.env, SYSTEMD_COLORS: '0', SYSTEMD_PAGER: '', SYSTEMD_LESS: '' },
+      });
+    } catch (e) {
+      // Bad arguments make spawn throw before any handler is attached: free the slot.
+      release();
+      reject(e);
+      return;
+    }
     let stderr = '';
     let started = false;
     let settled = false;

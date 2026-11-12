@@ -111,10 +111,14 @@ function bool(v: string): boolean {
 
 export interface JournalQuery { boot: boolean; matches: string[] }
 
+/** Credentials the auth plugin accepts in the query string; never journal matches. */
+const CREDENTIAL_PARAMS = new Set(['token']);
+
 /** Query parameters: `boot`, `follow`/`discrete` (only when false), and FIELD=value matches. */
 export function parseQuery(q: Record<string, unknown>): JournalQuery {
   const out: JournalQuery = { boot: false, matches: [] };
   for (const [key, raw] of Object.entries(q)) {
+    if (CREDENTIAL_PARAMS.has(key)) continue;
     const values = (Array.isArray(raw) ? raw : [raw]).map((v) => (v === undefined || v === null ? '' : String(v)));
     if (key === '') throw bad('empty query parameter name');
     if (key === 'boot') { out.boot = values.map(bool).at(-1)!; continue; }
@@ -123,7 +127,11 @@ export function parseQuery(q: Record<string, unknown>): JournalQuery {
       continue;
     }
     if (!FIELD.test(key)) throw bad(`invalid journal field name ${JSON.stringify(key)}`);
-    for (const v of values) out.matches.push(`${key}=${v}`);
+    for (const v of values) {
+      // A NUL can't be passed in a process argument (spawn would throw).
+      if (v.includes('\0')) throw bad(`${key}: match values can't contain NUL`);
+      out.matches.push(`${key}=${v}`);
+    }
   }
   return out;
 }

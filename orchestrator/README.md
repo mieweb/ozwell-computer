@@ -202,7 +202,8 @@ the environment take precedence.
 | `ORCHESTRATOR_MAX_INSTANCES` | unlimited | computers each user may have |
 | `COMPUTER_FRAME_ANCESTORS` | none | origins (e.g. `https://app.ozwell.ai`) allowed to embed the viewer in an iframe; passed to computers when they are created as `OZWELL_COMPUTER_FRAME_ANCESTORS`, so existing computers keep their value |
 | `LOG_LEVEL` | `info` | |
-| `ORCHESTRATOR_INTERNAL_HOST` / `ORCHESTRATOR_INTERNAL_PORT` | `127.0.0.1` / off | internal listener for vmagent: `/metrics`, `/sd`, `/instances/:id/metrics`. No auth: never public |
+| `ORCHESTRATOR_INTERNAL_HOST` / `ORCHESTRATOR_INTERNAL_PORT` | `127.0.0.1` / off | internal listener for vmagent: `/metrics`, `/sd`, `/instances/:id/metrics`. Never public |
+| `ORCHESTRATOR_INTERNAL_TOKEN` | none | bearer token the internal listener requires; required unless it's on loopback |
 | `ORCHESTRATOR_SD_ADDRESS` | the internal host:port | address vmagent uses to reach the internal listener |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | off | OTLP (HTTP, protobuf) export of traces and the orchestrator's logs |
 | `ORCHESTRATOR_LOG_SHIP_URL` | off | VictoriaLogs `…/insert/journald`: pull every computer's journal there |
@@ -221,14 +222,26 @@ docs/observability-plan.md.
 
 ```bash
 cd orchestrator
-cp .env.example .env    # set ORCHESTRATOR_TOKEN; for the profile, uncomment the OTEL_* and
-                        # ORCHESTRATOR_LOG_SHIP_URL lines and set GF_SECURITY_ADMIN_PASSWORD
+cp .env.example .env    # set ORCHESTRATOR_TOKEN, and PROVIDER_URI (see below); for the profile
+                        # set ORCHESTRATOR_INTERNAL_TOKEN and GF_SECURITY_ADMIN_PASSWORD and
+                        # uncomment the OTEL_* and ORCHESTRATOR_LOG_SHIP_URL lines
 docker compose --profile observability up -d --build
 deploy/smoke.sh         # a trace, a metric series and a log line arrive
 ```
 
 Only the orchestrator and Grafana (`GRAFANA_PORT`, default 3000) publish ports, on
 127.0.0.1 by default: route to them from the existing reverse proxy, which terminates TLS.
+
+- **docker:// provider:** set
+  `PROVIDER_URI=docker:///var/run/docker.sock?network=ozwell-computers`. Without
+  `network=`, new computers land on Docker's default bridge, where the orchestrator can't
+  reach them.
+- **Networks:** computers share the `ozwell-computers` network with the orchestrator
+  only. The observability services and Grafana are on `ozwell-observability`, which
+  computers can't reach, because those services have no auth of their own.
+- **Internal listener:** computers can reach it on the shared network, so compose runs it
+  only when `ORCHESTRATOR_INTERNAL_TOKEN` is set, and it then requires that token.
+  vmagent sends it.
 
 ## Providers
 

@@ -1,20 +1,28 @@
 # ozwell-computer orchestrator, optionally with its observability stack.
 #
 #   cd orchestrator
-#   cp .env.example .env           # set ORCHESTRATOR_TOKEN, GF_SECURITY_ADMIN_PASSWORD, PROVIDER_URI, ...
+#   cp .env.example .env           # set ORCHESTRATOR_TOKEN and PROVIDER_URI; for the
+#                                  # profile also ORCHESTRATOR_INTERNAL_TOKEN, the OTEL_*
+#                                  # and log-ship URLs, and GF_SECURITY_ADMIN_PASSWORD
 #   docker compose up -d                              # the orchestrator alone
 #   docker compose --profile observability up -d      # plus metrics, logs, traces and Grafana
-#   deploy/smoke.sh                                        # check that a trace, a metric and a log arrive
+#   deploy/smoke.sh                                   # check that a trace, a metric and a log arrive
 #
 # Only the orchestrator (ORCHESTRATOR_PUBLISH_PORT) and Grafana (GRAFANA_PORT) publish
 # ports, both on 127.0.0.1 by default: put the existing reverse proxy (TLS) in front.
-# The internal listener (:8091: /metrics, /sd, the scrape proxy) has no auth and stays
-# on the compose network. See docs/observability-plan.md.
 #
-# docker:// provider: the default PROVIDER_URI uses the host's Docker socket and puts new
-# computers on this compose network (`network=ozwell-observability`), so the orchestrator
-# can reach them for MCP, metrics and logs. Docker socket access is root-equivalent on
-# the host; prefer the opensource-server provider where you can.
+# Networks: computers are agent-controlled, so they never share a network with the
+# observability services (which have no auth and hold every user's logs and traces).
+#   observability  the orchestrator, the Victoria* services, vmagent and Grafana
+#   computers      the orchestrator and the computers only (docker:// provider)
+# The orchestrator's internal listener (:8091: /metrics, /sd, the scrape proxy) is reachable
+# from the computers network too, so it runs only with ORCHESTRATOR_INTERNAL_TOKEN set, and
+# requires it; vmagent sends it. See docs/observability-plan.md.
+#
+# docker:// provider: set PROVIDER_URI=docker:///var/run/docker.sock?network=ozwell-computers
+# (the default when PROVIDER_URI is unset) so new computers join the computers network
+# and the orchestrator can reach them. Docker socket access is root-equivalent on the
+# host; prefer the opensource-server provider where you can.
 name: ozwell-observability
 
 x-victoria: &victoria
@@ -32,11 +40,12 @@ services:
       - path: .env
         required: false
     environment:
-      PROVIDER_URI: ${PROVIDER_URI:-docker:///var/run/docker.sock?network=ozwell-observability}
+      PROVIDER_URI: ${PROVIDER_URI:-docker:///var/run/docker.sock?network=ozwell-computers}
       ORCHESTRATOR_HOST: 0.0.0.0
       ORCHESTRATOR_PORT: 8090
       ORCHESTRATOR_INTERNAL_HOST: 0.0.0.0
-      ORCHESTRATOR_INTERNAL_PORT: 8091
+      # Only with a token: the computers network can reach this listener.
+      ORCHESTRATOR_INTERNAL_PORT: ${ORCHESTRATOR_INTERNAL_TOKEN:+8091}
       ORCHESTRATOR_SD_ADDRESS: orchestrator:8091
       # Empty without the observability profile: the orchestrator then exports nothing.
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: ${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-}
@@ -48,7 +57,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "${ORCHESTRATOR_BIND:-127.0.0.1}:${ORCHESTRATOR_PUBLISH_PORT:-8090}:8090"
-    networks: [default]
+    networks: [default, computers]
 
   victoriametrics:
     <<: *victoria
@@ -64,6 +73,9 @@ services:
       - -promscrape.httpSDCheckInterval=30s
       - -remoteWrite.url=http://victoriametrics:8428/api/v1/write
       - -remoteWrite.tmpDataPath=/tmp/vmagent
+    environment:
+      # scrape.yml reads it as %{ORCHESTRATOR_INTERNAL_TOKEN}.
+      ORCHESTRATOR_INTERNAL_TOKEN: ${ORCHESTRATOR_INTERNAL_TOKEN:-}
     volumes: [./deploy/vmagent/scrape.yml:/etc/vmagent/scrape.yml:ro]
     depends_on: [victoriametrics]
 
@@ -118,9 +130,13 @@ services:
     volumes: [./deploy/smoke:/smoke:ro]
 
 networks:
+  # The observability services: never shared with computers.
   default:
-    # A fixed name, so the docker provider can attach computers (PROVIDER_URI ?network=).
     name: ozwell-observability
+  # The orchestrator and the computers. A fixed name, so the docker provider can attach
+  # computers to it (PROVIDER_URI ?network=ozwell-computers).
+  computers:
+    name: ozwell-computers
 
 volumes:
   vmdata:

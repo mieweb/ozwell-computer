@@ -154,6 +154,38 @@ describe('LogPuller', () => {
     expect(await count(metrics, 'unavailable')).toBe(1);
   });
 
+  it('serves the longest-waiting computers first, and does not wait for slow pulls', async () => {
+    journal = [0];
+    const many = ['a', 'b', 'c'].map((id) => comp({ id: `ozc-${id}` }));
+    const { puller, advance } = setup(() => many);
+    (puller as any).o.concurrency = 1;
+    await puller.tick(); await puller.tick(); await puller.tick();
+    expect(requests).toHaveLength(3); // one each, not the first one three times
+    const states = (puller as any).states;
+    expect(new Set([...states.values()].map((s: any) => s.cursor)).size).toBe(1);
+    advance(5);
+    // A pull that hangs doesn't block the next pass.
+    (puller as any).o.concurrency = 8;
+    let hang!: () => void;
+    const orig = globalThis.fetch;
+    let first = true;
+    globalThis.fetch = (async (...a: Parameters<typeof fetch>) => {
+      if (first) { first = false; await new Promise<void>((r) => { hang = r; }); }
+      return orig(...a);
+    }) as typeof fetch;
+    try {
+      const slow = puller.tick();
+      await new Promise((r) => setTimeout(r, 50));
+      advance(5);
+      const before = requests.length;
+      await puller.tick(); // the first pass's pull is stuck: the others still get pulled
+      expect(requests.length - before).toBe(2);
+      hang(); await slow;
+    } finally {
+      globalThis.fetch = orig;
+    }
+  });
+
   it('keeps defaults for options passed as undefined', () => {
     const p = new LogPuller({ provider: {} as Provider, shipUrl: vlUrl, pollMs: undefined, batch: undefined });
     expect((p as any).o).toMatchObject({ pollMs: 5000, batch: 1000 });

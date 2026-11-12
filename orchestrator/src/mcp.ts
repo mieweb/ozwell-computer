@@ -184,7 +184,7 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
       throw e;
     }
   };
-  const timed = <T>(kind: 'list' | 'get', fn: () => Promise<T>) => (ops ? ops.timed(kind, fn) : fn());
+  const timed = <T>(kind: 'list' | 'get', fn: () => Promise<T>) => (ops ? ops.timed(kind, fn, linkOp) : fn());
   const observed = (c: Computer, ready: boolean) => { ops?.observe(c, ready); return text({ ...describe(c), ready }); };
 
   /** A computer the requester owns, or a not-found error (others' computers are invisible). */

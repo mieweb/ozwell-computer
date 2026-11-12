@@ -1,11 +1,13 @@
 // The internal listener (ORCHESTRATOR_INTERNAL_PORT): scrape and service-discovery routes
-// for vmagent. No auth: bind it to loopback or a private compose network, never publicly.
+// for vmagent. With a token (ORCHESTRATOR_INTERNAL_TOKEN) every route but /health needs
+// `Authorization: Bearer <token>`; without one, bind it to loopback only.
 //
 //   GET /metrics                 the orchestrator's own metrics
 //   GET /sd                      Prometheus http_sd targets, one per running computer
 //   GET /instances/:id/metrics   scrape proxy: the computer's /api/v1/metrics with its token
 import { Readable } from 'node:stream';
 import Fastify, { type FastifyInstance } from 'fastify';
+import { tokenOk } from './server.ts';
 import type { Metrics } from './metrics.ts';
 import type { Computer, Provider } from './providers/types.ts';
 
@@ -19,6 +21,8 @@ export interface InternalServerOptions {
   sdCacheMs?: number;
   /** Instance scrape timeout (default 10 s). */
   scrapeTimeoutMs?: number;
+  /** Bearer token required on every route but /health; undefined means none. */
+  token?: string;
   logger?: boolean | object;
 }
 
@@ -39,6 +43,16 @@ export async function buildInternalServer(opts: InternalServerOptions): Promise<
   const noTrace = { config: { otel: false } }; // scrapes every few seconds: not worth a trace each
 
   app.get('/health', async (_req, reply) => reply.code(204).send());
+  if (opts.token) {
+    const token = opts.token;
+    app.addHook('onRequest', async (req, reply) => {
+      if (req.url === '/health') return;
+      const m = /^Bearer\s+(.+)$/i.exec(req.headers.authorization ?? '');
+      if (!tokenOk(token, m?.[1])) {
+        return reply.code(401).header('www-authenticate', 'Bearer').send({ error: { reason: 'unauthenticated', message: 'missing or invalid token' } });
+      }
+    });
+  }
   app.get('/metrics', noTrace, async (_req, reply) =>
     reply.type(opts.metrics.registry.contentType).send(await opts.metrics.registry.metrics()));
 

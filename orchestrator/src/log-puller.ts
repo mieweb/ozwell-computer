@@ -138,15 +138,21 @@ export class LogPuller {
 
   stop() { clearInterval(this.timer); this.timer = undefined; }
 
-  /** One scheduling pass: refresh discovery if due, then start every due pull (capped). Resolves when they finish. */
+  /**
+   * One scheduling pass: refresh discovery if due, then start due pulls, longest-waiting
+   * first, up to the in-flight cap. Only discovery and selection hold the lock: pulls run on,
+   * so a slow computer never delays the next pass. Resolves when this pass's pulls finish.
+   */
   async tick(): Promise<void> {
     if (this.ticking) return;
     this.ticking = true;
+    const pulls: Promise<void>[] = [];
     try {
       await this.discover();
       const now = this.o.now();
-      const due = [...this.states.entries()].filter(([, s]) => !s.busy && s.nextAt <= now);
-      const pulls: Promise<void>[] = [];
+      const due = [...this.states.entries()]
+        .filter(([, s]) => !s.busy && s.nextAt <= now)
+        .sort(([, a], [, b]) => a.nextAt - b.nextAt);
       for (const [id, s] of due) {
         if (this.inFlight >= this.o.concurrency) break;
         const c = this.computers.get(id);
@@ -155,10 +161,10 @@ export class LogPuller {
         this.inFlight++;
         pulls.push(this.pull(c, s).finally(() => { s.busy = false; this.inFlight--; }));
       }
-      await Promise.all(pulls);
     } finally {
       this.ticking = false;
     }
+    await Promise.all(pulls);
   }
 
   private async discover() {

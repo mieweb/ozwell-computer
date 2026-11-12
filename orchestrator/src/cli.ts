@@ -14,6 +14,8 @@
 //   ORCHESTRATOR_INTERNAL_HOST / ORCHESTRATOR_INTERNAL_PORT  internal listener for vmagent
 //                        (/metrics, /sd, /instances/:id/metrics); unset port disables it.
 //                        Unauthenticated: never public.
+//   ORCHESTRATOR_INTERNAL_TOKEN  bearer token the internal listener requires (vmagent sends
+//                        it); required unless the internal listener is on loopback
 //   ORCHESTRATOR_SD_ADDRESS  host:port vmagent reaches the internal listener at, put in /sd
 //                        targets (default the internal host:port; compose: orchestrator:8091)
 //   ORCHESTRATOR_LOG_SHIP_URL  VictoriaLogs journald ingest (…/insert/journald): pull every
@@ -44,6 +46,12 @@ if (rawMax !== undefined && !/^\d+$/.test(rawMax)) die('ORCHESTRATOR_MAX_INSTANC
 const maxInstances = rawMax === undefined ? undefined : Number(rawMax);
 const rawInternal = env.ORCHESTRATOR_INTERNAL_PORT;
 if (rawInternal && !/^\d+$/.test(rawInternal)) die('ORCHESTRATOR_INTERNAL_PORT must be a port number');
+const internalHost = env.ORCHESTRATOR_INTERNAL_HOST || '127.0.0.1';
+const internalToken = env.ORCHESTRATOR_INTERNAL_TOKEN || undefined;
+// It serves every computer's metrics (each user's): never unauthenticated off loopback.
+if (rawInternal && !internalToken && !['127.0.0.1', '::1', 'localhost'].includes(internalHost)) {
+  die(`ORCHESTRATOR_INTERNAL_TOKEN is required when the internal listener is on ${internalHost}`);
+}
 const rawOpTimeout = env.ORCHESTRATOR_OP_TIMEOUT_MS;
 if (rawOpTimeout && !/^\d+$/.test(rawOpTimeout)) die('ORCHESTRATOR_OP_TIMEOUT_MS must be a number of milliseconds');
 const rawLogPoll = env.ORCHESTRATOR_LOG_POLL_MS;
@@ -52,11 +60,16 @@ const logger = { level: env.LOG_LEVEL || 'info', redact: ['req.headers.authoriza
 const metrics = new Metrics();
 
 const provider = instrumentProvider(await providerFromUri(uri as string, env), metrics.onProviderCall);
-const operations = new OperationTracker({
-  provider: provider.scheme, metrics, probe: (id) => isReady(provider, id),
-  timeoutMs: rawOpTimeout ? Number(rawOpTimeout) : undefined,
-});
-operations.start();
+// Operation timing only when something can see it (metrics on the internal listener, or
+// traces): otherwise its readiness watcher would add provider lookups and /health probes.
+const observed = Boolean(rawInternal || env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT);
+const operations = observed
+  ? new OperationTracker({
+    provider: provider.scheme, metrics, probe: (id) => isReady(provider, id),
+    timeoutMs: rawOpTimeout ? Number(rawOpTimeout) : undefined,
+  })
+  : undefined;
+operations?.start();
 const catalog = loadCatalog(env.TOOL_CATALOG || new URL('../../docs/mcp-tools.json', import.meta.url));
 const app = await buildServer({
   provider, catalog, client: new InstanceClient(), version, psk: psk as string | null, maxInstances, metrics, operations, logger,
@@ -64,9 +77,8 @@ const app = await buildServer({
 app.log.info({ provider: provider.scheme, tools: catalog.length, maxInstances: maxInstances ?? 'unlimited' }, 'orchestrator configured');
 if (authDisabled) app.log.warn('AUTHENTICATION IS DISABLED: any caller can act as any X-Ozwell-User-Id');
 await app.listen({ host: env.ORCHESTRATOR_HOST || '127.0.0.1', port: Number(env.ORCHESTRATOR_PORT || 8090) });
-const internalHost = env.ORCHESTRATOR_INTERNAL_HOST || '127.0.0.1';
 const sdAddress = env.ORCHESTRATOR_SD_ADDRESS || `${['0.0.0.0', '::'].includes(internalHost) ? '127.0.0.1' : internalHost}:${rawInternal}`;
-const internal = rawInternal ? await buildInternalServer({ metrics, provider, sdAddress, logger: { ...logger, level: env.LOG_LEVEL || 'warn' } }) : null;
+const internal = rawInternal ? await buildInternalServer({ metrics, provider, sdAddress, token: internalToken, logger: { ...logger, level: env.LOG_LEVEL || 'warn' } }) : null;
 await internal?.listen({ host: internalHost, port: Number(rawInternal) });
 
 const logPuller = env.ORCHESTRATOR_LOG_SHIP_URL

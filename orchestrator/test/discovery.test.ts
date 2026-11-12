@@ -103,6 +103,20 @@ describe('internal server', () => {
     }
   });
 
+  it('requires the token on every route but /health when one is set', async () => {
+    const app = await buildInternalServer({ metrics: new Metrics({ defaultMetrics: false }), provider: provider(() => [comp('a')]), token: 'int' });
+    try {
+      for (const url of ['/metrics', '/sd', '/instances/a/metrics']) {
+        expect((await app.inject(url)).statusCode, url).toBe(401);
+        expect((await app.inject({ url, headers: { authorization: 'Bearer wrong' } })).statusCode, url).toBe(401);
+        expect((await app.inject({ url, headers: { authorization: 'Bearer int' } })).statusCode, url).toBe(200);
+      }
+      expect((await app.inject('/health')).statusCode).toBe(204);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('serves only /metrics without a provider', async () => {
     const app = await buildInternalServer({ metrics: new Metrics({ defaultMetrics: false }) });
     try {

@@ -65,6 +65,10 @@ describe('parseQuery', () => {
     }
     expect(() => parseQuery({ boot: 'maybe' })).toThrow(expect.objectContaining({ reason: 'invalid_request' }));
   });
+  it('ignores the token credential and rejects NUL in values', () => {
+    expect(parseQuery({ token: 'secret', PRIORITY: '3' })).toEqual({ boot: false, matches: ['PRIORITY=3'] });
+    expect(() => parseQuery({ MESSAGE: 'a\0b' })).toThrow(expect.objectContaining({ reason: 'invalid_request' }));
+  });
   it('refuses follow and discrete', () => {
     expect(() => parseQuery({ follow: '' })).toThrow(expect.objectContaining({ reason: 'feature_unsupported' }));
     expect(() => parseQuery({ discrete: 'yes' })).toThrow(expect.objectContaining({ reason: 'feature_unsupported' }));
@@ -143,6 +147,12 @@ printf '%s\\n' "$@"
     expect((await app.inject({ url: '/api/v1/logs/entries', headers: { range: 'entries=:0' } })).statusCode).toBe(400);
     expect((await app.inject({ url: '/api/v1/logs/entries?--output=cat' })).statusCode).toBe(400);
     expect((await app.inject({ url: '/api/v1/logs/entries?follow' })).statusCode).toBe(501);
+  });
+
+  it('frees the reader slot when a request is rejected (NUL bytes)', async () => {
+    // More than the 4-reader cap: none may leak.
+    for (let i = 0; i < 6; i++) expect((await app.inject({ url: '/api/v1/logs/entries?MESSAGE=%00' })).statusCode).toBe(400);
+    expect((await app.inject({ url: '/api/v1/logs/entries?token=t' })).statusCode).toBe(200);
   });
 
   it('kills journalctl at the timeout', async () => {
