@@ -50,7 +50,9 @@ export function buildSdk(c: TelemetryConfig): NodeSDK | null {
     logRecordProcessors,
     metricReaders: [], // metrics are pulled by vmagent from /metrics, never pushed
     instrumentations: [
-      new HttpInstrumentation(), // the docker socket and other node:http clients
+      // Outgoing only (the docker socket, other node:http clients): @fastify/otel traces
+      // incoming requests, and would skip vmagent's scrapes, which this would not.
+      new HttpInstrumentation({ disableIncomingRequestInstrumentation: true }),
       new UndiciInstrumentation(), // fetch: opensource-server API, instances
       // trace_id/span_id in every pino line; records also go over OTLP when logs are on.
       new PinoInstrumentation({ disableLogSending: !c.logsEndpoint }),

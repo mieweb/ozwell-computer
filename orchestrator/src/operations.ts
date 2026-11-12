@@ -14,6 +14,7 @@
 import { ROOT_CONTEXT, SpanStatusCode, trace, type Link, type Span } from '@opentelemetry/api';
 import type { Computer } from './providers/types.ts';
 import type { Metrics } from './metrics.ts';
+import { untraced } from './untraced.ts';
 
 export type OpKind = 'create' | 'start' | 'destroy' | 'list' | 'get';
 export type Phase = 'enqueue' | 'provision' | 'boot';
@@ -53,7 +54,8 @@ export class Operation {
     // A root span: the operation's own trace, independent of the tool call that began it.
     this.span = tracer.startSpan(`operation.${kind}`, {
       root: true, startTime: startedAt,
-      attributes: { 'ozwell.operation': kind, 'ozwell.provider': provider, ...(id ? { 'ozwell.instance_id': id } : {}) },
+      // ozwell.kind: one tag to find every operation trace (Jaeger search has no regex).
+      attributes: { 'ozwell.kind': 'operation', 'ozwell.operation': kind, 'ozwell.provider': provider, ...(id ? { 'ozwell.instance_id': id } : {}) },
     }, ROOT_CONTEXT);
   }
 
@@ -215,7 +217,7 @@ export class OperationTracker {
   pollOnce(): Promise<void> {
     // Deadlines every tick, even while an earlier pass waits on a hung probe.
     this.expire();
-    this.pass ??= this.runPass().finally(() => { this.pass = undefined; });
+    this.pass ??= untraced(() => this.runPass()).finally(() => { this.pass = undefined; });
     return this.pass;
   }
 

@@ -471,8 +471,8 @@
           },
           "queryType": "search",
           "service": "ozwell-computer-orchestrator",
-          "operation": "/operation\\..*/",
-          "limit": 20
+          "limit": 20,
+          "tags": "ozwell.kind=\"operation\""
         }
       ],
       "id": 12

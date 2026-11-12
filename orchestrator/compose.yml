@@ -61,7 +61,12 @@ services:
   victoriatraces:
     image: victoriametrics/victoria-traces:v0.13.0
     restart: unless-stopped
-    command: [-storageDataPath=/storage, -retentionPeriod=7d]
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod=7d
+      # Traces become searchable after both (defaults 20s + 30s); opening one by id is immediate.
+      - -insert.indexFlushInterval=10s
+      - -search.latencyOffset=10s
     volumes: [vtdata:/storage]
 
   grafana:

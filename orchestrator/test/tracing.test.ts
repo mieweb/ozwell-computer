@@ -11,6 +11,8 @@ import { buildInternalServer } from '../src/internal-server.ts';
 import { InstanceClient } from '../src/instance-client.ts';
 import { instrumentProvider } from '../src/instrument-provider.ts';
 import { Metrics } from '../src/metrics.ts';
+import { LogPuller } from '../src/log-puller.ts';
+import { OperationTracker } from '../src/operations.ts';
 import type { ToolDef } from '../src/mcp.ts';
 import { generateId, type Computer, type Provider } from '../src/providers/types.ts';
 
@@ -120,6 +122,23 @@ describe('tool-call tracing', () => {
     expect(s.spanContext().traceId).toBe('0af7651916cd43dd8448eb211c80319c');
     expect(s.status.code).toBe(2);
     expect(s.attributes['error.type']).toBe('target_unavailable');
+  });
+});
+
+describe('background work is not traced', () => {
+  it('creates no spans for the log puller or the readiness watcher, but operations still trace', async () => {
+    const provider = instrumentProvider(memoryProvider(instUrl));
+    const c = await provider.create({ owner: { id: 'zed' } });
+    exporter.reset();
+    const puller = new LogPuller({ provider, shipUrl: 'http://127.0.0.1:1/insert/journald/upload', discoverMs: 0 });
+    await puller.tick();
+    const ops = new OperationTracker({ provider: 'memory', probe: async (id) => ({ c: await provider.get(id), ready: true }) });
+    const op = ops.begin('start', c.id);
+    op.enqueued({ ...c, stopped: true });
+    await ops.pollOnce();
+    const names = exporter.getFinishedSpans().map((s) => s.name);
+    expect(names).toEqual(['operation.start']); // no provider.listAll/get, no HTTP client spans
+    expect(exporter.getFinishedSpans()[0].attributes['ozwell.kind']).toBe('operation');
   });
 });
 

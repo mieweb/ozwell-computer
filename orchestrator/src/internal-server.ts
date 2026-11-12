@@ -8,6 +8,7 @@
 import { Readable } from 'node:stream';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { tokenOk } from './server.ts';
+import { untraced } from './untraced.ts';
 import type { Metrics } from './metrics.ts';
 import { observedOwner, type Computer, type Provider } from './providers/types.ts';
 
@@ -64,7 +65,7 @@ export async function buildInternalServer(opts: InternalServerOptions): Promise<
   let cache: { at: number; body: SdTarget[] } | undefined;
   let inflight: Promise<SdTarget[]> | undefined;
 
-  app.get('/sd', noTrace, async (req, reply) => {
+  app.get('/sd', noTrace, (req, reply) => untraced(async () => {
     if (!cache || Date.now() - cache.at >= cacheMs) {
       // Concurrent discovery requests share one provider listing.
       inflight ??= provider.listAll()
@@ -79,9 +80,9 @@ export async function buildInternalServer(opts: InternalServerOptions): Promise<
       }
     }
     return reply.send(cache!.body);
-  });
+  }));
 
-  app.get<{ Params: { id: string } }>('/instances/:id/metrics', noTrace, async (req, reply) => {
+  app.get<{ Params: { id: string } }>('/instances/:id/metrics', noTrace, (req, reply) => untraced(async () => {
     let c: Computer | null;
     try {
       c = await provider.get(req.params.id);
@@ -107,7 +108,7 @@ export async function buildInternalServer(opts: InternalServerOptions): Promise<
     }
     reply.type(res.headers.get('content-type') ?? 'text/plain; version=0.0.4');
     return reply.send(Readable.fromWeb(res.body as any));
-  });
+  }));
 
   return app;
 }
