@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { context, propagation, trace } from '@opentelemetry/api';
 import { buildMcpServer, type OrchestratorDeps } from './mcp.ts';
+import { ComputerCache } from './computer-cache.ts';
 import type { Requester } from './providers/types.ts';
 
 const digest = (s: string) => createHash('sha256').update(s).digest();
@@ -37,7 +38,13 @@ export interface ServerOptions extends OrchestratorDeps {
 export async function buildServer(opts: ServerOptions): Promise<FastifyInstance> {
   const app = Fastify({ logger: opts.logger ?? false, bodyLimit: 32 * 1024 * 1024 });
   // Tool-call logging goes to the app's logger unless the caller supplied one.
-  const deps: OrchestratorDeps = { ...opts, log: opts.log ?? app.log.child({ component: 'mcp' }) };
+  const deps: OrchestratorDeps = {
+    ...opts,
+    log: opts.log ?? app.log.child({ component: 'mcp' }),
+    // Shared by every request (each gets its own MCP server).
+    // null turns it off (tests).
+    cache: opts.cache === undefined ? new ComputerCache() : opts.cache,
+  };
 
   app.get('/health', async (_req, reply) => reply.code(204).send());
 

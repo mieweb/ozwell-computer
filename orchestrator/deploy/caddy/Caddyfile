@@ -1,0 +1,25 @@
+# Routes MCP traffic to every orchestrator replica, so `docker rollout orchestrator` can
+# swap them without dropping calls (README.md, "Updating without dropping calls").
+{
+	admin off
+	auto_https off
+}
+
+:8090 {
+	reverse_proxy {
+		# Every orchestrator replica, from compose DNS, re-resolved every second.
+		dynamic a orchestrator 8090 {
+			refresh 1s
+			versions ipv4
+		}
+		# A replica that is starting or draining refuses connections: try another one, and
+		# hold the request up to 30 s when none answers yet (a plain restart).
+		lb_try_duration 30s
+		transport http {
+			dial_timeout 1s
+			# A new connection per request: a failure is then always at connect time, before
+			# the request was sent, which Caddy retries even for POST.
+			keepalive off
+		}
+	}
+}

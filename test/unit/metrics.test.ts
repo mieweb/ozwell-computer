@@ -2,8 +2,27 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { availableCpus, parseCpuMax, render, setCpus } from '../../src/metrics.js';
+import { availableCpus, parseCpuMax, parsePressure, render, setCpus, setVersion } from '../../src/metrics.js';
 import { cpuPercent, perfTitle, readMetrics } from '../../web/src/metrics.js';
+
+describe('pressure', () => {
+  it('reads the stall totals from a cgroup v2 pressure file', () => {
+    expect(parsePressure('some avg10=0.24 avg60=0.08 avg300=0.01 total=91862\nfull avg10=0.08 avg60=0.02 avg300=0.00 total=49775\n'))
+      .toEqual({ some: 0.091862, full: 0.049775 });
+    expect(parsePressure('some avg10=0.00 avg60=0.00 avg300=0.00 total=0\n')).toEqual({ some: 0 }); // older kernels: no "full" for cpu
+    expect(parsePressure('')).toEqual({});
+  });
+});
+
+describe('build info', () => {
+  it('exports the running version as ozwell_build_info', async () => {
+    setVersion('2026.11.3');
+    setVersion('2026.11.4'); // a restart under a new version: only the current one
+    const { body } = await render();
+    expect(body).toMatch(/^ozwell_build_info\{version="2026\.11\.4"\} 1$/m);
+    expect(body).not.toContain('2026.11.3');
+  });
+});
 
 describe('cpu count', () => {
   it('parses cgroup v2 cpu.max', () => {

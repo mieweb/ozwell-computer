@@ -195,7 +195,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "count by (user) (up{job=\"computers\"})",
+          "expr": "count by (user) (max by (instance_id, user) (ozwell_orchestrator_computer_info) and on (instance_id) up{job=\"computers\"})",
           "legendFormat": "{{user}}",
           "exemplar": false
         }
@@ -228,7 +228,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "up{job=\"computers\", instance_id=~\"$instance_id\"}",
+          "expr": "max by (instance_id) (up{job=\"computers\", instance_id=~\"$instance_id\"})",
           "legendFormat": "{{instance_id}}",
           "exemplar": false
         }
@@ -261,7 +261,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "ozwell_cgroup_memory_bytes{scope=\"container\", instance_id=~\"$instance_id\"}",
+          "expr": "max by (instance_id) (ozwell_cgroup_memory_bytes{scope=\"container\", instance_id=~\"$instance_id\"})",
           "legendFormat": "{{instance_id}}",
           "exemplar": false
         }
@@ -294,7 +294,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "rate(ozwell_cgroup_cpu_seconds_total{instance_id=~\"$instance_id\"}[$__rate_interval])",
+          "expr": "max by (instance_id) (rate(ozwell_cgroup_cpu_seconds_total{instance_id=~\"$instance_id\"}[$__rate_interval]))",
           "legendFormat": "{{instance_id}}",
           "exemplar": false
         }
@@ -393,7 +393,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "ozwell_vnc_sessions{instance_id=~\"$instance_id\"}",
+          "expr": "max by (instance_id) (ozwell_vnc_sessions{instance_id=~\"$instance_id\"})",
           "legendFormat": "{{instance_id}}",
           "exemplar": false
         }
@@ -432,6 +432,158 @@
         }
       ],
       "id": 12
+    },
+    {
+      "type": "piechart",
+      "title": "Versions",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 0,
+        "y": 36
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "values": [
+            "value"
+          ]
+        },
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "count by (version) (ozwell_build_info{job=\"computers\"}) or label_replace(count((up{job=\"computers\"} == 1) unless on (instance_id) ozwell_build_info), \"version\", \"older (no version metric)\", \"\", \"\") or label_replace(count(up{job=\"computers\"} == 0), \"version\", \"unknown (scrape failing)\", \"\", \"\")",
+          "legendFormat": "{{version}}",
+          "instant": true
+        }
+      ],
+      "id": 13
+    },
+    {
+      "type": "timeseries",
+      "title": "CPU pressure (some)",
+      "description": "Share of time tasks were stalled waiting for the resource (Linux PSI). some: at least one task waited; full: every task did (no progress at all). Sustained some above ~10% is contention; any full is serious.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 8,
+        "h": 8,
+        "y": 44,
+        "x": 0
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "max by (instance_id) (rate(ozwell_cgroup_pressure_seconds_total{resource=\"cpu\", kind=\"some\", instance_id=~\"$instance_id\"}[$__rate_interval]))",
+          "legendFormat": "{{instance_id}}"
+        }
+      ],
+      "id": 14
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory pressure (some)",
+      "description": "Share of time tasks were stalled waiting for the resource (Linux PSI). some: at least one task waited; full: every task did (no progress at all). Sustained some above ~10% is contention; any full is serious.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 8,
+        "h": 8,
+        "y": 44,
+        "x": 8
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "max by (instance_id) (rate(ozwell_cgroup_pressure_seconds_total{resource=\"memory\", kind=\"some\", instance_id=~\"$instance_id\"}[$__rate_interval]))",
+          "legendFormat": "{{instance_id}}"
+        }
+      ],
+      "id": 15
+    },
+    {
+      "type": "timeseries",
+      "title": "IO pressure (some)",
+      "description": "Share of time tasks were stalled waiting for the resource (Linux PSI). some: at least one task waited; full: every task did (no progress at all). Sustained some above ~10% is contention; any full is serious.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "victoriametrics"
+      },
+      "gridPos": {
+        "w": 8,
+        "h": 8,
+        "y": 44,
+        "x": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "victoriametrics"
+          },
+          "expr": "max by (instance_id) (rate(ozwell_cgroup_pressure_seconds_total{resource=\"io\", kind=\"some\", instance_id=~\"$instance_id\"}[$__rate_interval]))",
+          "legendFormat": "{{instance_id}}"
+        }
+      ],
+      "id": 16
     }
   ],
   "links": [

@@ -53,13 +53,13 @@ describe('LogPuller', () => {
 
     vl = Fastify();
     vl.addContentTypeParser(JOURNAL_EXPORT, { parseAs: 'string' }, (_r, body, done) => done(null, body));
-    vl.post('/insert/journald', async (req, reply) => {
+    vl.post('/insert/journald/upload', async (req, reply) => {
       if (shipStatus !== 204) return reply.code(shipStatus).send();
       shipped.push(req.body as string);
       return reply.code(204).send();
     });
     await vl.listen({ port: 0, host: '127.0.0.1' });
-    vlUrl = `http://127.0.0.1:${(vl.server.address() as any).port}/insert/journald`;
+    vlUrl = `http://127.0.0.1:${(vl.server.address() as any).port}/insert/journald/upload`;
   });
   afterAll(async () => { await inst.close(); await vl.close(); });
   beforeEach(() => { journal = []; requests = []; shipped = []; instStatus = 200; shipStatus = 204; });

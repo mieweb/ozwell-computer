@@ -190,7 +190,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Duration p50",
+      "title": "Duration p50 (1h window)",
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -214,7 +214,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "histogram_quantile(0.5, sum by (le, provider, operation) (rate(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=~\"$operation\", outcome=\"ok\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le, provider, operation) (increase(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=~\"$operation\", outcome=\"ok\"}[1h])))",
           "legendFormat": "{{provider}} {{operation}}",
           "exemplar": false
         }
@@ -223,7 +223,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Duration p95",
+      "title": "Duration p95 (1h window)",
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -247,7 +247,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "histogram_quantile(0.95, sum by (le, provider, operation) (rate(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=~\"$operation\", outcome=\"ok\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le, provider, operation) (increase(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=~\"$operation\", outcome=\"ok\"}[1h])))",
           "legendFormat": "{{provider}} {{operation}}",
           "exemplar": false
         }
@@ -256,7 +256,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Duration p99",
+      "title": "Duration p99 (1h window)",
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -280,7 +280,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "histogram_quantile(0.99, sum by (le, provider, operation) (rate(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=~\"$operation\", outcome=\"ok\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.99, sum by (le, provider, operation) (increase(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=~\"$operation\", outcome=\"ok\"}[1h])))",
           "legendFormat": "{{provider}} {{operation}}",
           "exemplar": false
         }
@@ -289,7 +289,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Phase breakdown (mean)",
+      "title": "Phase breakdown (mean) (1h window)",
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -313,7 +313,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "sum by (operation, phase) (rate(ozwell_orchestrator_operation_phase_seconds_sum{provider=~\"$provider\", operation=~\"$operation\"}[$__rate_interval])) / sum by (operation, phase) (rate(ozwell_orchestrator_operation_phase_seconds_count{provider=~\"$provider\", operation=~\"$operation\"}[$__rate_interval]))",
+          "expr": "sum by (operation, phase) (increase(ozwell_orchestrator_operation_phase_seconds_sum{provider=~\"$provider\", operation=~\"$operation\"}[1h])) / sum by (operation, phase) (increase(ozwell_orchestrator_operation_phase_seconds_count{provider=~\"$provider\", operation=~\"$operation\"}[1h]))",
           "legendFormat": "{{operation}} {{phase}}",
           "exemplar": false
         }
@@ -322,7 +322,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Operations by outcome",
+      "title": "Operations per hour by outcome",
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -335,7 +335,7 @@
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "ops"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -346,7 +346,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "sum by (operation, outcome) (rate(ozwell_orchestrator_operations_total{provider=~\"$provider\", operation=~\"$operation\"}[$__rate_interval]))",
+          "expr": "sum by (operation, outcome) (increase(ozwell_orchestrator_operations_total{provider=~\"$provider\", operation=~\"$operation\"}[1h]))",
           "legendFormat": "{{operation}} {{outcome}}",
           "exemplar": false
         }
@@ -355,7 +355,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Time to ready: observed by clients vs actual (p50/p95)",
+      "title": "Time to ready: observed by clients vs actual (p50/p95) (1h window)",
       "datasource": {
         "type": "prometheus",
         "uid": "victoriametrics"
@@ -379,7 +379,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(ozwell_orchestrator_time_to_ready_observed_seconds_bucket{provider=~\"$provider\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (increase(ozwell_orchestrator_time_to_ready_observed_seconds_bucket{provider=~\"$provider\"}[1h])))",
           "legendFormat": "observed p50",
           "exemplar": false
         },
@@ -389,7 +389,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(ozwell_orchestrator_time_to_ready_observed_seconds_bucket{provider=~\"$provider\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(ozwell_orchestrator_time_to_ready_observed_seconds_bucket{provider=~\"$provider\"}[1h])))",
           "legendFormat": "observed p95",
           "exemplar": false
         },
@@ -399,7 +399,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=\"create\", outcome=\"ok\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.5, sum by (le) (increase(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=\"create\", outcome=\"ok\"}[1h])))",
           "legendFormat": "actual p50",
           "exemplar": false
         },
@@ -409,7 +409,7 @@
             "type": "prometheus",
             "uid": "victoriametrics"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=\"create\", outcome=\"ok\"}[$__rate_interval])))",
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(ozwell_orchestrator_operation_duration_seconds_bucket{provider=~\"$provider\", operation=\"create\", outcome=\"ok\"}[1h])))",
           "legendFormat": "actual p95",
           "exemplar": false
         }
@@ -471,8 +471,8 @@
           },
           "queryType": "search",
           "service": "ozwell-computer-orchestrator",
-          "operation": "/operation\\..*/",
-          "limit": 20
+          "limit": 20,
+          "tags": "ozwell.kind=\"operation\""
         }
       ],
       "id": 12

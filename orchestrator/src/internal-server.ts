@@ -8,8 +8,9 @@
 import { Readable } from 'node:stream';
 import Fastify, { type FastifyInstance } from 'fastify';
 import { tokenOk } from './server.ts';
+import { untraced } from './untraced.ts';
 import type { Metrics } from './metrics.ts';
-import { observedOwner, type Computer, type Provider } from './providers/types.ts';
+import type { Computer, Provider } from './providers/types.ts';
 
 export interface InternalServerOptions {
   metrics: Metrics;
@@ -19,6 +20,8 @@ export interface InternalServerOptions {
   sdAddress?: string;
   /** How long a /sd answer is reused (default 15 s). */
   sdCacheMs?: number;
+  /** How long /metrics waits for a computer listing before serving the last one (default 2 s). */
+  metadataWaitMs?: number;
   /** Instance scrape timeout (default 10 s). */
   scrapeTimeoutMs?: number;
   /** Bearer token required on every route but /health; undefined means none. */
@@ -34,7 +37,9 @@ export function sdTargets(computers: Computer[], provider: string, address: stri
     .filter((c) => !c.stopped && c.internalUrl && c.token)
     .map((c) => ({
       targets: [address],
-      labels: { instance_id: c.id, provider, user: observedOwner(c), __metrics_path__: `/instances/${encodeURIComponent(c.id)}/metrics` },
+      // Identity only: these labels go on every scraped series, and a label that changes
+      // starts new series. Metadata (owner, display name, ...) is ozwell_orchestrator_computer_info.
+      labels: { instance_id: c.id, provider, __metrics_path__: `/instances/${encodeURIComponent(c.id)}/metrics` },
     }));
 }
 
@@ -53,35 +58,51 @@ export async function buildInternalServer(opts: InternalServerOptions): Promise<
       }
     });
   }
-  app.get('/metrics', noTrace, async (_req, reply) =>
-    reply.type(opts.metrics.registry.contentType).send(await opts.metrics.registry.metrics()));
 
   const provider = opts.provider;
+  // One provider listing, shared by /sd and the computer metadata in /metrics, reused for
+  // sdCacheMs; concurrent requests share one call.
+  const cacheMs = opts.sdCacheMs ?? 15_000;
+  let cache: { at: number; computers: Computer[] } | undefined;
+  let inflight: Promise<Computer[]> | undefined;
+  const listing = provider && ((): Promise<Computer[]> => {
+    if (cache && Date.now() - cache.at < cacheMs) return Promise.resolve(cache.computers);
+    inflight ??= provider.listAll()
+      .then((computers) => {
+        cache = { at: Date.now(), computers };
+        opts.metrics.setComputers(computers, provider.scheme);
+        return computers;
+      })
+      .finally(() => { inflight = undefined; });
+    return inflight;
+  });
+
+  app.get('/metrics', noTrace, (_req, reply) => untraced(async () => {
+    // Refresh the computer metadata, but never hold the scrape for it: a slow or failing
+    // provider leaves the last snapshot in place while the refresh carries on.
+    const refresh = listing?.().catch(() => undefined);
+    if (refresh) {
+      let timer: NodeJS.Timeout | undefined;
+      await Promise.race([refresh, new Promise((r) => { timer = setTimeout(r, opts.metadataWaitMs ?? 2000); })]);
+      clearTimeout(timer);
+    }
+    return reply.type(opts.metrics.registry.contentType).send(await opts.metrics.registry.metrics());
+  }));
+
   if (!provider) return app;
 
   const address = opts.sdAddress ?? '127.0.0.1:8091';
-  const cacheMs = opts.sdCacheMs ?? 15_000;
-  let cache: { at: number; body: SdTarget[] } | undefined;
-  let inflight: Promise<SdTarget[]> | undefined;
-
-  app.get('/sd', noTrace, async (req, reply) => {
-    if (!cache || Date.now() - cache.at >= cacheMs) {
-      // Concurrent discovery requests share one provider listing.
-      inflight ??= provider.listAll()
-        .then((all) => { cache = { at: Date.now(), body: sdTargets(all, provider.scheme, address) }; return cache.body; })
-        .finally(() => { inflight = undefined; });
-      try {
-        await inflight;
-      } catch (e) {
-        // vmagent keeps its last good target list when discovery fails.
-        req.log.warn({ err: (e as Error).message }, 'service discovery failed');
-        return reply.code(502).send({ error: { reason: 'provider_error', message: (e as Error).message } });
-      }
+  app.get('/sd', noTrace, (req, reply) => untraced(async () => {
+    try {
+      return reply.send(sdTargets(await listing!(), provider!.scheme, address));
+    } catch (e) {
+      // vmagent keeps its last good target list when discovery fails.
+      req.log.warn({ err: (e as Error).message }, 'service discovery failed');
+      return reply.code(502).send({ error: { reason: 'provider_error', message: (e as Error).message } });
     }
-    return reply.send(cache!.body);
-  });
+  }));
 
-  app.get<{ Params: { id: string } }>('/instances/:id/metrics', noTrace, async (req, reply) => {
+  app.get<{ Params: { id: string } }>('/instances/:id/metrics', noTrace, (req, reply) => untraced(async () => {
     let c: Computer | null;
     try {
       c = await provider.get(req.params.id);
@@ -107,7 +128,7 @@ export async function buildInternalServer(opts: InternalServerOptions): Promise<
     }
     reply.type(res.headers.get('content-type') ?? 'text/plain; version=0.0.4');
     return reply.send(Readable.fromWeb(res.body as any));
-  });
+  }));
 
   return app;
 }

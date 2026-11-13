@@ -206,7 +206,7 @@ the environment take precedence.
 | `ORCHESTRATOR_INTERNAL_TOKEN` | none | bearer token the internal listener requires; required unless it's on loopback |
 | `ORCHESTRATOR_SD_ADDRESS` | the internal host:port | address vmagent uses to reach the internal listener |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | off | OTLP (HTTP, protobuf) export of traces and the orchestrator's logs |
-| `ORCHESTRATOR_LOG_SHIP_URL` | off | VictoriaLogs `…/insert/journald`: pull every computer's journal there |
+| `ORCHESTRATOR_LOG_SHIP_URL` | off | VictoriaLogs `…/insert/journald/upload`: pull every computer's journal there |
 | `ORCHESTRATOR_LOG_POLL_MS` / `ORCHESTRATOR_OP_TIMEOUT_MS` | `5000` / `600000` | log pull interval; operation timing timeout |
 
 Configure Ozwell's workspace MCP server as `http(s)://<orchestrator>/mcp` (Streamable
@@ -226,6 +226,37 @@ Rollout on the orchestrator host:
    `127.0.0.1:3000` and set `GF_SERVER_ROOT_URL` in `.env` to its public URL.
 
 Rollback: `docker compose down && sudo systemctl enable --now ozwell-computer-orchestrator`.
+
+#### Updating without dropping calls
+
+Install [docker-rollout](https://github.com/wowu/docker-rollout) once:
+
+```bash
+mkdir -p ~/.docker/cli-plugins
+curl -fsSL https://raw.githubusercontent.com/wowu/docker-rollout/main/docker-rollout -o ~/.docker/cli-plugins/docker-rollout
+chmod +x ~/.docker/cli-plugins/docker-rollout
+```
+
+Then update with:
+
+```bash
+git pull
+docker rollout orchestrator   # builds, starts the new one, then drains and removes the old one
+docker compose up -d          # the other services (the orchestrator is already current)
+```
+
+With the docker:// provider, pass both files to both commands (otherwise the new
+orchestrator starts without the Docker socket and the computers network):
+
+```bash
+docker rollout -f compose.yml -f compose.docker.yml orchestrator
+docker compose -f compose.yml -f compose.docker.yml up -d
+```
+
+`proxy` (Caddy) owns port 8090 and sends calls to whichever orchestrators are running.
+A stopping orchestrator finishes its in-flight calls (up to 11 min) and refuses new ones,
+which Caddy retries on the new one. Plain `docker compose up -d` still updates the
+orchestrator, but by stopping it first: calls wait up to 30 s in Caddy for the new one.
 
 Computers need no change: they get the logs route from the next release. Until then
 their metrics are scraped but their logs aren't collected.

@@ -149,6 +149,39 @@ export function availableCpus(cgroup: string | null, parallelism = availablePara
   return Math.min(parallelism, ...quotas.filter((q) => q !== null));
 }
 
+/** Seconds stalled per kind from a cgroup v2 *.pressure file ("some|full avg10=… total=<usec>"). */
+export function parsePressure(text: string): Partial<Record<'some' | 'full', number>> {
+  const out: Partial<Record<'some' | 'full', number>> = {};
+  for (const m of text.matchAll(/^(some|full) .*\btotal=(\d+)/gm)) out[m[1] as 'some' | 'full'] = Number(m[2]) / 1e6;
+  return out;
+}
+
+new client.Counter({
+  name: 'ozwell_cgroup_pressure_seconds_total',
+  help: 'Time the container was stalled on a resource (cgroup v2 pressure stall information): kind="some" when at ' +
+    'least one task waited, "full" when all did. rate() is the share of time stalled (0-1)',
+  labelNames: ['resource', 'kind'],
+  registers: [registry],
+  collect() {
+    this.reset();
+    if (!cgroupRoot) return;
+    for (const resource of ['cpu', 'memory', 'io']) {
+      let text: string;
+      try { text = readFileSync(join(cgroupRoot, `${resource}.pressure`), 'utf8'); } catch { continue; } // no PSI (kernel psi=0)
+      for (const [kind, seconds] of Object.entries(parsePressure(text))) this.inc({ resource, kind }, seconds);
+    }
+  },
+});
+
+const buildInfo = new client.Gauge({
+  name: 'ozwell_build_info',
+  help: 'Always 1; the version label is the running ozwell-computer version',
+  labelNames: ['version'],
+  registers: [registry],
+});
+/** Record the running version (the server calls this once at startup). */
+export const setVersion = (version: string) => { buildInfo.reset(); buildInfo.set({ version }, 1); };
+
 let cpusOverride: number | undefined;
 /** Use an admin-supplied CPU capacity instead of the detected one (config `cpus`). */
 export const setCpus = (n: number | undefined) => { cpusOverride = n; };

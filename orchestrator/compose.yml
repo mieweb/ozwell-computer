@@ -24,7 +24,24 @@ services:
       ORCHESTRATOR_SD_ADDRESS: orchestrator:8091
       OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: http://victoriatraces:10428/insert/opentelemetry/v1/traces
       OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: http://victorialogs:9428/insert/opentelemetry/v1/logs
-      ORCHESTRATOR_LOG_SHIP_URL: http://victorialogs:9428/insert/journald
+      ORCHESTRATOR_LOG_SHIP_URL: http://victorialogs:9428/insert/journald/upload
+    # No ports: `proxy` publishes 8090, so `docker rollout` can run two replicas at once.
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/health').then((r) => process.exit(r.status === 204 ? 0 : 1), () => process.exit(1))"]
+      interval: 2s
+      timeout: 2s
+      retries: 3
+      start_period: 30s
+    # On stop, in-flight MCP calls finish first (the instance call timeout is 11 min).
+    stop_grace_period: 11m
+
+  proxy:
+    image: caddy:2.11.9-alpine
+    restart: unless-stopped
+    # The directory, not the file: git replaces files, which a file mount wouldn't see.
+    # --watch reloads on changes; a reload, unlike a restart, keeps calls in progress.
+    command: [caddy, run, --config, /etc/caddy/Caddyfile, --adapter, caddyfile, --watch]
+    volumes: [./deploy/caddy:/etc/caddy:ro]
     ports:
       - "${ORCHESTRATOR_BIND:-127.0.0.1}:${ORCHESTRATOR_PUBLISH_PORT:-8090}:8090"
 
@@ -61,7 +78,12 @@ services:
   victoriatraces:
     image: victoriametrics/victoria-traces:v0.13.0
     restart: unless-stopped
-    command: [-storageDataPath=/storage, -retentionPeriod=7d]
+    command:
+      - -storageDataPath=/storage
+      - -retentionPeriod=7d
+      # Traces become searchable after both (defaults 20s + 30s); opening one by id is immediate.
+      - -insert.indexFlushInterval=10s
+      - -search.latencyOffset=10s
     volumes: [vtdata:/storage]
 
   grafana:

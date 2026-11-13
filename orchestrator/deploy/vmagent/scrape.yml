@@ -9,8 +9,11 @@ scrape_configs:
   - job_name: orchestrator
     authorization:
       credentials: "%{ORCHESTRATOR_INTERNAL_TOKEN}"
-    static_configs:
-      - targets: [orchestrator:8091]
+    # Every replica (two during a rollout), each its own target.
+    dns_sd_configs:
+      - names: [orchestrator]
+        type: A
+        port: 8091
 
   # Every running computer, discovered from the orchestrator's /sd. Each target points at
   # the orchestrator's scrape proxy (/instances/<id>/metrics), which adds the instance

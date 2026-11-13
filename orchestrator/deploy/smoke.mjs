@@ -1,6 +1,7 @@
 // Run by smoke.sh inside the orchestrator container (the backends publish no ports).
 // Sends one traced request to the orchestrator, then waits for its trace in VictoriaTraces,
-// the orchestrator's metrics in VictoriaMetrics, and its log line in VictoriaLogs.
+// the orchestrator's metrics in VictoriaMetrics, its log line in VictoriaLogs, and a journal
+// entry sent to ORCHESTRATOR_LOG_SHIP_URL (the instance log path).
 import { randomBytes } from 'node:crypto';
 
 const trace = randomBytes(16).toString('hex');
@@ -35,4 +36,16 @@ await waitFor('orchestrator metrics in VictoriaMetrics', async () =>
   (await (await fetch('http://victoriametrics:8428/api/v1/query?query=' + encodeURIComponent('up{job="orchestrator"}==1'))).json()).data.result.length > 0);
 await waitFor('orchestrator log line in VictoriaLogs', async () =>
   (await (await fetch('http://victorialogs:9428/select/logsql/query?query=' + encodeURIComponent(`trace_id:="${trace}"`))).text()).includes(trace));
+// The instance log path: one journal entry to ORCHESTRATOR_LOG_SHIP_URL, as the puller sends it.
+const ship = process.env.ORCHESTRATOR_LOG_SHIP_URL;
+if (!ship) fail('ORCHESTRATOR_LOG_SHIP_URL is not set');
+const marker = `smoke-journal-${trace}`;
+const shipped = await fetch(ship, {
+  method: 'POST', headers: { 'content-type': 'application/vnd.fdo.journal' },
+  body: `__REALTIME_TIMESTAMP=${Date.now() * 1000}\nMESSAGE=${marker}\nOZWELL_INSTANCE_ID=smoke-test\n\n`,
+});
+await shipped.body?.cancel();
+if (!shipped.ok) fail(`${ship} answered ${shipped.status}`);
+await waitFor('journal entry in VictoriaLogs', async () =>
+  (await (await fetch('http://victorialogs:9428/select/logsql/query?query=' + encodeURIComponent(`"${marker}"`))).text()).includes(marker));
 console.log('smoke test passed');

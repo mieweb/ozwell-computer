@@ -26,12 +26,13 @@ The "Later" items are not.
 | Metrics transport | All metrics are pulled by vmagent. The orchestrator exposes `/metrics`, and there is no OTLP metrics push. |
 | Instance scrape auth | An orchestrator scrape proxy adds the instance token. |
 | Operation completion | A background readiness watcher. |
+| Computer lookups | Desktop tools use a cached lookup (running computers only), revalidated when a call fails without reaching the computer (refused, 503, 401) and after 1 h. Real lookups stay `get` operations; `ozwell_orchestrator_computer_cache_total{result}` counts hits, misses and revalidations. Management tools always ask the provider. |
 | Operation persistence | In memory only. In-flight operations are lost on orchestrator restart. |
 | Operation ↔ trace | Operation spans are separate traces; tool-call spans link to them. |
 | Phase timing | Yes: enqueue, provision, boot. |
 | Observed time-to-ready | Yes. |
 | Operation timeout | 10 minutes, configurable. |
-| Instance logs | Pulled through a new `/api/v1/logs/entries`, a gatewayd-compatible subset implemented with `journalctl` (not the gatewayd package, not `sd-journal`). Journal Export Format forwarded to VictoriaLogs `/insert/journald`. Polling only. Older instances without the route are skipped and re-checked. |
+| Instance logs | Pulled through a new `/api/v1/logs/entries`, a gatewayd-compatible subset implemented with `journalctl` (not the gatewayd package, not `sd-journal`). Journal Export Format forwarded to VictoriaLogs `/insert/journald/upload`. Polling only. Older instances without the route are skipped and re-checked. |
 | Journal access | `ozwell-computer.service` gets `SupplementaryGroups=systemd-journal`, in the image and the `.deb` alike. The `desktop` user's processes (agent commands, the terminal) can read the whole journal as a result, including on bare metal: accepted. |
 | Log units | All journald units are collected. Dashboards filter to `ozwell-computer.service` by default. |
 | Cursor on restart | Resume from "now". A small gap is acceptable. |
@@ -42,6 +43,7 @@ The "Later" items are not.
 | Propagation | `traceparent` HTTP header plus `params._meta.traceparent`. |
 | Sampling | 100%, configurable. |
 | Tool argument capture | Full arguments. PHI handling and anonymization are a later layer. |
+| Computer metadata | An info metric (`ozwell_orchestrator_computer_info`), not labels on scraped series, so metadata changes never split a computer's series. Dashboards aggregate per `instance_id`, which also merges series split before this change. |
 | User identity | Email (`X-Ozwell-User-Email`, or the computer's stored owner email); the user id only when there is no email. Access is still enforced by user id. |
 | `/internal/*` security | A separate port and listener (`ORCHESTRATOR_INTERNAL_PORT`), not exposed publicly. Off loopback it requires a bearer token (`ORCHESTRATOR_INTERNAL_TOKEN`), which vmagent sends. |
 | Compose networks | `compose.yml` has only its default network, with no computers on it. `compose.docker.yml` puts docker:// computers on their own `ozwell-computers` network, shared only with the orchestrator. |
@@ -50,7 +52,7 @@ The "Later" items are not.
 | Grafana auth | Local admin only, with credentials set in compose. Dashboards are committed to the repo and read-only in the UI. |
 | Grafana access | Grafana publishes its own dedicated port (`GRAFANA_PORT`, default 3000). The existing external reverse proxy handles routing and TLS. The orchestrator does not proxy Grafana. |
 | Alerting | Later phase. |
-| Replicas | A single orchestrator replica. |
+| Replicas | One orchestrator replica, two briefly during an update: `docker rollout orchestrator` (docker-rollout plugin) starts the new one, then the old one drains. Caddy (`proxy`) owns port 8090 and retries refused connections on the other replica. Computer logs may be pulled twice for the few seconds of overlap. |
 | Retention | Metrics 30 days, logs 14 days, traces 7 days. |
 
 ## Current state (summary)
@@ -75,7 +77,7 @@ The "Later" items are not.
 │  internal :8091 GET /metrics, /sd, /instances/:id/metrics                             │
 │  OTel SDK ──OTLP traces──► VictoriaTraces                                             │
 │           ──OTLP logs────► VictoriaLogs                                               │
-│  log puller ──GET instance /api/v1/logs/entries──► VictoriaLogs (/insert/journald)    │
+│  log puller ──GET instance /api/v1/logs/entries──► VictoriaLogs (journald/upload)     │
 │                                                                                       │
 │ vmagent ──scrape──► :8091/metrics, :8091/instances/*/metrics (via http_sd :8091/sd)   │
 │         ──remote write──► VictoriaMetrics                                             │
@@ -97,7 +99,7 @@ the orchestrator behaves as it does today.
 | `ORCHESTRATOR_INTERNAL_HOST` / `_PORT` | Internal listener. Default `127.0.0.1` / unset (disabled). The compose file sets `0.0.0.0:8091` on its network. |
 | `ORCHESTRATOR_INTERNAL_TOKEN` | Bearer token the internal listener requires. Required unless it is on loopback; required by `compose.yml`, which gives vmagent the same value. |
 | `ORCHESTRATOR_SD_ADDRESS` | `host:port` vmagent reaches the internal listener at, used as `__address__` in `/sd` targets. Default: the internal host and port. Compose sets `orchestrator:8091`. |
-| `ORCHESTRATOR_LOG_SHIP_URL` | VictoriaLogs journald ingest (`…/insert/journald`). Unset disables the instance log puller. |
+| `ORCHESTRATOR_LOG_SHIP_URL` | VictoriaLogs journald ingest (`…/insert/journald/upload`). Unset disables the instance log puller. |
 | `ORCHESTRATOR_LOG_POLL_MS` | Default 5000. |
 | `ORCHESTRATOR_OP_TIMEOUT_MS` | Default 600000. |
 
@@ -155,7 +157,11 @@ All scrape routes are served **only on the internal listener**.
 1. **Service discovery.** `GET /sd` returns Prometheus `http_sd` JSON built from
    `provider.list()`, cached for about 15 s. It returns one target per running instance,
    with labels:
-   - `instance_id`, `provider`, `user` (the owner's email)
+   - `instance_id` and `provider` only. These go on every scraped series, and a label that
+     changes starts new series, so metadata isn't put here. The owner (email), display name
+     and creation time are `ozwell_orchestrator_computer_info{instance_id, user,
+     display_name, created_at} 1` on the orchestrator's `/metrics`, joined in queries on
+     `instance_id`.
    - `__metrics_path__=/instances/<id>/metrics`
    - `__address__=orchestrator:8091`
 2. **Scrape proxy.** `GET /instances/:id/metrics` fetches
@@ -229,7 +235,7 @@ All scrape routes are served **only on the internal listener**.
    - The first pull for an instance, including after an orchestrator restart, uses
      `Range: realtime=<now>:`. Logs from while the orchestrator was down are not
      backfilled, by decision. After that it uses the last `__CURSOR` with `skip` 1.
-   - It requests the export format and forwards it to VictoriaLogs `/insert/journald`
+   - It requests the export format and forwards it to VictoriaLogs `/insert/journald/upload`
      (native journald ingestion: `PRIORITY` becomes the level, `__REALTIME_TIMESTAMP`
      the time). It adds `OZWELL_INSTANCE_ID`, `OZWELL_USER` and `OZWELL_PROVIDER` lines
      to each entry (the format is `KEY=value` lines per entry), so it parses nothing

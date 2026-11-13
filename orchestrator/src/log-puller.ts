@@ -2,7 +2,7 @@
 //
 // Every running computer's journal is pulled from its gatewayd-compatible
 // GET /api/v1/logs/entries in the Journal Export Format, tagged with OZWELL_INSTANCE_ID,
-// OZWELL_USER and OZWELL_PROVIDER, and forwarded to VictoriaLogs' /insert/journald.
+// OZWELL_USER and OZWELL_PROVIDER, and forwarded to VictoriaLogs' /insert/journald/upload.
 // Instances never need to know where logs go.
 //
 // - The first pull for an instance (including after an orchestrator restart) starts at
@@ -13,13 +13,15 @@
 //   other failures back off exponentially. One instance never delays another.
 // - Stopped or destroyed instances are dropped; there is no drain before destroy.
 import type { Metrics } from './metrics.ts';
+import { untraced } from './untraced.ts';
 import { observedOwner, type Computer, type Provider } from './providers/types.ts';
 
 export interface LogLogger { info: (o: object, m: string) => void; warn: (o: object, m: string) => void }
 
 export interface LogPullerOptions {
   provider: Provider;
-  /** VictoriaLogs journald ingest, e.g. http://victorialogs:9428/insert/journald */
+  /** VictoriaLogs journald ingest, e.g. http://victorialogs:9428/insert/journald/upload
+   * (the path systemd-journal-upload posts to: /insert/journald alone is a 400). */
   shipUrl: string;
   metrics?: Metrics;
   log?: LogLogger;
@@ -163,7 +165,11 @@ export class LogPuller {
    * first, up to the in-flight cap. Only discovery and selection hold the lock: pulls run on,
    * so a slow computer never delays the next pass. Resolves when this pass's pulls finish.
    */
-  async tick(): Promise<void> {
+  tick(): Promise<void> {
+    return untraced(() => this.runTick());
+  }
+
+  private async runTick(): Promise<void> {
     if (this.ticking) return;
     this.ticking = true;
     const pulls: Promise<void>[] = [];

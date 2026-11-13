@@ -42,10 +42,10 @@ function provider(computers: () => Computer[], calls = { listAll: 0 }): Provider
 
 describe('sdTargets', () => {
   it('lists running, reachable computers pointed at the scrape proxy', () => {
-    const t = sdTargets([comp('a'), comp('b', { stopped: true }), comp('c', { token: undefined }), comp('d', { owner: 'u-9', ownerEmail: 'bob@example.com' })], 'memory', 'orchestrator:8091');
+    const t = sdTargets([comp('a'), comp('b', { stopped: true }), comp('c', { token: undefined }), comp('d', { owner: 'u-9', ownerEmail: 'bob@example.com', displayName: 'Bob box', createdAt: '2026-11-12T10:00:00.000Z' })], 'memory', 'orchestrator:8091');
     expect(t).toEqual([
-      { targets: ['orchestrator:8091'], labels: { instance_id: 'a', provider: 'memory', user: 'alice', __metrics_path__: '/instances/a/metrics' } },
-      { targets: ['orchestrator:8091'], labels: { instance_id: 'd', provider: 'memory', user: 'bob@example.com', __metrics_path__: '/instances/d/metrics' } },
+      { targets: ['orchestrator:8091'], labels: { instance_id: 'a', provider: 'memory', __metrics_path__: '/instances/a/metrics' } },
+      { targets: ['orchestrator:8091'], labels: { instance_id: 'd', provider: 'memory', __metrics_path__: '/instances/d/metrics' } },
     ]);
   });
 });
@@ -58,13 +58,50 @@ describe('internal server', () => {
     try {
       const [r1, r2] = await Promise.all([app.inject('/sd'), app.inject('/sd')]);
       expect(r1.statusCode).toBe(200);
-      expect(r1.json()).toEqual([{ targets: ['orch:8091'], labels: { instance_id: 'a', provider: 'memory', user: 'alice', __metrics_path__: '/instances/a/metrics' } }]);
+      expect(r1.json()).toEqual([{ targets: ['orch:8091'], labels: { instance_id: 'a', provider: 'memory', __metrics_path__: '/instances/a/metrics' } }]);
       expect(r2.json()).toEqual(r1.json());
       expect(p.calls.listAll).toBe(1);
       fail = true;
       expect((await app.inject('/sd')).statusCode).toBe(200); // still cached
       await new Promise((r) => setTimeout(r, 60));
       expect((await app.inject('/sd')).statusCode).toBe(502);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('exports computer metadata as ozwell_orchestrator_computer_info, sharing /sd\'s listing', async () => {
+    const calls = { listAll: 0 };
+    let all = [comp('a', { ownerEmail: 'alice@example.com', displayName: 'A box', createdAt: '2026-11-12T10:00:00.000Z' }), comp('s', { stopped: true })];
+    const app = await buildInternalServer({ metrics: new Metrics({ defaultMetrics: false }), provider: provider(() => all, calls), sdCacheMs: 50 });
+    try {
+      const body = (await app.inject('/metrics')).body;
+      expect(body).toContain('ozwell_orchestrator_computer_info{instance_id="a",provider="memory",user="alice@example.com",display_name="A box",created_at="2026-11-12T10:00:00.000Z"} 1');
+      expect(body).toContain('ozwell_orchestrator_computer_info{instance_id="s",provider="memory",user="alice"} 1'); // stopped ones too
+      await app.inject('/sd');
+      expect(calls.listAll).toBe(1);
+      // A destroyed computer's series goes away at the next listing.
+      all = all.slice(0, 1);
+      await new Promise((r) => setTimeout(r, 60));
+      expect((await app.inject('/metrics')).body).not.toContain('instance_id="s"');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('serves /metrics without waiting on a slow provider listing', async () => {
+    let release!: () => void;
+    const slow: Provider = { ...provider(() => []), listAll: () => new Promise((r) => { release = () => r([comp('a')]); }) };
+    const app = await buildInternalServer({ metrics: new Metrics({ defaultMetrics: false }), provider: slow, metadataWaitMs: 50 });
+    try {
+      const t0 = Date.now();
+      const r = await app.inject('/metrics');
+      expect(r.statusCode).toBe(200);
+      expect(Date.now() - t0).toBeLessThan(1000);
+      expect(r.body).toContain('# TYPE ozwell_orchestrator_tool_calls counter'); // the other metrics are all there
+      release();
+      await new Promise((r) => setTimeout(r, 10));
+      expect((await app.inject('/metrics')).body).toContain('ozwell_orchestrator_computer_info{instance_id="a"');
     } finally {
       await app.close();
     }

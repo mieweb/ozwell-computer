@@ -14,6 +14,7 @@
 import { ROOT_CONTEXT, SpanStatusCode, trace, type Link, type Span } from '@opentelemetry/api';
 import type { Computer } from './providers/types.ts';
 import type { Metrics } from './metrics.ts';
+import { untraced } from './untraced.ts';
 
 export type OpKind = 'create' | 'start' | 'destroy' | 'list' | 'get';
 export type Phase = 'enqueue' | 'provision' | 'boot';
@@ -53,7 +54,8 @@ export class Operation {
     // A root span: the operation's own trace, independent of the tool call that began it.
     this.span = tracer.startSpan(`operation.${kind}`, {
       root: true, startTime: startedAt,
-      attributes: { 'ozwell.operation': kind, 'ozwell.provider': provider, ...(id ? { 'ozwell.instance_id': id } : {}) },
+      // ozwell.kind: one tag to find every operation trace (Jaeger search has no regex).
+      attributes: { 'ozwell.kind': 'operation', 'ozwell.operation': kind, 'ozwell.provider': provider, ...(id ? { 'ozwell.instance_id': id } : {}) },
     }, ROOT_CONTEXT);
   }
 
@@ -162,6 +164,8 @@ export class OperationTracker {
     if (id && kind !== 'list' && kind !== 'get') {
       const cur = this.byId.get(id);
       if (cur && !cur.done && cur.kind === kind) return cur;
+      // A start during a create is part of it (the computer was still coming up).
+      if (cur && !cur.done && kind === 'start' && cur.kind === 'create') return cur;
       // e.g. destroy during a create: the create never completes, so end it now.
       if (cur && !cur.done) cur.finish('error', `superseded by ${kind}`);
     }
@@ -194,8 +198,9 @@ export class OperationTracker {
   }
 
   /**
-   * A tool call saw this computer's readiness (create/get/start_computer). Feeds the in-flight
-   * operation, and the first ready:true after a create records observed time-to-ready.
+   * A tool call saw this computer's readiness: create/get/start_computer, or a desktop tool
+   * that the computer answered. Feeds the in-flight operation, and the first ready after a
+   * create records observed time-to-ready.
    */
   observe(c: Computer, ready: boolean) {
     this.inFlight(c.id)?.progress(c, ready);
@@ -215,7 +220,7 @@ export class OperationTracker {
   pollOnce(): Promise<void> {
     // Deadlines every tick, even while an earlier pass waits on a hung probe.
     this.expire();
-    this.pass ??= this.runPass().finally(() => { this.pass = undefined; });
+    this.pass ??= untraced(() => this.runPass()).finally(() => { this.pass = undefined; });
     return this.pass;
   }
 
