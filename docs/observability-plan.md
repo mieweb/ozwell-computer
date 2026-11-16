@@ -39,7 +39,7 @@ The "Later" items are not.
 | Drain before destroy | No. |
 | Logs as an MCP tool | No. |
 | Orchestrator logs | stdout and OTLP to VictoriaLogs, with trace ids. |
-| Instance tracing | v1 is log correlation only: `traceparent` is propagated and `trace_id` added to instance logs. |
+| Instance tracing | `traceparent` is propagated and `trace_id` added to instance logs. Computers also record spans that continue it into a bounded buffer served at `GET /api/v1/traces` (OTLP JSON); the log puller forwards them to VictoriaTraces tagged `ozwell.instance_id` (workstream 4, #64). No relay: computers never push. |
 | Propagation | `traceparent` HTTP header plus `params._meta.traceparent`. |
 | Sampling | 100%, configurable. |
 | Tool argument capture | Full arguments. PHI handling and anonymization are a later layer. |
@@ -275,7 +275,10 @@ All scrape routes are served **only on the internal listener**.
       │  └─ HTTP client spans              (docker / opensource-server API)
       ├─ readiness.poll                     (waitReady; event per attempt)
       └─ instance.callTool
-         └─ HTTP POST {internalUrl}/mcp    (traceparent + _meta.traceparent)
+          └─ HTTP POST {internalUrl}/mcp    (traceparent + _meta.traceparent)
+             └─ POST /mcp                   (computer, pulled later; see 4)
+                └─ mcp.tool <tool>
+                   └─ screenshot / input.* / exec / a11y.* …
    link → operation.<op> trace
    ```
    Attributes:
@@ -286,8 +289,39 @@ All scrape routes are served **only on the internal listener**.
      payloads summarised by size
 3. **Tool-call metrics:** `ozwell_orchestrator_tool_call_duration_seconds{tool,outcome}`
    (with exemplars) and `ozwell_orchestrator_tool_calls_total{tool,outcome}`.
-4. **Later:** an instance OTel SDK exporting through an orchestrator relay. Out of scope
-   for v1.
+4. **Instance spans (pull, issue #64).** Tracing is push-only (no OTLP pull protocol), and
+   computers must not know where telemetry goes or reach the observability network, so
+   the orchestrator collects them like logs:
+   - **Computer (`src/tracing.ts`).** A small tracer (no OTel SDK) records a SERVER span
+     per API/MCP request and a span per MCP tool call, continuing the incoming
+     `traceparent` (header, or `params._meta.traceparent` for tool calls), plus spans
+     around the expensive steps: `screenshot` → `screenshot.capture` / `.cursor` /
+     `.encode` / `.ocr`, `input.pointer`, `input.keyboard`, `exec` (no command line:
+     it may hold secrets), `a11y.tree` / `.find` / `.act`. Polled, scraped and streaming
+     routes (`/health`, metrics, logs, traces, events, presence, pty, websockify,
+     `GET /mcp`) and work outside a request are never traced.
+   - **Bounded cost.** Finished spans sit in an in-memory ring of 4096 spans (oldest
+     dropped first, lost on restart); at most 32 attributes of 1 KiB per span; one
+     response is at most 2000 spans and about 4 MiB.
+   - **`GET /api/v1/traces?cursor=&limit=`** serves them as an OTLP/JSON
+     `ExportTraceServiceRequest`. Response headers: `ozwell-trace-cursor` (next cursor;
+     it carries a per-boot id, so a restarted computer's buffer is read from its start),
+     `ozwell-trace-more`, `ozwell-trace-dropped`. `cursor=end` returns only a cursor.
+   - **Orchestrator (`log-puller.ts`, `otlp.ts`).** The log puller runs a second stream
+     per computer with its own cursor: first pull `cursor=end` (no backfill, as logs),
+     then the spans are tagged `ozwell.instance_id`, `ozwell.user`, `ozwell.provider`,
+     re-encoded as OTLP protobuf (only known fields copied) and posted to
+     `ORCHESTRATOR_TRACE_SHIP_URL` (default `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`;
+     `off` disables). The cursor advances only after VictoriaTraces accepts. Reads are
+     capped at `maxResponseBytes` (16 MiB): an oversized response halves the span limit
+     and retries at once; a single oversized span is skipped. 404 (an older computer)
+     and 401 are re-checked every 10 min, like logs.
+   - Metrics: `ozwell_orchestrator_trace_pulls_total{outcome}`,
+     `…_trace_spans_shipped_total`, `…_trace_spans_dropped_total` (buffer overflow
+     reported by computers), `…_trace_pull_unsupported_instances`.
+   - Trade-offs: spans arrive up to one poll interval (5 s) late, and a computer restart
+     or a full buffer between pulls loses spans (option 2 in #64, spans in the journal,
+     would be durable if that becomes unacceptable).
 
 ## Grafana
 
@@ -340,7 +374,8 @@ All scrape routes are served **only on the internal listener**.
 | 4 | Instance `GET /api/v1/logs/entries` (gatewayd subset), journal group, trace_id log binding | root `typecheck` + `test:unit` (argument building, `Range` parsing, rejection of unsupported requests); `docker compose up -d --build`; new `test/integration/logs.test.ts` (route coverage, conformance against the real gatewayd in the test container) |
 | 5 | Log puller | fake instance + fake VictoriaLogs |
 | 6 | Dockerfile, compose (plus a docker:// override), vmagent config, Grafana provisioning + dashboards | manual bring-up; smoke script asserting a trace, a metric series and a log line arrive |
-| Later | Alerts; PHI/anonymization layer; instance SDK via relay; cardinality limits | — |
+| 7 | Instance spans: `GET /api/v1/traces` span buffer; puller traces stream to VictoriaTraces | root `test:unit` (buffer, route); `test/integration/traces.test.ts`; orchestrator fake instance + fake VictoriaTraces |
+| Later | Alerts; PHI/anonymization layer; cardinality limits | — |
 
 If computer MCP tools change, regenerate the catalog: `make build && npm run mcp-tools`.
 

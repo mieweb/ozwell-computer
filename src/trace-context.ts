@@ -1,6 +1,6 @@
-// W3C trace context (https://www.w3.org/TR/trace-context/) from the orchestrator, for log
-// correlation only: request and MCP tool-call log lines carry its trace_id/span_id so they
-// line up with the orchestrator's traces. The instance doesn't create spans itself.
+// W3C trace context (https://www.w3.org/TR/trace-context/) from the orchestrator: request
+// and MCP tool-call log lines carry its trace_id/span_id, and the instance's spans
+// (src/tracing.ts) continue it.
 const TRACEPARENT = /^([0-9a-f]{2})-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})(-.*)?$/;
 
 export interface TraceIds { trace_id: string; span_id: string }
