@@ -1,0 +1,12 @@
+# Notification policy: everything goes to the email contact point for now. Grouped by
+# alertname and provider, so a fleet-wide problem is one email, not one per computer.
+# severity (critical / warning) is on every rule so paging can be routed later.
+apiVersion: 1
+
+policies:
+  - orgId: 1
+    receiver: ozwell-email
+    group_by: [alertname, provider]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h

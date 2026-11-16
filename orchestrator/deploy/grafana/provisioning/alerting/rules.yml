@@ -1,0 +1,448 @@
+# Alert rules (#65). Grafana Alerting only: no vmalert, no Alertmanager.
+#
+# Every rule has the same shape: A is the query, already filtered to what should alert
+# (so its value is the measured one, e.g. the error ratio), B reduces it to its last value
+# and C fires when B > 0. A computer's labels are instance_id and provider only (from /sd);
+# owner emails and tool arguments never reach an alert. Notifications: policies.yml.
+#
+# Per-computer rules include the orchestrator's health in their query (`and on() ...`),
+# not inhibition: computers are scraped through the orchestrator, so while it is down they
+# would all look unreachable, and that is one "Orchestrator down" email instead.
+#
+# Thresholds are first guesses; check them against real data (Explore) and adjust.
+# Alerting provisioning loads at Grafana startup only: `docker compose restart grafana`.
+apiVersion: 1
+
+x-reduce: &reduce
+  refId: B
+  datasourceUid: __expr__
+  model: { refId: B, type: reduce, expression: A, reducer: last, settings: { mode: dropNN } }
+x-threshold: &threshold
+  refId: C
+  datasourceUid: __expr__
+  model: { refId: C, type: threshold, expression: B, conditions: [{ evaluator: { type: gt, params: [0] } }] }
+
+groups:
+  # ---- The orchestrator and its provider ----
+  - orgId: 1
+    name: orchestrator
+    folder: ozwell-computer
+    interval: 1m
+    rules:
+      - uid: ozwell-orchestrator-down
+        title: Orchestrator down
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              # 1 when no replica answers its scrape (also when none is discovered at all).
+              expr: '1 - (max(up{job="orchestrator"}) or vector(0))'
+          - *reduce
+          - *threshold
+        for: 2m
+        # The datasource failing (VictoriaMetrics down) is worth an email too, once.
+        noDataState: Alerting
+        execErrState: Error
+        labels: { severity: critical }
+        annotations:
+          summary: The orchestrator is down
+          description: No orchestrator replica has answered vmagent's scrape for 2 minutes. MCP calls fail, and computers can't be scraped.
+          dashboard: fleet
+
+      - uid: ozwell-operations-failing
+        title: Creates/starts failing broadly
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 1800, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              # Share of create/start operations that failed in 30 min; at least 3 of them.
+              expr: |
+                (
+                  sum by (provider, operation) (increase(ozwell_orchestrator_operations_total{operation=~"create|start", outcome=~"error|failed|timeout"}[30m]))
+                  / sum by (provider, operation) (increase(ozwell_orchestrator_operations_total{operation=~"create|start"}[30m]))
+                ) > 0.5
+                and sum by (provider, operation) (increase(ozwell_orchestrator_operations_total{operation=~"create|start", outcome=~"error|failed|timeout"}[30m])) >= 3
+          - *reduce
+          - *threshold
+        for: 5m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: critical }
+        annotations:
+          summary: 'More than half of {{ $labels.operation }} operations failed in 30 min ({{ $labels.provider }})'
+          description: 'Failed share: {{ with $values.B }}{{ humanizePercentage .Value }}{{ end }}. Outcomes are error (the provider call failed), failed (the computer reported a failure) or timeout (not ready in time).'
+          dashboard: operations
+
+      - uid: ozwell-tool-calls-internal
+        title: Tool calls failing internally
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              # reason="internal" only: not the agent's mistakes (invalid_request, ...) or
+              # stopped computers. Share of all calls in 15 min, with at least 5 of them.
+              expr: |
+                (
+                  sum(increase(ozwell_orchestrator_tool_calls_total{reason="internal"}[15m]))
+                  / sum(increase(ozwell_orchestrator_tool_calls_total[15m]))
+                ) > 0.1
+                and sum(increase(ozwell_orchestrator_tool_calls_total{reason="internal"}[15m])) >= 5
+          - *reduce
+          - *threshold
+        for: 5m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: critical }
+        annotations:
+          summary: More than 10% of tool calls failed with an internal error in 15 min
+          description: 'Internal share: {{ with $values.B }}{{ humanizePercentage .Value }}{{ end }}. The Tool calls dashboard and the orchestrator logs ("tool failed") show which tools.'
+          dashboard: tool-calls
+
+      - uid: ozwell-provider-api-failing
+        title: Provider API failing
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              expr: |
+                (
+                  sum by (provider, method) (rate(ozwell_orchestrator_provider_call_duration_seconds_count{outcome="error"}[10m]))
+                  / sum by (provider, method) (rate(ozwell_orchestrator_provider_call_duration_seconds_count[10m]))
+                ) > 0.25
+          - *reduce
+          - *threshold
+        for: 10m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: critical }
+        annotations:
+          summary: '{{ $labels.provider }} provider API: {{ $labels.method }} calls failing'
+          description: 'Error share over 10 min: {{ with $values.B }}{{ humanizePercentage .Value }}{{ end }}, for at least 10 min.'
+          dashboard: operations
+
+      - uid: ozwell-service-discovery-failing
+        title: Service discovery failing
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              # The provider listing behind /sd and the computer metadata. While it fails,
+              # vmagent keeps its last targets: new computers aren't scraped.
+              expr: |
+                (
+                  sum by (provider) (increase(ozwell_orchestrator_computer_listings_total{outcome="error"}[10m]))
+                  / sum by (provider) (increase(ozwell_orchestrator_computer_listings_total[10m]))
+                ) > 0.5
+          - *reduce
+          - *threshold
+        for: 10m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: warning }
+        annotations:
+          summary: 'Listing computers fails ({{ $labels.provider }}): service discovery is stale'
+          description: 'Failed share of listings over 10 min: {{ with $values.B }}{{ humanizePercentage .Value }}{{ end }}. vmagent keeps the last targets, so new computers are not scraped. The orchestrator logs "service discovery failed" with the error.'
+          dashboard: orchestrator-logs
+
+      - uid: ozwell-create-slow
+        title: New computers slow to become ready
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 3600, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              # p95 of successful creates over 1 h, in seconds; at least 3 creates.
+              expr: |
+                histogram_quantile(0.95, sum by (provider, le) (increase(ozwell_orchestrator_operation_duration_seconds_bucket{operation="create", outcome="ok"}[1h]))) > 180
+                and sum by (provider) (increase(ozwell_orchestrator_operation_duration_seconds_count{operation="create", outcome="ok"}[1h])) >= 3
+          - *reduce
+          - *threshold
+        for: 15m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: warning }
+        annotations:
+          summary: 'New computers take {{ with $values.B }}{{ humanizeDuration .Value }}{{ end }} (p95) to become ready ({{ $labels.provider }})'
+          description: p95 of successful creates over the last hour is above 3 minutes. The Operations dashboard splits it into enqueue, provision and boot.
+          dashboard: operations
+
+      - uid: ozwell-log-shipping-failing
+        title: Logs not reaching VictoriaLogs
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              expr: 'sum(increase(ozwell_orchestrator_log_pulls_total{outcome="ship_error"}[15m])) > 0'
+          - *reduce
+          - *threshold
+        for: 15m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: warning }
+        annotations:
+          summary: Computers' journals are not reaching VictoriaLogs
+          description: 'The log puller failed to forward {{ with $values.B }}{{ humanize .Value }}{{ end }} pulls to VictoriaLogs in 15 min, for 15 min. Pulled entries are lost while this lasts.'
+          dashboard: fleet
+
+      - uid: ozwell-orchestrator-log-errors
+        title: Orchestrator logging errors
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: victorialogs
+            model:
+              refId: A
+              queryType: stats
+              # pino level >= 50 (error, fatal) is OTel severity_number >= 17.
+              expr: 'service.name:="ozwell-computer-orchestrator" severity_number:>=17 | stats count() as errors | filter errors:>=5'
+          - *reduce
+          - *threshold
+        for: 0s
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: warning }
+        annotations:
+          summary: The orchestrator logged errors
+          description: '{{ with $values.B }}{{ humanize .Value }}{{ end }} error records in 15 min. See the Orchestrator logs dashboard.'
+          dashboard: orchestrator-logs
+
+  # ---- Computers ----
+  # Gated on the orchestrator being up (see the top of this file). No data is normal: no
+  # running computers, or none with a problem.
+  - orgId: 1
+    name: computers
+    folder: ozwell-computer
+    interval: 1m
+    rules:
+      - uid: ozwell-computer-unreachable
+        title: Running computer unreachable
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              # Only running computers are targets (/sd), so a stopped one never fires.
+              expr: |
+                max by (instance_id, provider) (up{job="computers"} == bool 0) > 0
+                and on() (max(up{job="orchestrator"}) == 1)
+          - *reduce
+          - *threshold
+        for: 10m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: warning }
+        annotations:
+          summary: 'Computer {{ $labels.instance_id }} is running but unreachable'
+          description: The orchestrator's scrape proxy hasn't reached it for 10 minutes; its tool calls likely fail too.
+
+      - uid: ozwell-computer-pressure
+        title: Computer stalled on memory/CPU/I/O
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              # Share of time stalled (0-1): all tasks ("full") > 10%, or some > 50%.
+              expr: |
+                (
+                  max by (instance_id, provider, resource) (rate(ozwell_cgroup_pressure_seconds_total{job="computers", kind="full"}[10m])) > 0.1
+                  or max by (instance_id, provider, resource) (rate(ozwell_cgroup_pressure_seconds_total{job="computers", kind="some"}[10m])) > 0.5
+                )
+                and on() (max(up{job="orchestrator"}) == 1)
+          - *reduce
+          - *threshold
+        for: 10m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: warning }
+        annotations:
+          summary: 'Computer {{ $labels.instance_id }} is stalled on {{ $labels.resource }}'
+          description: 'Stalled {{ with $values.B }}{{ humanizePercentage .Value }}{{ end }} of the time (cgroup pressure), for 10 min.'
+
+      - uid: ozwell-computer-memory-near-limit
+        title: Computer near its memory limit
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              # memory.current includes page cache, which the kernel reclaims near the limit:
+              # sustained (10 min) and the pressure rule tell real trouble.
+              expr: |
+                (
+                  max by (instance_id, provider) (ozwell_cgroup_memory_bytes{job="computers", scope="container"})
+                  / max by (instance_id, provider) (ozwell_cgroup_memory_limit_bytes{job="computers"})
+                ) > 0.9
+                and on() (max(up{job="orchestrator"}) == 1)
+          - *reduce
+          - *threshold
+        for: 10m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: warning }
+        annotations:
+          summary: 'Computer {{ $labels.instance_id }} uses {{ with $values.B }}{{ humanizePercentage .Value }}{{ end }} of its memory limit'
+          description: Above 90% of the container's memory limit for 10 minutes.
+
+      - uid: ozwell-computer-x-down
+        title: Computer's X display down
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              expr: |
+                max by (instance_id, provider) (ozwell_x_connected{job="computers"} == bool 0) > 0
+                and on() (max(up{job="orchestrator"}) == 1)
+          - *reduce
+          - *threshold
+        for: 5m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: warning }
+        annotations:
+          summary: 'Computer {{ $labels.instance_id }}: X display disconnected'
+          description: The computer has had no X display for 5 minutes; desktop tools fail.
+
+  # ---- The observability stack itself (vmagent's self-monitoring jobs) ----
+  - orgId: 1
+    name: stack
+    folder: ozwell-computer
+    interval: 1m
+    rules:
+      - uid: ozwell-stack-down
+        title: Stack component down
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              # VictoriaMetrics or vmagent being down shows as this datasource failing or
+              # as "Orchestrator down" (no data) instead.
+              expr: 'max by (job) (up{job=~"victoriametrics|victorialogs|victoriatraces|vmagent"} == bool 0) > 0'
+          - *reduce
+          - *threshold
+        for: 5m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.job }} is down'
+          description: vmagent hasn't been able to scrape it for 5 minutes.
+
+      - uid: ozwell-stack-disk-low
+        title: Stack storage low or read-only
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              # Free bytes below 5 GiB, or storage switched to read-only (then the value is
+              # 1: ingestion has stopped).
+              expr: |
+                min by (job, path) ({__name__=~"vm_free_disk_space_bytes|vl_free_disk_space_bytes|vt_free_disk_space_bytes", job=~"victoriametrics|victorialogs|victoriatraces"}) < 5368709120
+                or max by (job, path) ({__name__=~"vm_storage_is_read_only|vl_storage_is_read_only|vt_storage_is_read_only", job=~"victoriametrics|victorialogs|victoriatraces"}) > 0
+          - *reduce
+          - *threshold
+        for: 5m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.job }}: storage low ({{ with $values.B }}{{ humanize1024 .Value }}{{ end }}B free) or read-only'
+          description: 'Below 5 GiB free on {{ $labels.path }}, or the storage is read-only (value 1). Shorten the retention or add disk.'
+
+      - uid: ozwell-stack-ingestion-errors
+        title: Stack ingestion errors
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              # Rows dropped or ignored, and failed writes, in 15 min.
+              expr: |
+                sum by (job) (increase({__name__=~"vm_rows_ignored_total|vl_rows_dropped_total|vt_rows_dropped_total", job=~"victoriametrics|victorialogs|victoriatraces|vmagent", reason!="debug"}[15m])) > 0
+                or sum by (job) (increase({__name__=~"vl_http_errors_total|vt_http_errors_total", path=~"/insert/.*"}[15m])) > 0
+                or sum by (job) (increase(vm_http_request_errors_total{job="victoriametrics", path="/api/v1/write"}[15m])) > 0
+          - *reduce
+          - *threshold
+        for: 15m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: warning }
+        annotations:
+          summary: '{{ $labels.job }} is dropping or rejecting data'
+          description: '{{ with $values.B }}{{ humanize .Value }}{{ end }} rows dropped or writes failed in 15 min, for 15 min. Its own logs say why.'
+
+      - uid: ozwell-stack-remote-write-backlog
+        title: vmagent remote-write backlog
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange: { from: 900, to: 0 }
+            datasourceUid: victoriametrics
+            model:
+              refId: A
+              instant: true
+              # Queued for VictoriaMetrics above 100 MiB, or anything dropped in 15 min.
+              expr: |
+                sum by (job) (vmagent_remotewrite_pending_data_bytes{job="vmagent"}) > 104857600
+                or sum by (job) (increase({__name__=~"vmagent_remotewrite_packets_dropped_total|vm_persistentqueue_bytes_dropped_total", job="vmagent"}[15m])) > 0
+          - *reduce
+          - *threshold
+        for: 15m
+        noDataState: OK
+        execErrState: KeepLast
+        labels: { severity: warning }
+        annotations:
+          summary: vmagent can't keep up writing to VictoriaMetrics
+          description: 'Backlog {{ with $values.B }}{{ humanize1024 .Value }}{{ end }}B (or that many dropped), for 15 min. Metrics arrive late or are lost.'

@@ -51,7 +51,7 @@ The "Later" items are not.
 | Metric cardinality | No limits for now. Revisit if series growth becomes a problem. |
 | Grafana auth | Local admin only, with credentials set in compose. Dashboards are committed to the repo and read-only in the UI. |
 | Grafana access | Grafana publishes its own dedicated port (`GRAFANA_PORT`, default 3000). The existing external reverse proxy handles routing and TLS. The orchestrator does not proxy Grafana. |
-| Alerting | Later phase. |
+| Alerting | Grafana Alerting only (no vmalert, no Alertmanager), declarative: rules, contact point, notification policy and templates in `orchestrator/deploy/grafana/provisioning/alerting/`, read at Grafana startup. Email only for now, SMTP from `.env` (`GF_SMTP_*`), recipients `ALERT_EMAIL_TO`. Notifications only: no paging. Grouped by `alertname` and `provider`. Every rule has `severity` (`critical`/`warning`) for routing later. Per-computer rules are gated on `up{job="orchestrator"}` instead of inhibition. Alerts carry `instance_id`, never owner emails or tool arguments; emails link to the Instance drill-down. |
 | Replicas | One orchestrator replica, two briefly during an update: `docker rollout orchestrator` (docker-rollout plugin) starts the new one, then the old one drains. Caddy (`proxy`) owns port 8090 and retries refused connections on the other replica. Computer logs may be pulled twice for the few seconds of overlap. |
 | Retention | Metrics 30 days, logs 14 days, traces 7 days. |
 
@@ -331,7 +331,13 @@ All scrape routes are served **only on the internal listener**.
   - **Instance drill-down:** variables for `instance_id` and `unit`. The `unit` variable
     defaults to `ozwell-computer.service`.
   - **Orchestrator logs.**
-- Alerting comes in a later phase.
+- **Alerting:** provisioned from `orchestrator/deploy/grafana/provisioning/alerting/`
+  (see the Alerting decision and the orchestrator README, "Alerts"). Rule groups:
+  `orchestrator` (down, creates/starts failing, internal tool-call errors, provider API
+  errors, service discovery, slow creates, log shipping, logged errors), `computers`
+  (unreachable, cgroup pressure, memory near the limit, X display down) and `stack`
+  (component down, disk low or read-only, ingestion errors, remote-write backlog).
+  Not covered: Grafana itself stopping, and an outside check of the public URL.
 
 ## Retention
 
@@ -350,7 +356,7 @@ All scrape routes are served **only on the internal listener**.
 | 4 | Instance `GET /api/v1/logs/entries` (gatewayd subset), journal group, trace_id log binding | root `typecheck` + `test:unit` (argument building, `Range` parsing, rejection of unsupported requests); `docker compose up -d --build`; new `test/integration/logs.test.ts` (route coverage, conformance against the real gatewayd in the test container) |
 | 5 | Log puller | fake instance + fake VictoriaLogs |
 | 6 | Dockerfile, compose (plus a docker:// override), vmagent config, Grafana provisioning + dashboards | manual bring-up; smoke script asserting a trace, a metric series and a log line arrive |
-| Later | Alerts; PHI/anonymization layer; instance SDK via relay; cardinality limits | — |
+| Later | Paging and other alert destinations; PHI/anonymization layer; instance SDK via relay; cardinality limits | — |
 
 If computer MCP tools change, regenerate the catalog: `make build && npm run mcp-tools`.
 

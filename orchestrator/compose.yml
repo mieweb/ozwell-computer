@@ -102,6 +102,16 @@ services:
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/fleet.json
       GF_NEWS_NEWS_FEED_ENABLED: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
+      # Alert emails (deploy/grafana/provisioning/alerting). Set these in .env.
+      GF_SMTP_ENABLED: ${GF_SMTP_ENABLED:-false}
+      GF_SMTP_HOST: ${GF_SMTP_HOST:-}
+      GF_SMTP_USER: ${GF_SMTP_USER:-}
+      GF_SMTP_PASSWORD: ${GF_SMTP_PASSWORD:-}
+      GF_SMTP_FROM_ADDRESS: ${GF_SMTP_FROM_ADDRESS:-admin@grafana.localhost}
+      GF_SMTP_FROM_NAME: ${GF_SMTP_FROM_NAME:-ozwell-computer alerts}
+      GF_SMTP_STARTTLS_POLICY: ${GF_SMTP_STARTTLS_POLICY:-}
+      # Recipients, ";"-separated; read by contact-points.yml as $ALERT_EMAIL_TO.
+      ALERT_EMAIL_TO: ${ALERT_EMAIL_TO:-root@localhost}
     volumes:
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
