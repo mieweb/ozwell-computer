@@ -178,6 +178,9 @@ All scrape routes are served **only on the internal listener**.
    the operation metrics and the tool-call metrics.
 4. **vmagent.** One `http_sd_configs` job against `/sd`, plus a static job for
    `/metrics`. It runs with no `sample_limit` for now.
+5. **Self-monitoring.** Static jobs `victoriametrics`, `victorialogs`, `victoriatraces`
+   and `vmagent` scrape the stack's own `/metrics`, for alerts on disk space, read-only
+   storage, dropped rows and the remote-write backlog.
 
 ## Workstream 3: Logs
 

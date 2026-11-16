@@ -29,3 +29,14 @@ scrape_configs:
       # One series per computer, named by its id rather than the shared proxy address.
       - source_labels: [instance_id]
         target_label: instance
+
+  # The stack itself, for alerting on disk space, ingestion errors and the remote-write
+  # backlog (deploy/grafana/provisioning/alerting). The jobs are named after the services.
+  - job_name: victoriametrics
+    static_configs: [{ targets: ["victoriametrics:8428"] }]
+  - job_name: victorialogs
+    static_configs: [{ targets: ["victorialogs:9428"] }]
+  - job_name: victoriatraces
+    static_configs: [{ targets: ["victoriatraces:10428"] }]
+  - job_name: vmagent
+    static_configs: [{ targets: ["localhost:8429"] }]
