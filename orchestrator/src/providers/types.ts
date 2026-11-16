@@ -36,6 +36,19 @@ export interface Computer {
 export interface CreateOptions {
   owner: Requester;
   displayName?: string;
+  /** Use this id instead of generating one (admin CLI). Must pass validId(); an existing id is an error. */
+  id?: string;
+}
+
+/** Ids both providers accept: a DNS label. */
+export const ID_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
+export const validId = (id: string) => ID_PATTERN.test(id);
+
+/** The id a create should use: the requested one (validated) or a generated one. */
+export function createId(opts: CreateOptions): string {
+  if (opts.id === undefined) return generateId();
+  if (!validId(opts.id)) throw new Error(`invalid id ${JSON.stringify(opts.id)}: use a DNS label (${ID_PATTERN.source})`);
+  return opts.id;
 }
 
 export interface Provider {
