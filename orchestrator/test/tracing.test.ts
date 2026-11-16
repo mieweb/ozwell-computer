@@ -142,6 +142,30 @@ describe('background work is not traced', () => {
   });
 });
 
+describe('tool-call error reasons', () => {
+  it('labels tool_calls_total with a fixed set of reasons', async () => {
+    const m = new Metrics({ defaultMetrics: false });
+    m.observeToolCall('click', 'ok', 0.1);
+    m.observeToolCall('click', 'error', 0.1, 'invalid_request');
+    m.observeToolCall('click', 'error', 0.1, 'computer_stopped');
+    m.observeToolCall('click', 'error', 0.1, 'stale_handle'); // a computer's own reason
+    m.observeToolCall('click', 'error', 0.1, 'stale_handle');
+    m.observeToolCall('click', 'error', 0.1); // no reason: an unexpected failure
+    const body = await m.registry.metrics();
+    expect(body).toContain('ozwell_orchestrator_tool_calls_total{tool="click",outcome="ok",reason="none"} 1');
+    expect(body).toContain('ozwell_orchestrator_tool_calls_total{tool="click",outcome="error",reason="invalid_request"} 1');
+    expect(body).toContain('ozwell_orchestrator_tool_calls_total{tool="click",outcome="error",reason="computer_stopped"} 1');
+    expect(body).toContain('ozwell_orchestrator_tool_calls_total{tool="click",outcome="error",reason="other"} 2');
+    expect(body).toContain('ozwell_orchestrator_tool_calls_total{tool="click",outcome="error",reason="internal"} 1');
+    expect(body).not.toContain('stale_handle');
+  });
+
+  it('counts an unknown tool as invalid_request', async () => {
+    expect((await tool('no_such_tool', {})).isError).toBe(true);
+    expect(await metrics.registry.metrics()).toContain('ozwell_orchestrator_tool_calls_total{tool="no_such_tool",outcome="error",reason="invalid_request"} 1');
+  });
+});
+
 describe('internal /metrics', () => {
   it('serves tool-call and provider metrics with trace exemplars', async () => {
     await tool('list_computers', {});
@@ -150,8 +174,8 @@ describe('internal /metrics', () => {
       const r = await internal.inject({ method: 'GET', url: '/metrics' });
       expect(r.statusCode).toBe(200);
       expect(r.headers['content-type']).toMatch(/openmetrics/);
-      expect(r.body).toMatch(/ozwell_orchestrator_tool_calls_total\{tool="list_computers",outcome="ok"\} \d/);
-      expect(r.body).toMatch(/ozwell_orchestrator_tool_calls_total\{tool="get_computer",outcome="error"\} 1/);
+      expect(r.body).toMatch(/ozwell_orchestrator_tool_calls_total\{tool="list_computers",outcome="ok",reason="none"\} \d/);
+      expect(r.body).toMatch(/ozwell_orchestrator_tool_calls_total\{tool="get_computer",outcome="error",reason="target_unavailable"\} 1/);
       expect(r.body).toMatch(/ozwell_orchestrator_provider_call_duration_seconds_count\{provider="memory",method="list",outcome="ok"\}/);
       expect(r.body).toMatch(/ozwell_orchestrator_tool_call_duration_seconds_bucket\{[^}]*\} \d+ # \{trace_id="[0-9a-f]{32}"\}/);
       expect((await internal.inject({ method: 'GET', url: '/health' })).statusCode).toBe(204);

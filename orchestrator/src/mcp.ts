@@ -158,7 +158,7 @@ const argsAttr = (args: Record<string, unknown>) => {
 };
 
 /** End a tool-call span from its result: `isError` results are errors with their reason. */
-function finishToolSpan(span: Span, result: any): string {
+function finishToolSpan(span: Span, result: any): { outcome: 'ok' | 'error'; reason?: string } {
   let reason: string | undefined;
   let ready: unknown;
   if (result?.isError) {
@@ -170,7 +170,7 @@ function finishToolSpan(span: Span, result: any): string {
     try { ready = JSON.parse(result?.content?.[0]?.text ?? '{}')?.ready; } catch { /* not JSON */ }
     if (typeof ready === 'boolean') span.setAttribute('ozwell.ready', ready);
   }
-  return reason ? 'error' : 'ok';
+  return reason ? { outcome: 'error', reason } : { outcome: 'ok' };
 }
 
 export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server {
@@ -260,13 +260,13 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
       },
     }, async (span) => {
       const t0 = performance.now();
-      let outcome = 'error';
+      let end: { outcome: string; reason?: string } = { outcome: 'error', reason: 'internal' };
       try {
         const result = await callTool(name, args);
-        outcome = finishToolSpan(span, result);
+        end = finishToolSpan(span, result);
         return result;
       } finally {
-        deps.metrics?.observeToolCall(name, outcome, (performance.now() - t0) / 1000);
+        deps.metrics?.observeToolCall(name, end.outcome, (performance.now() - t0) / 1000, end.reason);
         span.end();
       }
     });

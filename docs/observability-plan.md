@@ -164,6 +164,9 @@ All scrape routes are served **only on the internal listener**.
      `instance_id`.
    - `__metrics_path__=/instances/<id>/metrics`
    - `__address__=orchestrator:8091`
+   - Failures are counted for alerting: `ozwell_orchestrator_sd_requests_total{outcome}`
+     (`ok`, `error`) and, for the listing `/sd` shares with the computer metadata,
+     `ozwell_orchestrator_computer_listings_total{provider,outcome}`.
 2. **Scrape proxy.** `GET /instances/:id/metrics` fetches
    `{internalUrl}/api/v1/metrics` with the instance bearer token (timeout 10 s) and
    streams the response back. It returns 404 for an unknown instance and 503 for a
@@ -285,7 +288,11 @@ All scrape routes are served **only on the internal listener**.
    - the full tool arguments as `ozwell.tool.arguments`, with large binary result
      payloads summarised by size
 3. **Tool-call metrics:** `ozwell_orchestrator_tool_call_duration_seconds{tool,outcome}`
-   (with exemplars) and `ozwell_orchestrator_tool_calls_total{tool,outcome}`.
+   (with exemplars) and `ozwell_orchestrator_tool_calls_total{tool,outcome,reason}`.
+   `reason` is a fixed set so alerts can tell real failures from agent mistakes:
+   `none` (ok), `invalid_request`, `target_unavailable`, `computer_stopped`,
+   `quota_exceeded`, `unauthenticated`, `internal`, and `other` for a computer's own tool
+   errors (`stale_handle`, `path_not_found`, ...).
 4. **Later:** an instance OTel SDK exporting through an orchestrator relay. Out of scope
    for v1.
 
