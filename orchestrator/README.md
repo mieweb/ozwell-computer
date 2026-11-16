@@ -207,6 +207,7 @@ the environment take precedence.
 | `ORCHESTRATOR_SD_ADDRESS` | the internal host:port | address vmagent uses to reach the internal listener |
 | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | off | OTLP (HTTP, protobuf) export of traces and the orchestrator's logs |
 | `ORCHESTRATOR_LOG_SHIP_URL` | off | VictoriaLogs `…/insert/journald/upload`: pull every computer's journal there |
+| `ORCHESTRATOR_TRACE_SHIP_URL` | `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT` | VictoriaTraces `…/insert/opentelemetry/v1/traces`: pull every computer's spans (`GET /api/v1/traces`) there, tagged `ozwell.instance_id`; `off` disables it |
 | `ORCHESTRATOR_LOG_POLL_MS` / `ORCHESTRATOR_OP_TIMEOUT_MS` | `5000` / `600000` | log pull interval; operation timing timeout |
 
 Configure Ozwell's workspace MCP server as `http(s)://<orchestrator>/mcp` (Streamable

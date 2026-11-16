@@ -133,6 +133,32 @@ export class Metrics {
     registers: [this.registry],
   });
 
+  // Instance traces, pulled by the same loop (log-puller.ts).
+  readonly tracePulls = new Counter({
+    name: 'ozwell_orchestrator_trace_pulls_total',
+    help: 'Instance span pulls, by outcome: ok, unsupported (no traces route: an older instance), unauthorized, unavailable, ship_error, error',
+    labelNames: ['outcome'] as const,
+    registers: [this.registry],
+  });
+
+  readonly traceSpansShipped = new Counter({
+    name: 'ozwell_orchestrator_trace_spans_shipped_total',
+    help: 'Instance spans forwarded to VictoriaTraces',
+    registers: [this.registry],
+  });
+
+  readonly traceSpansDropped = new Counter({
+    name: 'ozwell_orchestrator_trace_spans_dropped_total',
+    help: 'Instance spans dropped from a full span buffer before they were pulled (reported by the instance)',
+    registers: [this.registry],
+  });
+
+  readonly tracePullUnsupported = new Gauge({
+    name: 'ozwell_orchestrator_trace_pull_unsupported_instances',
+    help: 'Running instances whose version has no traces route (re-checked periodically)',
+    registers: [this.registry],
+  });
+
   constructor(opts: { defaultMetrics?: boolean } = {}) {
     if (opts.defaultMetrics ?? true) collectDefaultMetrics({ register: this.registry, prefix: 'ozwell_orchestrator_' });
   }
