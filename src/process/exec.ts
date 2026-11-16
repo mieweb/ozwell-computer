@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { ApiError } from '../errors.js';
+import { withSpan } from '../tracing.js';
 
 export interface ExecRequest {
   cmd: string;
@@ -27,6 +28,15 @@ export type ExecChunk = { stream: 'stdout' | 'stderr'; data: string } | { exit: 
 
 /** Run a command; onChunk receives streamed output when provided. */
 export function runCommand(req: ExecRequest, display: string, onChunk?: (c: ExecChunk) => void, signal?: AbortSignal): Promise<ExecResult> {
+  // The command line itself is not recorded: it may carry secrets.
+  return withSpan('exec', { 'exec.streamed': Boolean(onChunk), 'exec.shell': req.shell }, async (span) => {
+    const r = await run(req, display, onChunk, signal);
+    span?.set({ 'process.exit.code': r.exit_code ?? undefined, 'exec.signal': r.signal ?? undefined, 'exec.timed_out': r.timed_out, 'exec.truncated': r.truncated });
+    return r;
+  });
+}
+
+function run(req: ExecRequest, display: string, onChunk?: (c: ExecChunk) => void, signal?: AbortSignal): Promise<ExecResult> {
   const started = Date.now();
   return new Promise((resolve, reject) => {
     const useShell = req.shell ?? ((!req.args || req.args.length === 0) && /[\s|&;<>$`*?]/.test(req.cmd));

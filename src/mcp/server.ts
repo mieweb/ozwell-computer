@@ -14,6 +14,7 @@ import { launchDetached } from '../routes/windows.js';
 import { m } from '../metrics.js';
 import { upgrading, type UpdateStatus } from '../update.js';
 import { traceIdsOf } from '../trace-context.js';
+import { tracer } from '../tracing.js';
 
 type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string };
 interface ToolResult { content: Content[]; isError?: boolean; [k: string]: unknown }
@@ -68,7 +69,14 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
       const extra = a.at(-1) as { _meta?: unknown; requestInfo?: { headers?: Record<string, unknown> } } | undefined;
       const ids = traceIdsOf(extra?._meta, extra?.requestInfo?.headers);
       ctx.log.info({ tool: name, agent: p.name, session: p.id, ...ids }, 'mcp tool call');
-      const r = await cb(...a);
+      // A span per tool call, continuing params._meta.traceparent (the orchestrator's
+      // instance.callTool span) or the HTTP request's span.
+      const meta = extra?._meta as { traceparent?: unknown } | undefined;
+      const r = await tracer.withSpan(`mcp.tool ${name}`, { 'mcp.tool.name': name }, async (span) => {
+        const res = await cb(...a);
+        if (res.isError) span?.fail(res.content.find((c): c is Extract<Content, { type: 'text' }> => c.type === 'text')?.text ?? 'tool error');
+        return res;
+      }, { traceparent: meta?.traceparent ?? extra?.requestInfo?.headers?.traceparent });
       m.mcpToolCalls.inc({ tool: name, outcome: r.isError ? 'error' : 'ok' });
       const notice = updateNotice(ctx.updater?.cached() ?? null);
       return notice ? { ...r, content: [...r.content, { type: 'text', text: notice }] } : r;
