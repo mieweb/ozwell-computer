@@ -188,6 +188,11 @@ All scrape routes are served **only on the internal listener**.
     `?token=` URLs.
 - pino keeps writing to stdout. `@opentelemetry/instrumentation-pino` adds
   `trace_id`/`span_id` and sends records over OTLP to VictoriaLogs.
+- The admin CLI (`npm run admin`, see `orchestrator/README.md`) preloads the same
+  `telemetry.ts`: its audit lines (`component: admin`, one per create, delete and update,
+  with the operator) and its `admin <command>` / `provider.*` spans reach VictoriaLogs
+  and VictoriaTraces when the OTLP endpoints are set. It is a separate process, so its
+  operations are not in the orchestrator's operation metrics.
 
 ### Instances (pull)
 
@@ -362,5 +367,7 @@ The instance gets no new runtime dependencies; it uses the existing `journalctl`
 - Full arguments and user emails in logs and traces mean the observability stack holds
   PHI. Access is limited to the Grafana admin on the same host until the anonymization
   layer lands.
+- Admin CLI creates, deletes and updates are in the audit log and traces only, not on the
+  operation dashboards (separate process, no metrics endpoint).
 - Having no cardinality limit means a large fleet can grow VictoriaMetrics series
   quickly. Watch `vm_cache_entries` and the active-series metrics.
