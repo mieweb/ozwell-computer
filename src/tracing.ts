@@ -192,7 +192,8 @@ export class Tracer {
    */
   collect(cursor: string | undefined, limit = 1000, maxBytes = 4 * 1024 * 1024): Collected {
     const m = cursor ? /^([0-9a-f]+):(\d+)$/.exec(cursor) : null;
-    let after = m && m[1] === this.boot ? Number(m[2]) : 0;
+    // "end": no spans, only a cursor at the end (a puller's first pull doesn't backfill).
+    let after = cursor === 'end' ? this.seq : m && m[1] === this.boot ? Number(m[2]) : 0;
     if (after > this.seq) after = 0; // not from this buffer
     const first = this.buf.length ? this.buf[0].seq : this.seq + 1;
     const dropped = after > 0 ? Math.max(0, first - after - 1) : 0;

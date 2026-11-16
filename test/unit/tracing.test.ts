@@ -64,6 +64,10 @@ describe('Tracer', () => {
     // A cursor from another boot (a restarted computer) starts at the buffer's head.
     expect(t.collect(`ffffffff:${3}`)).toMatchObject({ spans: 5, dropped: 0 });
     expect(t.collect(`${t.boot}:999`)).toMatchObject({ spans: 5 });
+    const end = t.collect('end');
+    expect(end).toMatchObject({ spans: 0, dropped: 0 });
+    t.start('later', { root: true })!.end();
+    expect(spansOf(t.collect(end.cursor).body).map((s) => s.name)).toEqual(['later']);
   });
 
   it('caps a response in bytes, but always returns at least one span', () => {

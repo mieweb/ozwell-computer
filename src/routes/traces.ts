@@ -21,10 +21,10 @@ export async function traceRoutes(app: FastifyInstance, opts: { tracer?: Tracer 
         'Spans this computer recorded for the requests and MCP tool calls it served, as an OTLP/JSON ExportTraceServiceRequest. ' +
         'Spans continue the caller\'s W3C traceparent. They are kept in a bounded in-memory buffer (oldest dropped first, lost on restart). ' +
         `Page with the ${TRACE_HEADERS.cursor} response header passed back as ?cursor=; ${TRACE_HEADERS.more}: 1 means more spans are waiting, ` +
-        `and ${TRACE_HEADERS.dropped} counts spans dropped from the buffer since the given cursor. A missing or unknown cursor returns the buffer from its start.`,
+        `and ${TRACE_HEADERS.dropped} counts spans dropped from the buffer since the given cursor. A missing or unknown cursor returns the buffer from its start; cursor=end returns no spans and a cursor at the end of the buffer.`,
       querystring: {
         type: 'object', additionalProperties: false, properties: {
-          cursor: { type: 'string', maxLength: 64, description: `Value of ${TRACE_HEADERS.cursor} from the previous response` },
+          cursor: { type: 'string', maxLength: 64, description: `Value of ${TRACE_HEADERS.cursor} from the previous response, or end` },
           limit: { type: 'integer', minimum: 1, maximum: MAX_TRACE_SPANS, description: `Spans per response (default and maximum ${MAX_TRACE_SPANS})` },
         },
       },
