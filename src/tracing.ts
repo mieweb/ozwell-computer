@@ -181,6 +181,9 @@ export class Tracer {
    */
   async withSpan<T>(name: string, attrs: Attrs | undefined, fn: (span: Span | null) => Promise<T> | T, o: { traceparent?: unknown } = {}): Promise<T> {
     const span = this.start(name, { attrs, traceparent: o.traceparent });
+    // Unsampled by the caller: nothing nested may be recorded either, even under an active
+    // request span (e.g. unsampled params._meta in a request without a trace header).
+    if (!span && parseContext(o.traceparent)?.sampled === false) return this.als.exit(() => fn(null));
     if (!span) return fn(null);
     try {
       return await this.als.run(span.ctx, () => fn(span));

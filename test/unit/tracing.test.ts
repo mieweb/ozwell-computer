@@ -62,6 +62,11 @@ describe('Tracer', () => {
     expect(t.start('req', { traceparent: unsampled, root: true })).toBeNull();
     await t.withSpan('child', undefined, async (s) => { expect(s).toBeNull(); }, { traceparent: unsampled });
     expect(t.size).toBe(0);
+    // Inside an active request span: the unsampled tool call and its children record nothing.
+    const req = t.start('req', { root: true })!;
+    await t.runWith(req, () => t.withSpan('tool', undefined, () => t.withSpan('exec', undefined, async (s) => { expect(s).toBeNull(); }), { traceparent: unsampled }));
+    req.end();
+    expect(spansOf(t.collect(undefined).body).map((s) => s.name)).toEqual(['req']);
   });
 
   it('caps attributes and value lengths', () => {
@@ -158,6 +163,7 @@ describe('GET /api/v1/traces', () => {
   it('does not trace the jobs list, job polling or job streams', async () => {
     await app.inject({ url: '/api/v1/exec/jobs', headers: auth });
     await app.inject({ url: '/api/v1/exec/jobs/j-000000000000', headers: auth });
+    await app.inject({ url: '/api/v1/update', headers: auth });
     expect(await since()).toEqual([]);
   });
 
