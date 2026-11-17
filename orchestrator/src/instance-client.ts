@@ -53,8 +53,10 @@ export class InstanceClient {
     const headers: Record<string, string> = {
       authorization: `Bearer ${token}`, 'content-type': 'application/json', accept: 'application/json, text/event-stream',
       ...(session ? { 'mcp-session-id': session.id, 'mcp-protocol-version': session.protocol } : {}),
-      ...traceCarrier(),
     };
+    // No traceparent header here: the undici instrumentation (telemetry.ts) injects the one
+    // for its HTTP client span, so the computer's request span nests under that span.
+    // Setting it too sent two values ("a, b"), which the computer couldn't parse (#64).
     let res: Response;
     try {
       res = await fetch(`${url}/mcp`, { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(CALL_TIMEOUT_MS) });

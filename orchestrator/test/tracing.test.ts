@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance } from 'fastify';
 import { context, propagation, trace } from '@opentelemetry/api';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
+import { UndiciInstrumentation } from '@opentelemetry/instrumentation-undici';
 import { InMemorySpanExporter, SimpleSpanProcessor, TracerProvider, type ReadableSpan } from '@opentelemetry/sdk-trace';
 import { buildServer } from '../src/server.ts';
 import { buildInternalServer } from '../src/internal-server.ts';
@@ -19,6 +20,9 @@ import { generateId, type Computer, type Provider } from '../src/providers/types
 const exporter = new InMemorySpanExporter();
 const tp = new TracerProvider({ spanProcessors: [new SimpleSpanProcessor({ exporter })] });
 const cm = new AsyncLocalStorageContextManager().enable();
+// As in telemetry.ts: fetch gets client spans, and they inject the traceparent header.
+// The test's own calls to the orchestrator stay uninstrumented: they set traceparent by hand.
+const undici = new UndiciInstrumentation({ ignoreRequestHook: (req) => req.origin === base });
 
 const PSK = 'psk';
 const catalog: ToolDef[] = [{ name: 'click', inputSchema: { type: 'object', properties: { x: { type: 'number' } } } }];
@@ -81,6 +85,7 @@ beforeAll(async () => {
   base = `http://127.0.0.1:${(app.server.address() as any).port}`;
 });
 afterAll(async () => {
+  undici.disable();
   await app.close(); await inst.close(); await tp.shutdown();
   trace.disable(); context.disable(); propagation.disable();
 });
@@ -108,9 +113,15 @@ describe('tool-call tracing', () => {
     expect(parentOf(ic)).toBe(call.spanContext().spanId);
 
     // traceparent reached the instance, as a header and in params._meta, in the same trace.
+    // Exactly one header value, for the fetch's own HTTP client span (not a combined "a, b").
     const tc = seen.find((s) => s.method === 'tools/call')!;
     const traceId = call.spanContext().traceId;
     expect(tc.traceparent).toMatch(new RegExp(`^00-${traceId}-[0-9a-f]{16}-01$`));
+    const http = exporter.getFinishedSpans().find((s) => s.spanContext().spanId === tc.traceparent!.split('-')[2])!;
+    expect(http.instrumentationScope.name).toMatch(/undici/);
+    expect(parentOf(http)).toBe(ic.spanContext().spanId);
+    // Every request to the computer (initialize, notifications/initialized, tools/call).
+    for (const r of seen) expect(r.traceparent ?? '').not.toContain(',');
     expect(tc.meta.traceparent).toMatch(new RegExp(`^00-${traceId}-`));
   });
 
