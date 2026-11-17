@@ -7,6 +7,7 @@ WORKDIR /app/orchestrator
 COPY orchestrator/package.json orchestrator/package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund && npm cache clean --force
 COPY orchestrator/src ./src
+COPY orchestrator/bin ./bin
 # The default TOOL_CATALOG: ../../docs/mcp-tools.json relative to src/.
 COPY docs/mcp-tools.json /app/docs/mcp-tools.json
 USER node

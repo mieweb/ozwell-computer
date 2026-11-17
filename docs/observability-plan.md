@@ -188,10 +188,11 @@ All scrape routes are served **only on the internal listener**.
     `?token=` URLs.
 - pino keeps writing to stdout. `@opentelemetry/instrumentation-pino` adds
   `trace_id`/`span_id` and sends records over OTLP to VictoriaLogs.
-- The admin CLI (`npm run admin`, see `orchestrator/README.md`) preloads the same
+- The admin CLI (`bin/admin`, see `orchestrator/README.md`) preloads the same
   `telemetry.ts`: its audit lines (`component: admin`, one per create, delete and update,
   with the operator) and its `admin <command>` / `provider.*` spans reach VictoriaLogs
-  and VictoriaTraces when the OTLP endpoints are set. It is a separate process, so its
+  and VictoriaTraces when the OTLP endpoints are set, as the service
+  `ozwell-computer-admin`. It is a separate process, so its
   operations are not in the orchestrator's operation metrics.
 
 ### Instances (pull)

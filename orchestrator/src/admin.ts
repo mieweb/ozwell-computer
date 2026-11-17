@@ -4,10 +4,11 @@
 // computers directly, not to a running orchestrator. Being able to run it (host or
 // container access) is the admin check.
 //
-//   npm run -s admin -- list   [--user <id|email>] [--json]
-//   npm run -s admin -- create --user <id> [--email <email>] [--name <name>] [--id <id>] [--wait] [--timeout <d>] [--json]
-//   npm run -s admin -- delete (--id <id>… | --user <id|email> | --all) [--yes] [--json]
-//   npm run -s admin -- update (--id <id>… | --user <id|email> | --all) [--parallel <n>] [--timeout <d>] [--force] [--json]
+//   bin/admin list   [--user <id|email>] [--json]
+//   bin/admin create --user <id> [--email <email>] [--name <name>] [--id <id>] [--wait] [--timeout <d>] [--json]
+//   bin/admin delete (--id <id>… | --user <id|email> | --all) [--yes] [--json]
+//   bin/admin update (--id <id>… | --user <id|email> | --all) [--parallel <n>] [--timeout <d>] [--force] [--json]
+//   (also `npm run -s admin -- <command>`)
 //
 // Exit codes: 0 all succeeded, 1 some failed or were skipped, 2 usage or configuration error.
 // Every change is written to stderr as a structured audit line (and over OTLP when the
@@ -369,7 +370,8 @@ export async function runAdmin(argv: string[], deps: AdminDeps): Promise<number>
   });
 }
 
-async function main() {
+/** The CLI: bin/admin calls this after preparing the environment and loading telemetry.ts. */
+export async function main(argv = process.argv.slice(2)) {
   const { createInterface } = await import('node:readline/promises');
   const { default: pino } = await import('pino');
   const { providerFromUri } = await import('./providers/index.ts');
@@ -391,7 +393,7 @@ async function main() {
   // Audit lines on stderr, so stdout stays clean for --json.
   const log = pino({ name: 'ozwell-computer-admin', level: 'info', base: { component: 'admin', operator: env.SUDO_USER || env.USER || null } }, pino.destination(2));
   const tty = process.stdin.isTTY && process.stderr.isTTY;
-  const code = await runAdmin(process.argv.slice(2), {
+  const code = await runAdmin(argv, {
     provider, env,
     out: (l) => process.stdout.write(`${l}\n`),
     err: (l) => process.stderr.write(`${l}\n`),
@@ -405,4 +407,5 @@ async function main() {
   return exit(code);
 }
 
+// `node src/admin.ts` still works, but bin/admin also loads .env and names the spans.
 if (import.meta.main) await main();

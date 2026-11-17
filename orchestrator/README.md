@@ -267,21 +267,25 @@ commands.
 
 ## Admin CLI
 
-`src/admin.ts` manages computers for every user with the orchestrator's own configuration
+`bin/admin` manages computers for every user with the orchestrator's own configuration
 (`PROVIDER_URI` and the provider's secrets). It talks to the provider and to the computers
 directly, not to a running orchestrator. Being able to run it (shell on the host or in the
 container) is the admin check: there is no network API or extra token.
 
 ```bash
 # Docker Compose (the container already has the configuration)
-docker compose exec orchestrator npm run -s admin -- list
+docker compose exec orchestrator bin/admin list
 
 # systemd install: load its environment first
-sudo sh -c 'set -a; . /etc/default/ozwell-computer-orchestrator; cd /opt/ozwell-computer/orchestrator && npm run -s admin -- list'
+sudo sh -c 'set -a; . /etc/default/ozwell-computer-orchestrator; /opt/ozwell-computer/orchestrator/bin/admin list'
 
-# development (reads orchestrator/.env)
-npm run -s admin -- list
+# development, from orchestrator/ (also `npm run -s admin -- list`)
+bin/admin list
 ```
+
+`bin/admin` works from any directory. It loads `orchestrator/.env` when there is one
+(variables already set win; no notice when there isn't), then preloads `src/telemetry.ts`
+so its audit lines and traces are exported like the orchestrator's.
 
 ```
 admin list   [--user <id|email>] [--json]
@@ -310,9 +314,10 @@ admin update (--id <id>… | --user <id|email> | --all) [--parallel <n>] [--time
 - **Exit codes:** `0` all succeeded, `1` some failed or were skipped, `2` usage or
   configuration error.
 - **Audit:** every create, delete and update is a structured log line on stderr
-  (`component: admin`, with the operator's `$SUDO_USER`/`$USER`). With the OTLP endpoints
-  set (they are in `compose.yml`), the lines and the CLI's traces also go to VictoriaLogs
-  and VictoriaTraces; output from `docker compose exec` otherwise isn't kept.
+  (`component: admin`, with the operator's `$SUDO_USER`/`$USER`). With the OTLP endpoints set (they are in
+  `compose.yml`), the lines and the CLI's traces also go to VictoriaLogs and VictoriaTraces,
+  under the service name `ozwell-computer-admin` (unless `OTEL_SERVICE_NAME` is set);
+  output from `docker compose exec` otherwise isn't kept.
 
 Known gaps: the CLI is a separate process, so its operations don't appear in the running
 orchestrator's operation metrics; and a computer it deletes stays in the running

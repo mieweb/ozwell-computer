@@ -12,7 +12,7 @@
     "start": "node --env-file-if-exists=.env --import ./src/telemetry.ts src/cli.ts",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "admin": "node --env-file-if-exists=.env --import ./src/telemetry.ts src/admin.ts"
+    "admin": "bin/admin"
   },
   "dependencies": {
     "@fastify/otel": "^1.0.1",
