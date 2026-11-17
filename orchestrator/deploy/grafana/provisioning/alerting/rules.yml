@@ -379,12 +379,15 @@ groups:
               refId: A
               instant: true
               # Free bytes below 5 GiB, or storage switched to read-only (then the value is
-              # 1: ingestion has stopped).
+              # 1: ingestion has stopped). A only has series with a problem, and a full disk is 0
+              # free bytes, so C fires on any value (>= 0), not the shared > 0.
               expr: |
                 min by (job, path) ({__name__=~"vm_free_disk_space_bytes|vl_free_disk_space_bytes|vt_free_disk_space_bytes", job=~"victoriametrics|victorialogs|victoriatraces"}) < 5368709120
                 or max by (job, path) ({__name__=~"vm_storage_is_read_only|vl_storage_is_read_only|vt_storage_is_read_only", job=~"victoriametrics|victorialogs|victoriatraces"}) > 0
           - *reduce
-          - *threshold
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: B, conditions: [{ evaluator: { type: gt, params: [-1] } }] }
         for: 5m
         noDataState: OK
         execErrState: KeepLast
