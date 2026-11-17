@@ -44,12 +44,19 @@ export class ComputerApi {
     } catch (e) {
       throw new InstanceError('target_unavailable', `cannot reach the computer: ${(e as Error).message}`, NOT_SENT.has((e as any).cause?.code));
     }
-    const text = await res.text().catch(() => '');
+    let text: string;
+    try {
+      text = await res.text();
+    } catch (e) {
+      // Headers came, the body didn't (restart or timeout mid-response): retryable, not a result.
+      throw new InstanceError('target_unavailable', `the computer's response was cut off: ${(e as Error).message}`);
+    }
     let body: any = null;
     try { body = text ? JSON.parse(text) : null; } catch { /* not JSON (e.g. a proxy page) */ }
     if (res.status === 503) throw new InstanceError('target_unavailable', 'the computer is unavailable (HTTP 503)', true);
     if (res.status === 401) throw new InstanceError('unauthenticated', 'the computer rejected its token');
     if (!res.ok) throw new InstanceError(body?.error?.reason ?? 'internal', body?.error?.message ?? `${method} ${path}: HTTP ${res.status}`);
+    if (body === null || typeof body !== 'object') throw new InstanceError('target_unavailable', `${method} ${path}: no JSON in the response`);
     return body as T;
   }
 

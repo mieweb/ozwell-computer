@@ -8,7 +8,7 @@ import { createId, type Computer, type Provider } from '../src/providers/types.t
 type Behaviour = 'succeed' | 'unchanged' | 'fail' | 'restart' | 'hang' | 'instant' | 'drop';
 interface FakeOpts {
   version?: string; latest?: string; supported?: boolean; roster?: Array<{ name: string; kind: string }>;
-  behaviour?: Behaviour; state?: string; at?: string; noUpdateRoute?: boolean; checkDelayMs?: number; statusDelayMs?: number;
+  behaviour?: Behaviour; state?: string; at?: string; noUpdateRoute?: boolean; checkDelayMs?: number; statusDelayMs?: number; cutOffPolls?: number;
 }
 
 const running = { now: 0, max: 0 };
@@ -33,6 +33,7 @@ async function fakeComputer(o: FakeOpts = {}) {
     s.upgrade = { ...s.upgrade, state, at: new Date().toISOString() };
     running.now--;
   };
+  let cutOff = o.cutOffPolls ?? 0;
   const server = createServer((req, res) => {
     const send = (code: number, body?: unknown) => { res.writeHead(code, { 'content-type': 'application/json' }); res.end(body === undefined ? '' : JSON.stringify(body)); };
     if (s.down) return send(503, { error: { reason: 'target_unavailable', message: 'restarting' } });
@@ -43,6 +44,14 @@ async function fakeComputer(o: FakeOpts = {}) {
     if (route === 'GET /api/v1/presence') return send(200, { roster: s.roster });
     if (o.noUpdateRoute && req.url!.startsWith('/api/v1/update')) return send(501, { error: { reason: 'feature_unsupported', message: 'update checks are not running' } });
     if (route === 'POST /api/v1/update/check' && o.checkDelayMs) { setTimeout(() => send(200, status()), o.checkDelayMs); return; }
+    if (route === 'GET /api/v1/update' && s.applied && cutOff > 0) {
+      // Headers and part of the body, then the connection drops (the server restarting).
+      cutOff--;
+      res.writeHead(200, { 'content-type': 'application/json', 'content-length': '1000' });
+      res.write('{"supported":tr');
+      setTimeout(() => res.socket?.destroy(), 5);
+      return;
+    }
     if (route === 'GET /api/v1/update' && o.statusDelayMs && s.applied) { setTimeout(() => send(200, status()), o.statusDelayMs); return; }
     if (route === 'GET /api/v1/update' || route === 'POST /api/v1/update/check') return send(200, status());
     if (route === 'POST /api/v1/update/apply') {
@@ -406,6 +415,14 @@ describe('admin update', () => {
     const h = harness(memoryProvider([late.c]).p, { pollMs: 50 });
     expect(await h.run('update', '--id', 'lateok', '--timeout', '200ms', '--json')).toBe(1);
     expect(results(h)[0]).toMatchObject({ outcome: 'timeout' });
+  });
+
+  it('retries a status response cut off mid-body, without failing the batch', async () => {
+    const cut = await onFake('cut', { latest: '1.1.0', cutOffPolls: 2 });
+    const other = await onFake('other', { latest: '1.1.0' });
+    const h = harness(memoryProvider([cut.c, other.c]).p);
+    expect(await h.run('update', '--all', '--json')).toBe(0);
+    expect(results(h).map((r) => [r.id, r.outcome]).sort()).toEqual([['cut', 'updated'], ['other', 'updated']]);
   });
 
   it('gives up at --timeout', async () => {
