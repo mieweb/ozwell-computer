@@ -66,6 +66,12 @@ describe('otlpJsonToProto', () => {
     expect(attrs(b.attributes)).toEqual({ b: true, d: 1.5, neg: '-3' });
   });
 
+  it('refuses a request with more elements than the budget', () => {
+    const many = span(1, { events: Array.from({ length: 50 }, () => ({ name: 'e' })) });
+    expect(() => otlpJsonToProto(otlp([many]), {}, 40)).toThrow(/more than/);
+    expect(otlpJsonToProto(otlp([many]), {}).spans).toBe(1);
+  });
+
   it('ignores garbage', () => {
     expect(otlpJsonToProto(null, {}).spans).toBe(0);
     expect(otlpJsonToProto({ resourceSpans: [1, 'x', { scopeSpans: 'y' }] }, {})).toMatchObject({ spans: 0 });
@@ -162,17 +168,20 @@ describe('LogPuller traces', () => {
     expect([...(puller as any).states.keys()]).toEqual(['traces:ozc-1']);
   });
 
-  it('keeps the cursor when VictoriaTraces refuses a batch', async () => {
+  it('keeps the cursor when VictoriaTraces refuses a batch, counting drops once', async () => {
     const { puller, metrics, advance } = setup(() => [comp()]);
     await puller.tick();
     buffer = [span(0)];
+    dropped = 7;
     shipStatus = 500;
     advance(5); await puller.tick();
     expect(await count(metrics, 'ship_error')).toBe(1);
+    expect((await metrics.traceSpansDropped.get()).values[0]?.value ?? 0).toBe(0);
     shipStatus = 200;
     advance(10); await puller.tick();
     expect(requests.map((r) => r.cursor)).toEqual(['end', '0', '0']);
     expect(shipped).toHaveLength(1);
+    expect((await metrics.traceSpansDropped.get()).values[0].value).toBe(7);
   });
 
   it('halves the limit when a response exceeds the byte cap, and skips a span too large to read', async () => {

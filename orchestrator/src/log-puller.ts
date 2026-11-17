@@ -362,8 +362,15 @@ export class LogPuller {
       return res.status >= 500 ? 'unavailable' : 'error';
     }
     const next = res.headers.get('ozwell-trace-cursor') ?? undefined;
-    const dropped = Number(res.headers.get('ozwell-trace-dropped') ?? 0);
-    if (Number.isSafeInteger(dropped) && dropped > 0) this.o.metrics?.traceSpansDropped.inc(dropped);
+    // Losses since the requested cursor: counted only when the cursor moves past them, so a
+    // retry of the same cursor doesn't count them again.
+    const reported = Number(res.headers.get('ozwell-trace-dropped') ?? 0);
+    const dropped = Number.isSafeInteger(reported) && reported > 0 ? reported : 0;
+    const advance = () => {
+      if (!next) return;
+      s.cursor = next;
+      if (dropped) this.o.metrics?.traceSpansDropped.inc(dropped);
+    };
     // The instance is agent-controlled: never buffer an unbounded response.
     const { buf, truncated } = await readBounded(res, this.o.maxResponseBytes);
     if (truncated) {
@@ -375,7 +382,7 @@ export class LogPuller {
         return 'error';
       }
       // One span is larger than the whole budget: skip it.
-      if (next) s.cursor = next;
+      advance();
       s.limit = undefined;
       this.report(c, s, 'error', `a span exceeds ${this.o.maxResponseBytes} bytes; skipped`);
       return 'error';
@@ -387,7 +394,7 @@ export class LogPuller {
       }));
     } catch (e) {
       // Invalid JSON can't get better by retrying: skip past it.
-      if (next) s.cursor = next;
+      advance();
       this.report(c, s, 'error', `invalid traces response: ${(e as Error).message}`);
       return 'error';
     }
@@ -406,7 +413,7 @@ export class LogPuller {
       if (!shipped.ok) { this.report(c, s, 'ship_error', `VictoriaTraces HTTP ${shipped.status}`); return 'ship_error'; }
       this.o.metrics?.traceSpansShipped.inc(spans);
     }
-    if (next) s.cursor = next;
+    advance();
     s.more = res.headers.get('ozwell-trace-more') === '1';
     if (!s.more) s.limit = undefined;
     return 'ok';

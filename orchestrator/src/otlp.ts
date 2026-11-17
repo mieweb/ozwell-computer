@@ -8,6 +8,16 @@
 
 type Json = Record<string, unknown>;
 
+/** Most elements (spans, events, links, attributes, values) one request may hold. */
+export const MAX_ELEMENTS = 200_000;
+
+/**
+ * Counts encoded elements, so a response within the byte cap can't still cost far more
+ * memory to encode (millions of tiny events, each a Writer and a few Buffers).
+ */
+let budget = 0;
+const spend = () => { if (--budget < 0) throw new Error(`more than ${MAX_ELEMENTS} elements`); };
+
 class Writer {
   private parts: Buffer[] = [];
   private len = 0;
@@ -45,6 +55,7 @@ class Writer {
   }
   string(field: number, v: unknown) { if (typeof v === 'string' && v) this.bytes(field, Buffer.from(v)); }
   message(field: number, fn: (w: Writer) => void) {
+    spend();
     const w = new Writer(); fn(w);
     this.tag(field, 2); this.varint(BigInt(w.len)); this.push(w.finish());
   }
@@ -128,8 +139,10 @@ export interface Converted { body: Buffer; spans: number }
 /**
  * Encode an OTLP JSON ExportTraceServiceRequest as protobuf, adding `resource` attributes
  * to every resource (replacing same-named ones). Spans without valid trace/span ids are dropped.
+ * Throws past `maxElements` nested messages (spans, events, links, attributes, values).
  */
-export function otlpJsonToProto(req: unknown, resource: Record<string, string>): Converted {
+export function otlpJsonToProto(req: unknown, resource: Record<string, string>, maxElements = MAX_ELEMENTS): Converted {
+  budget = maxElements;
   const w = new Writer();
   let spans = 0;
   for (const rs of arr(obj(req)?.resourceSpans)) {
