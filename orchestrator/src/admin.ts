@@ -8,7 +8,8 @@
 //   bin/admin create --user <id> [--email <email>] [--name <name>] [--id <id>] [--wait] [--timeout <d>] [--json]
 //   bin/admin delete (--id <id>… | --user <id|email> | --all) [--yes] [--json]
 //   bin/admin update (--id <id>… | --user <id|email> | --all) [--parallel <n>] [--timeout <d>] [--force] [--json]
-//   (also `npm run -s admin -- <command>`)
+//   (also `npm run -s admin -- <command>`). Any command: --operator <name> (or
+//   OZWELL_ADMIN_OPERATOR) records who ran it in the audit log.
 //
 // Exit codes: 0 all succeeded, 1 some failed or were skipped, 2 usage or configuration error.
 // Every change is written to stderr as a structured audit line (and over OTLP when the
@@ -377,7 +378,9 @@ export async function main(argv = process.argv.slice(2)) {
   const { providerFromUri } = await import('./providers/index.ts');
   const { instrumentProvider } = await import('./instrument-provider.ts');
   const { shutdownTelemetry } = await import('./telemetry.ts');
+  const { takeOperator, resolveOperator } = await import('./admin-env.ts');
   const env = process.env;
+  const { argv: args, operator: flag } = takeOperator(argv);
   const exit = async (code: number) => { await shutdownTelemetry(); process.exit(code); };
   if (!env.PROVIDER_URI) {
     process.stderr.write('admin: PROVIDER_URI is required (it uses the orchestrator\'s configuration; see orchestrator/README.md)\n');
@@ -391,9 +394,9 @@ export async function main(argv = process.argv.slice(2)) {
     return exit(2);
   }
   // Audit lines on stderr, so stdout stays clean for --json.
-  const log = pino({ name: 'ozwell-computer-admin', level: 'info', base: { component: 'admin', operator: env.SUDO_USER || env.USER || null } }, pino.destination(2));
+  const log = pino({ name: 'ozwell-computer-admin', level: 'info', base: { component: 'admin', operator: resolveOperator(env, flag) } }, pino.destination(2));
   const tty = process.stdin.isTTY && process.stderr.isTTY;
-  const code = await runAdmin(argv, {
+  const code = await runAdmin(args, {
     provider, env,
     out: (l) => process.stdout.write(`${l}\n`),
     err: (l) => process.stderr.write(`${l}\n`),

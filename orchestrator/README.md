@@ -274,7 +274,7 @@ container) is the admin check: there is no network API or extra token.
 
 ```bash
 # Docker Compose (the container already has the configuration)
-docker compose exec orchestrator bin/admin list
+docker compose exec -e OZWELL_ADMIN_OPERATOR=$USER orchestrator bin/admin list
 
 # systemd install: load its environment first
 sudo sh -c 'set -a; . /etc/default/ozwell-computer-orchestrator; /opt/ozwell-computer/orchestrator/bin/admin list'
@@ -314,10 +314,14 @@ admin update (--id <id>… | --user <id|email> | --all) [--parallel <n>] [--time
 - **Exit codes:** `0` all succeeded, `1` some failed or were skipped, `2` usage or
   configuration error.
 - **Audit:** every create, delete and update is a structured log line on stderr
-  (`component: admin`, with the operator's `$SUDO_USER`/`$USER`). With the OTLP endpoints set (they are in
+  (`component: admin`, with an `operator`). With the OTLP endpoints set (they are in
   `compose.yml`), the lines and the CLI's traces also go to VictoriaLogs and VictoriaTraces,
   under the service name `ozwell-computer-admin` (unless `OTEL_SERVICE_NAME` is set);
   output from `docker compose exec` otherwise isn't kept.
+- **Operator:** `--operator <name>` (with any command), else `OZWELL_ADMIN_OPERATOR`, else
+  `$SUDO_USER`, `$USER`, the OS account name, the uid. `docker compose exec` has no
+  `$USER` and runs as `node`, so pass `-e OZWELL_ADMIN_OPERATOR=$USER` (as above) or
+  `--operator` to record the real person.
 
 Known gaps: the CLI is a separate process, so its operations don't appear in the running
 orchestrator's operation metrics; and a computer it deletes stays in the running
