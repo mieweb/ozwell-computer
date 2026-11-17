@@ -49,8 +49,9 @@ class Writer {
     const b = Buffer.alloc(8); b.writeDoubleLE(v);
     this.tag(field, 1); this.push(b);
   }
-  bytes(field: number, v: Buffer | undefined) {
-    if (!v || v.length === 0) return;
+  /** `always`: write the field even when empty (a set oneof member). */
+  bytes(field: number, v: Buffer | undefined, always = false) {
+    if (!v || (v.length === 0 && !always)) return;
     this.tag(field, 2); this.varint(BigInt(v.length)); this.push(v);
   }
   string(field: number, v: unknown) { if (typeof v === 'string' && v) this.bytes(field, Buffer.from(v)); }
@@ -78,13 +79,14 @@ function hexId(v: unknown, bytes: number): Buffer | undefined {
 }
 
 function anyValue(w: Writer, v: Json, depth: number) {
-  if (typeof v.stringValue === 'string') w.string(1, v.stringValue);
+  // Empty strings and bytes are set oneof variants: keep their (zero-length) fields.
+  if (typeof v.stringValue === 'string') w.bytes(1, Buffer.from(v.stringValue), true);
   else if (typeof v.boolValue === 'boolean') w.bool(2, v.boolValue);
   else if (int64(v.intValue) !== undefined) { const n = int64(v.intValue)!; if (n !== 0n) w.uint(3, n); else w.bool(3, false); }
   else if (num(v.doubleValue) !== undefined) w.double(4, num(v.doubleValue)!);
   else if (depth < 4 && obj(v.arrayValue)) w.message(5, (a) => { for (const x of arr(obj(v.arrayValue)!.values)) a.message(1, (m) => anyValue(m, x, depth + 1)); });
   else if (depth < 4 && obj(v.kvlistValue)) w.message(6, (a) => keyValues(a, 1, obj(v.kvlistValue)!.values, depth + 1));
-  else if (typeof v.bytesValue === 'string') w.bytes(7, Buffer.from(v.bytesValue, 'base64'));
+  else if (typeof v.bytesValue === 'string') w.bytes(7, Buffer.from(v.bytesValue, 'base64'), true);
 }
 
 function keyValues(w: Writer, field: number, list: unknown, depth = 0) {

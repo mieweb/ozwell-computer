@@ -72,6 +72,14 @@ describe('otlpJsonToProto', () => {
     expect(otlpJsonToProto(otlp([many]), {}).spans).toBe(1);
   });
 
+  it('keeps explicitly empty string and bytes values', () => {
+    const { body } = otlpJsonToProto(otlp([span(1, { attributes: [{ key: 's', value: { stringValue: '' } }, { key: 'b', value: { bytesValue: '' } }, { key: 'u', value: {} }] })]), {});
+    const [a] = decode(body).resourceSpans[0].scopeSpans[0].spans;
+    const value = (k: string) => a.attributes.find((kv: any) => kv.key === k).value;
+    expect(value('s')).toEqual({ stringValue: '' });
+    expect(value('u')).toEqual({});
+  });
+
   it('ignores garbage', () => {
     expect(otlpJsonToProto(null, {}).spans).toBe(0);
     expect(otlpJsonToProto({ resourceSpans: [1, 'x', { scopeSpans: 'y' }] }, {})).toMatchObject({ spans: 0 });
