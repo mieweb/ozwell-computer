@@ -12,11 +12,19 @@ export function exemplar(): Record<string, string> | undefined {
   return ctx && ctx.traceId !== '00000000000000000000000000000000' ? { trace_id: ctx.traceId } : undefined;
 }
 
-/** The tool-call error reasons kept as a label value; any other reason (a computer's own
- * tool errors: stale_handle, path_not_found, ...) is counted as "other". A fixed set keeps
- * the label's cardinality bounded whatever a computer returns. Alerts treat "internal" as a
- * real failure; the rest are the agent's mistakes or a computer's state. */
-export const TOOL_ERROR_REASONS = ['invalid_request', 'target_unavailable', 'computer_stopped', 'quota_exceeded', 'unauthenticated', 'internal', 'other'] as const;
+/** The tool-call error reasons kept as a label value: the orchestrator's own, then the
+ * computer's (src/errors.ts `Reason`, passed through), then "other" for anything else. A
+ * fixed set keeps the label's cardinality bounded whatever a computer returns. Alerts
+ * treat "internal" as a real failure; the rest are the agent's mistakes or a computer's
+ * state (docs/alerts.md). */
+export const TOOL_ERROR_REASONS = [
+  // the orchestrator's
+  'invalid_request', 'target_unavailable', 'computer_stopped', 'quota_exceeded', 'unauthenticated', 'internal',
+  // the computer's
+  'feature_unsupported', 'permission_denied', 'stale_geometry', 'stale_handle', 'stale_snapshot',
+  'would_require_activation', 'path_not_found', 'checksum_mismatch', 'limit_exceeded', 'rate_limited',
+  'other',
+] as const;
 export type ToolErrorReason = typeof TOOL_ERROR_REASONS[number];
 
 /** The reason label for a tool-call error reason (undefined: ok). */
@@ -43,7 +51,7 @@ export class Metrics {
 
   readonly toolCalls = new Counter({
     name: 'ozwell_orchestrator_tool_calls_total',
-    help: `MCP tools/call requests handled; reason is the error reason (${TOOL_ERROR_REASONS.join(', ')}), "none" when ok`,
+    help: 'MCP tools/call requests handled; reason is the error reason from a fixed set ("other" for an unknown one), "none" when ok',
     labelNames: ['tool', 'outcome', 'reason'] as const,
     registers: [this.registry],
   });

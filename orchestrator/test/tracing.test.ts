@@ -10,7 +10,8 @@ import { buildServer } from '../src/server.ts';
 import { buildInternalServer } from '../src/internal-server.ts';
 import { InstanceClient } from '../src/instance-client.ts';
 import { instrumentProvider } from '../src/instrument-provider.ts';
-import { Metrics } from '../src/metrics.ts';
+import { readFileSync } from 'node:fs';
+import { Metrics, TOOL_ERROR_REASONS } from '../src/metrics.ts';
 import { LogPuller } from '../src/log-puller.ts';
 import { OperationTracker } from '../src/operations.ts';
 import type { ToolDef } from '../src/mcp.ts';
@@ -52,7 +53,8 @@ async function tool(name: string, args: object, headers: Record<string, string> 
   });
   const data = (await r.text()).split('\n').filter((l) => l.startsWith('data:')).map((l) => l.slice(5)).join('');
   const res = JSON.parse(data).result;
-  return { isError: !!res.isError, data: JSON.parse(res.content[0].text) };
+  let body: any; try { body = JSON.parse(res.content[0].text); } catch { body = res.content[0].text; }
+  return { isError: !!res.isError, data: body };
 }
 
 const byName = (n: string) => exporter.getFinishedSpans().filter((s) => s.name === n);
@@ -69,6 +71,17 @@ beforeAll(async () => {
     seen.push({ method: m.method, traceparent: req.headers.traceparent as string | undefined, meta: m.params?._meta });
     if (m.method === 'initialize') return reply.header('mcp-session-id', 's1').send({ jsonrpc: '2.0', id: m.id, result: { protocolVersion: '2025-06-18' } });
     if (!m.id) return reply.code(202).send();
+    // Errors as computers report them, chosen by x (tool-call error reasons).
+    const err = (text: string) => reply.send({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text }], isError: true } });
+    const rpcErr = (code: number) => reply.send({ jsonrpc: '2.0', id: m.id, error: { code, message: `rpc ${code}` } });
+    switch (m.params?.arguments?.x) {
+      case -1: return err('MCP error -32602: Input validation error: Invalid arguments for tool click: x');
+      case -2: return err('{"error":{"reason":"path_not_found","message":"no such file"}}');
+      case -3: return rpcErr(-32602);
+      case -4: return rpcErr(-32603);
+      case -5: return err('something unexpected');
+      case -6: return err('{"error":{"reason":"brand_new_reason","message":"?"}}');
+    }
     return reply.send({ jsonrpc: '2.0', id: m.id, result: { content: [{ type: 'text', text: '{"ok":true}' }] } });
   });
   inst.get('/health', async (_r, reply) => reply.code(204).send());
@@ -148,16 +161,43 @@ describe('tool-call error reasons', () => {
     m.observeToolCall('click', 'ok', 0.1);
     m.observeToolCall('click', 'error', 0.1, 'invalid_request');
     m.observeToolCall('click', 'error', 0.1, 'computer_stopped');
-    m.observeToolCall('click', 'error', 0.1, 'stale_handle'); // a computer's own reason
-    m.observeToolCall('click', 'error', 0.1, 'stale_handle');
+    m.observeToolCall('click', 'error', 0.1, 'stale_handle'); // a computer's own reason, passed through
+    m.observeToolCall('click', 'error', 0.1, 'brand_new_reason'); // unknown: other
+    m.observeToolCall('click', 'error', 0.1, 'tool_error');
     m.observeToolCall('click', 'error', 0.1); // no reason: an unexpected failure
     const body = await m.registry.metrics();
     expect(body).toContain('ozwell_orchestrator_tool_calls_total{tool="click",outcome="ok",reason="none"} 1');
     expect(body).toContain('ozwell_orchestrator_tool_calls_total{tool="click",outcome="error",reason="invalid_request"} 1');
     expect(body).toContain('ozwell_orchestrator_tool_calls_total{tool="click",outcome="error",reason="computer_stopped"} 1');
+    expect(body).toContain('ozwell_orchestrator_tool_calls_total{tool="click",outcome="error",reason="stale_handle"} 1');
     expect(body).toContain('ozwell_orchestrator_tool_calls_total{tool="click",outcome="error",reason="other"} 2');
     expect(body).toContain('ozwell_orchestrator_tool_calls_total{tool="click",outcome="error",reason="internal"} 1');
-    expect(body).not.toContain('stale_handle');
+    expect(body).not.toContain('brand_new_reason');
+  });
+
+  it('passes through every reason a computer can return (src/errors.ts)', () => {
+    const src = readFileSync(new URL('../../src/errors.ts', import.meta.url), 'utf8');
+    const union = /export type Reason =([^;]+);/.exec(src)![1];
+    const reasons = [...union.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+    expect(reasons.length).toBeGreaterThan(5);
+    for (const r of reasons) expect(TOOL_ERROR_REASONS).toContain(r);
+  });
+
+  it('labels computers\' errors by reason; only real failures are internal', async () => {
+    const id = (await tool('create_computer', {})).data.instance_id;
+    const count = async (reason: string) => (await metrics.registry.getSingleMetric('ozwell_orchestrator_tool_calls_total')!.get())
+      .values.find((v) => v.labels.tool === 'click' && v.labels.reason === reason)?.value ?? 0;
+    const counted = async (x: number, reason: string) => {
+      const before = await count(reason);
+      expect((await tool('click', { instance_id: id, x })).isError).toBe(true);
+      return (await count(reason)) - before;
+    };
+    expect(await counted(-1, 'invalid_request')).toBe(1); // the SDK's input validation error
+    expect(await counted(-2, 'path_not_found')).toBe(1);
+    expect(await counted(-3, 'invalid_request')).toBe(1); // JSON-RPC invalid params
+    expect(await counted(-4, 'internal')).toBe(1); // JSON-RPC internal error
+    expect(await counted(-5, 'other')).toBe(1); // unrecognised error text
+    expect(await counted(-6, 'other')).toBe(1);
   });
 
   it('counts an unknown tool as invalid_request', async () => {

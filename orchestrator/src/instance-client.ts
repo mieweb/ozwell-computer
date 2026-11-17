@@ -19,6 +19,9 @@ const CALL_TIMEOUT_MS = 11 * 60_000;
 
 interface Session { id: string; protocol: string; lastUsed: number; url: string; token: string }
 
+/** JSON-RPC codes for a malformed request (invalid request, unknown method, invalid params). */
+export const INVALID_REQUEST_CODES = new Set([-32600, -32601, -32602]);
+
 /** fetch failure codes meaning the connection was never made, so nothing was sent. */
 const NOT_SENT = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EHOSTDOWN', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT']);
 
@@ -110,7 +113,8 @@ export class InstanceClient {
       // Token rejected before anything ran (e.g. a different computer now at this address).
       if (r.res.status === 401) { this.sessions.delete(key); throw new InstanceError('unauthenticated', 'the computer rejected its token'); }
       if (!r.res.ok) throw new InstanceError('target_unavailable', `tool call failed (HTTP ${r.res.status})`);
-      if (r.msg?.error) throw new InstanceError('internal', r.msg.error.message ?? 'tool call failed');
+      // A JSON-RPC error for a malformed call (unknown tool, invalid params) is the caller's mistake.
+      if (r.msg?.error) throw new InstanceError(INVALID_REQUEST_CODES.has(r.msg.error.code) ? 'invalid_request' : 'internal', r.msg.error.message ?? 'tool call failed');
       if (!r.msg?.result) throw new InstanceError('target_unavailable', 'tool call returned no result');
       return r.msg.result;
     }

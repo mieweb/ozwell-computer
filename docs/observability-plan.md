@@ -293,9 +293,12 @@ All scrape routes are served **only on the internal listener**.
 3. **Tool-call metrics:** `ozwell_orchestrator_tool_call_duration_seconds{tool,outcome}`
    (with exemplars) and `ozwell_orchestrator_tool_calls_total{tool,outcome,reason}`.
    `reason` is a fixed set so alerts can tell real failures from agent mistakes:
-   `none` (ok), `invalid_request`, `target_unavailable`, `computer_stopped`,
-   `quota_exceeded`, `unauthenticated`, `internal`, and `other` for a computer's own tool
-   errors (`stale_handle`, `path_not_found`, ...).
+   `none` (ok); the orchestrator's `invalid_request`, `target_unavailable`,
+   `computer_stopped`, `quota_exceeded`, `unauthenticated`, `internal`; a computer's own
+   reasons passed through (`src/errors.ts`: `path_not_found`, `stale_handle`, ...); and
+   `other` for anything unrecognised. MCP argument validation errors (JSON-RPC -32600,
+   -32601, -32602, as an error or the SDK's "MCP error -32602" result) are
+   `invalid_request`, so only real failures are `internal`.
 4. **Later:** an instance OTel SDK exporting through an orchestrator relay. Out of scope
    for v1.
 
