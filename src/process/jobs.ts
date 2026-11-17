@@ -14,6 +14,7 @@ import { mkdir, readdir, readFile, rename, rm, stat, writeFile, open } from 'nod
 import { dirname, join } from 'node:path';
 import { ApiError } from '../errors.js';
 import type { EventBus } from '../presence/index.js';
+import { tracer, type Span } from '../tracing.js';
 
 export const MAX_WAIT_MS = 50_000; // stays under common 60 s MCP client request timeouts
 export const DEFAULT_WAIT_MS = 25_000;
@@ -57,6 +58,8 @@ const END = { stdout: Number.MAX_SAFE_INTEGER, stderr: Number.MAX_SAFE_INTEGER }
 const q = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const LIST_CONCURRENCY = 16;
+/** Job spans kept open at once; jobs started beyond this get no span. */
+const MAX_OPEN_SPANS = 64;
 
 /** Like Promise.all(items.map(fn)), with at most `limit` calls in flight. */
 async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
@@ -86,6 +89,13 @@ export function jobsFor(config: { tokenFile: string }, desktop: { x: { displayNa
 
 export class Jobs {
   private running = new Set<string>();
+  /**
+   * The `exec` span of each job started in a traced request (tracing.ts). It is a child of
+   * that request (the run_command tool call, or POST /api/v1/exec) but covers the command's
+   * whole run: a job may outlive the call that started it (wait_ms), and the span ends when
+   * the watcher sees it stop. A job still running when this server stops loses its span.
+   */
+  private spans = new Map<string, Span>();
   private timer: NodeJS.Timeout | null = null;
 
   /** onChange gets a job's summary when it starts and when it stops running; onRemove its id when pruned. */
@@ -109,6 +119,7 @@ export class Jobs {
       // A failed read is retried on the next check unless the job is gone.
       if (!s && await stat(join(this.root, id)).then(() => true, (e) => e.code !== 'ENOENT')) continue;
       this.running.delete(id);
+      this.endSpan(id, s);
       if (s) this.onChange(s);
       else this.onRemove(id);
     }
@@ -122,7 +133,31 @@ export class Jobs {
     return join(this.root, id);
   }
 
+  private endSpan(id: string, s: JobSummary | null) {
+    const span = this.spans.get(id);
+    if (!span) return;
+    this.spans.delete(id);
+    span.set({ 'exec.state': s?.state ?? 'lost', 'process.exit.code': s?.exit_code ?? undefined, 'exec.timed_out': s?.state === 'timed_out' });
+    if (!s || s.state === 'lost') span.fail('the job was lost');
+    span.end();
+  }
+
   async start(req: JobStart): Promise<string> {
+    // The command line itself is not recorded: it may carry secrets.
+    const span = this.spans.size < MAX_OPEN_SPANS
+      ? tracer.start('exec', { attrs: { 'exec.streamed': false, 'exec.shell': !req.args?.length, 'exec.job': true } }) : null;
+    try {
+      const id = await this.startJob(req);
+      if (span) { span.set({ 'exec.job_id': id }); this.spans.set(id, span); }
+      return id;
+    } catch (e) {
+      span?.fail(e);
+      span?.end();
+      throw e;
+    }
+  }
+
+  private async startJob(req: JobStart): Promise<string> {
     await mkdir(this.root, { recursive: true, mode: 0o700 });
     void this.prune();
     const id = 'j-' + randomBytes(9).toString('base64url').toLowerCase().replace(/[^a-z0-9]/g, '0').slice(0, 12);
@@ -253,6 +288,7 @@ export class Jobs {
     const done = await this.wait(id, 2000);
     if (v.state !== 'running' || done.state === 'running') return done;
     this.running.delete(id);
+    this.endSpan(id, summarize(done));
     this.onChange(summarize(done));
     return done;
   }

@@ -4,6 +4,20 @@ import { makeApp } from '../helpers.js';
 import { Tracer, tracer } from '../../src/tracing.js';
 import { runCommand } from '../../src/process/exec.js';
 import { parseTraceparent } from '../../src/trace-context.js';
+import { Jobs } from '../../src/process/jobs.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+async function waitFor<T>(fn: () => Promise<T | undefined>, ms: number): Promise<T> {
+  const end = Date.now() + ms;
+  for (;;) {
+    const v = await fn();
+    if (v !== undefined) return v;
+    if (Date.now() > end) throw new Error('timed out');
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
 
 const TRACE = '0af7651916cd43dd8448eb211c80319c';
 const PARENT = 'b7ad6b7169203331';
@@ -150,5 +164,45 @@ describe('work outside requests', () => {
     const before = tracer.collect(undefined).cursor;
     await runCommand({ cmd: 'true' }, ':0');
     expect(tracer.collect(before).spans).toBe(0);
+  });
+});
+
+describe('background jobs (MCP run_command)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'oz-job-spans-'));
+  const jobs = new Jobs(root, ':0');
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+  const jobSpans = (cursor: string, id: string) => spansOf(tracer.collect(cursor).body)
+    .filter((s) => s.name === 'exec' && s.attributes.some((a: any) => a.key === 'exec.job_id' && a.value.stringValue === id));
+  const attr = (s: any, k: string) => s.attributes.find((a: any) => a.key === k)?.value;
+
+  it('records an exec span under the call that started the job, ending when the job ends', async () => {
+    const cursor = tracer.collect('end').cursor;
+    const call = tracer.start('mcp.tool run_command', { traceparent })!;
+    const id = await tracer.runWith(call, async () => {
+      const id = await jobs.start({ command: 'sleep 1.2; exit 3 # secret-arg' });
+      expect((await jobs.wait(id, 100)).state).toBe('running'); // handed off: the call returns
+      return id;
+    });
+    call.end();
+    expect(jobSpans(cursor, id)).toEqual([]); // still running: not finished yet
+    const span = await waitFor(async () => jobSpans(cursor, id)[0], 6000);
+    expect(span).toMatchObject({ traceId: TRACE, parentSpanId: call.ctx.spanId });
+    expect(attr(span, 'process.exit.code')).toEqual({ intValue: '3' });
+    expect(attr(span, 'exec.state')).toEqual({ stringValue: 'exited' });
+    expect(JSON.stringify(span)).not.toContain('secret-arg');
+    expect(BigInt(span.endTimeUnixNano) - BigInt(span.startTimeUnixNano)).toBeGreaterThan(1_000_000_000n);
+  });
+
+  it('ends the span on cancel, and records nothing for jobs started outside a request', async () => {
+    const cursor = tracer.collect('end').cursor;
+    const call = tracer.start('mcp.tool run_command', { traceparent })!;
+    const id = await tracer.runWith(call, () => jobs.start({ command: 'sleep 30' }));
+    call.end();
+    await jobs.cancel(id);
+    expect(attr(jobSpans(cursor, id)[0], 'exec.state')).toEqual({ stringValue: 'cancelled' });
+    const bg = await jobs.start({ command: 'true' });
+    await jobs.wait(bg, 5000);
+    await new Promise((r) => setTimeout(r, 1500)); // a watcher pass
+    expect(jobSpans(cursor, bg)).toEqual([]);
   });
 });

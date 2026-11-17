@@ -42,6 +42,26 @@ describe('traces', () => {
     expect(by('screenshot.encode')).toMatchObject({ parentSpanId: by('screenshot').spanId });
   });
 
+  it('nests run_command\'s exec span under the tool call, and the request span under the header', async () => {
+    const { cursor } = await spansAfter();
+    const trace = randomBytes(16).toString('hex');
+    const tp = (span: string) => `00-${trace}-${span}-01`;
+    const client = new Client({ name: 'oz-traces-exec', version: '1' });
+    // A traceparent header for the HTTP span and _meta for the caller's span, as the orchestrator sends them.
+    await client.connect(new StreamableHTTPClientTransport(new URL(URL_ + '/mcp'), { requestInit: { headers: { ...auth, traceparent: tp('3'.repeat(16)) } } }));
+    try {
+      await client.callTool({ name: 'run_command', arguments: { command: 'true' }, _meta: { traceparent: tp('4'.repeat(16)) } });
+    } finally { await client.close(); }
+    const spans = await waitFor(async () => {
+      const got = (await spansAfter(cursor)).spans.filter((s) => s.traceId === trace);
+      return got.some((s) => s.name === 'exec') && got;
+    });
+    const tool = spans.find((s) => s.name === 'mcp.tool run_command');
+    const req = spans.find((s) => s.spanId === tool.parentSpanId);
+    expect(req).toMatchObject({ name: 'POST /mcp', parentSpanId: '3'.repeat(16) });
+    expect(spans.find((s) => s.name === 'exec')).toMatchObject({ parentSpanId: tool.spanId });
+  });
+
   it('traces API requests with a traceparent header, and pages with the cursor', async () => {
     const { cursor } = await spansAfter();
     const trace = randomBytes(16).toString('hex');

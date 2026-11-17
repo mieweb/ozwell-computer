@@ -275,7 +275,8 @@ All scrape routes are served **only on the internal listener**.
       │  └─ HTTP client spans              (docker / opensource-server API)
       ├─ readiness.poll                     (waitReady; event per attempt)
       └─ instance.callTool
-          └─ HTTP POST {internalUrl}/mcp    (traceparent + _meta.traceparent)
+          └─ HTTP POST {internalUrl}/mcp    (undici client span: the traceparent header;
+             │                                _meta.traceparent carries instance.callTool)
              └─ POST /mcp                   (computer, pulled later; see 4)
                 └─ mcp.tool <tool>
                    └─ screenshot / input.* / exec / a11y.* …
@@ -297,7 +298,12 @@ All scrape routes are served **only on the internal listener**.
      `traceparent` (header, or `params._meta.traceparent` for tool calls), plus spans
      around the expensive steps: `screenshot` → `screenshot.capture` / `.cursor` /
      `.encode` / `.ocr`, `input.pointer`, `input.keyboard`, `exec` (no command line:
-     it may hold secrets), `a11y.tree` / `.find` / `.act`. Polled, scraped and streaming
+     it may hold secrets), `a11y.tree` / `.find` / `.act`. Background jobs (MCP
+     `run_command`, `POST /api/v1/exec` with `wait_ms`) get an `exec` span that is a child
+     of the call that started them but covers the command's whole run: it ends when the
+     job ends, even after the call has returned (at most 64 open at once; lost if the
+     server restarts first). A `traceparent` header sent twice (`a, b`) uses the first
+     valid value. Polled, scraped and streaming
      routes (`/health`, metrics, logs, traces, events, presence, pty, websockify,
      `GET /mcp`) and work outside a request are never traced.
    - **Bounded cost.** Finished spans sit in an in-memory ring of 4096 spans (oldest
