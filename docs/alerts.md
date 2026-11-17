@@ -37,7 +37,7 @@ Thresholds are first guesses and may be tuned.
 | [Provider API failing](#provider-api-failing) | critical | The Docker / opensource-server API returns errors. |
 | [Service discovery failing](#service-discovery-failing) | warning | The orchestrator can't list computers; new ones aren't monitored. |
 | [New computers slow to become ready](#new-computers-slow-to-become-ready) | warning | Creating a computer takes too long. |
-| [Logs not reaching VictoriaLogs](#logs-not-reaching-victorialogs) | warning | Computers' logs are being lost. |
+| [Logs not reaching VictoriaLogs](#logs-not-reaching-victorialogs) | warning | Computers' logs are delayed, and at risk of being lost. |
 | [Orchestrator logging errors](#orchestrator-logging-errors) | warning | The orchestrator logged several errors. |
 | [Running computer unreachable](#running-computer-unreachable) | warning | A running computer doesn't answer. |
 | [Computer stalled on memory/CPU/I/O](#computer-stalled-on-memorycpuio) | warning | A computer is starved of a resource. |
@@ -131,8 +131,11 @@ Explore → VictoriaLogs. Run `docker compose` commands in `orchestrator/` on th
 
 `ozwell-log-shipping-failing` · warning
 
-- **Means:** the orchestrator pulls computers' logs but can't store them; those logs are
-  lost while this lasts.
+- **Means:** the orchestrator pulls computers' logs but can't store them. A failed batch
+  is retried from the same position, so logs are delayed, not lost, as long as it
+  recovers in time. They are lost if a computer's journal rotates past the retried
+  position, or if the orchestrator restarts meanwhile (it keeps positions in memory and
+  resumes from "now").
 - **Fires when:** any pulled batch failed to be stored, in every 15-minute window, for
   15 minutes.
 - **Likely causes:** VictoriaLogs is down, out of disk, or rejecting data (see the stack

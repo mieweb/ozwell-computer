@@ -210,8 +210,8 @@ groups:
         execErrState: KeepLast
         labels: { severity: warning }
         annotations:
-          summary: Computers' journals are not reaching VictoriaLogs
-          description: 'The log puller failed to forward {{ with $values.B }}{{ humanize .Value }}{{ end }} pulls to VictoriaLogs in 15 min, for 15 min. Pulled entries are lost while this lasts.'
+          summary: Computers' journals are not reaching VictoriaLogs (delayed, at risk)
+          description: 'The log puller failed to forward {{ with $values.B }}{{ humanize .Value }}{{ end }} pulls to VictoriaLogs in 15 min, for 15 min. Failed batches are retried from the same position, so logs are delayed, not lost, unless a computer''s journal rotates past them or the orchestrator restarts (it resumes from now).'
           dashboard: fleet
 
       - uid: ozwell-orchestrator-log-errors
