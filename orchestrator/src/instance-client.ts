@@ -20,7 +20,7 @@ const CALL_TIMEOUT_MS = 11 * 60_000;
 interface Session { id: string; protocol: string; lastUsed: number; url: string; token: string }
 
 /** fetch failure codes meaning the connection was never made, so nothing was sent. */
-const NOT_SENT = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EHOSTDOWN', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT']);
+export const NOT_SENT = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EHOSTDOWN', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT']);
 
 export class InstanceError extends Error {
   readonly reason: string;
