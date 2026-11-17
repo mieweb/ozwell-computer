@@ -16,6 +16,9 @@ export interface UpdateStatus {
   upgrade: UpgradeProgress;
 }
 
+/** Longer than the computer's 15 s limit on an update check (src/update.ts). */
+export const CHECK_TIMEOUT_MS = 30_000;
+
 export interface Participant { participant_id: string; name: string; kind: 'human' | 'agent' | string }
 
 export class ComputerApi {
@@ -30,13 +33,13 @@ export class ComputerApi {
     this.timeoutMs = timeoutMs;
   }
 
-  private async call<T>(method: 'GET' | 'POST', path: string): Promise<T> {
+  private async call<T>(method: 'GET' | 'POST', path: string, timeoutMs = this.timeoutMs): Promise<T> {
     let res: Response;
     try {
       res = await fetch(`${this.url}${path}`, {
         method,
         headers: { authorization: `Bearer ${this.token}`, accept: 'application/json', ...traceCarrier() },
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: AbortSignal.timeout(Math.max(timeoutMs, this.timeoutMs)),
       });
     } catch (e) {
       throw new InstanceError('target_unavailable', `cannot reach the computer: ${(e as Error).message}`, NOT_SENT.has((e as any).cause?.code));
@@ -65,6 +68,7 @@ export class ComputerApi {
       throw e;
     }
   }
-  checkUpdate(): Promise<UpdateStatus> { return this.call('POST', '/api/v1/update/check'); }
+  /** The computer allows its own check 15 s (index fetch or git ls-remote): give it more. */
+  checkUpdate(): Promise<UpdateStatus> { return this.call('POST', '/api/v1/update/check', CHECK_TIMEOUT_MS); }
   applyUpdate(): Promise<UpdateStatus> { return this.call('POST', '/api/v1/update/apply'); }
 }

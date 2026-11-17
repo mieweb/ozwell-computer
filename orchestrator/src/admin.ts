@@ -212,12 +212,15 @@ async function remove(deps: AdminDeps, args: string[]): Promise<number> {
   const batch = !('ids' in sel);
   const { targets, missing } = await select(deps.provider, sel);
   for (const id of missing) deps.err(`no computer ${id}`);
-  if (!targets.length) { deps.err('no computers to delete'); return missing.length ? 1 : 0; }
+  if (!targets.length && !missing.length) { deps.err('no computers to delete'); return 0; }
 
   // Show what will go, and who would be cut off.
-  const shown = await probe(targets, deps.probeTimeoutMs ?? 5000);
-  if (!values.json) printComputers(deps, shown, false);
-  if (batch && !values.yes) {
+  // In --json mode on stderr, so the preview is still seen and stdout stays parseable.
+  if (targets.length) {
+    const shown = await probe(targets, deps.probeTimeoutMs ?? 5000);
+    printComputers(values.json ? { ...deps, out: deps.err } : deps, shown, false);
+  }
+  if (batch && targets.length && !values.yes) {
     if (!deps.prompt) throw new UsageError('deleting by --user or --all needs --yes (or a terminal to confirm on)');
     const want = `delete ${targets.length}`;
     const answer = await deps.prompt(`Type "${want}" to delete these ${targets.length} computer(s): `);
@@ -258,10 +261,12 @@ async function updateOne(deps: AdminDeps, c: Computer, o: { force: boolean; time
   try { api = new ComputerApi(c); } catch (e) { return { ...base, outcome: 'failed', detail: (e as Error).message }; }
   const deadline = Date.now() + o.timeoutMs;
   let before: string | null = null;
-  let applied: UpdateStatus | null = null;
+  let stale: string | null = null;
   try {
     const status = await api.updateStatus();
     before = status.current;
+    // The last finished upgrade, from before ours: not taken as our result when polling.
+    if (TERMINAL.has(status.upgrade?.state)) stale = `${status.upgrade.state}@${status.upgrade.at}`;
     if (!status.supported) return { ...base, outcome: 'unsupported', before, detail: status.limitation ?? 'updates are not supported' };
     if (!['requested', 'running'].includes(status.upgrade?.state)) {
       const checked = await api.checkUpdate();
@@ -273,18 +278,15 @@ async function updateOne(deps: AdminDeps, c: Computer, o: { force: boolean; time
         return { ...base, outcome: 'in use', before, detail: `connected: ${people.map(describePerson).join(', ')} (use --force)` };
       }
       deps.audit({ action: 'update', instance: c.id, owner: observedOwner(c), from: before, to: checked.latest, forced: people.length > 0, outcome: 'requested' }, 'admin update');
-      applied = await api.applyUpdate();
-    } else {
-      applied = status; // already upgrading: wait on it
-    }
+      await api.applyUpdate();
+    } // else already upgrading: wait on it
   } catch (e) {
     return { ...base, outcome: 'failed', before, detail: (e as Error).message };
   }
 
   // Poll until a terminal state. The server restarts during the upgrade, so connection
   // errors are expected and retried. A terminal state equal to the one before applying
-  // (same state and time) is stale and not taken as the result.
-  const stale = TERMINAL.has(applied.upgrade?.state) ? `${applied.upgrade.state}@${applied.upgrade.at}` : null;
+  // (same state and time) is stale; a new one counts even if apply already returned it.
   let last: UpdateStatus | null = null;
   while (Date.now() < deadline) {
     await sleep(Math.min(deps.pollMs ?? 3000, Math.max(0, deadline - Date.now())));

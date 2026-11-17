@@ -5,10 +5,10 @@ import { createId, type Computer, type Provider } from '../src/providers/types.t
 
 // ---- fake computers: just the REST routes the CLI uses
 
-type Behaviour = 'succeed' | 'unchanged' | 'fail' | 'restart' | 'hang';
+type Behaviour = 'succeed' | 'unchanged' | 'fail' | 'restart' | 'hang' | 'instant';
 interface FakeOpts {
   version?: string; latest?: string; supported?: boolean; roster?: Array<{ name: string; kind: string }>;
-  behaviour?: Behaviour; state?: string; noUpdateRoute?: boolean;
+  behaviour?: Behaviour; state?: string; at?: string; noUpdateRoute?: boolean; checkDelayMs?: number;
 }
 
 const running = { now: 0, max: 0 };
@@ -18,7 +18,7 @@ async function fakeComputer(o: FakeOpts = {}) {
   const token = `tok-${Math.random().toString(36).slice(2)}`;
   const s = {
     version: o.version ?? '1.0.0', latest: o.latest ?? o.version ?? '1.0.0',
-    upgrade: { state: o.state ?? 'idle', at: null as string | null, log: '' },
+    upgrade: { state: o.state ?? 'idle', at: (o.at ?? null) as string | null, log: '' },
     roster: (o.roster ?? []).map((p, i) => ({ participant_id: `p${i}`, color: '#000000', cursor: null, joined_at: 0, last_seen: 0, ...p })),
     applied: 0, down: false,
   };
@@ -42,12 +42,14 @@ async function fakeComputer(o: FakeOpts = {}) {
     if (route === 'GET /api/v1/capabilities') return send(200, { version: s.version });
     if (route === 'GET /api/v1/presence') return send(200, { roster: s.roster });
     if (o.noUpdateRoute && req.url!.startsWith('/api/v1/update')) return send(501, { error: { reason: 'feature_unsupported', message: 'update checks are not running' } });
+    if (route === 'POST /api/v1/update/check' && o.checkDelayMs) { setTimeout(() => send(200, status()), o.checkDelayMs); return; }
     if (route === 'GET /api/v1/update' || route === 'POST /api/v1/update/check') return send(200, status());
     if (route === 'POST /api/v1/update/apply') {
       s.applied++;
       s.upgrade = { state: 'requested', at: new Date().toISOString(), log: '' };
       running.now++; running.max = Math.max(running.max, running.now);
       const b = o.behaviour ?? 'succeed';
+      if (b === 'instant') { finish('succeeded'); return send(202, status()); } // done before apply answers
       setTimeout(() => { s.upgrade = { ...s.upgrade, state: 'running' }; }, 20);
       if (b === 'restart') {
         // The server goes away mid-upgrade (connection refused), then comes back upgraded.
@@ -261,6 +263,21 @@ describe('admin delete', () => {
     expect(h.audit.map((a) => [a.action, a.instance, a.outcome])).toEqual([['delete', 'a-1', 'deleted'], ['delete', 'explodes', 'failed']]);
   });
 
+  it('reports ids that are all missing, also with --json', async () => {
+    const h = harness(memoryProvider([comp('a-1')]).p);
+    expect(await h.run('delete', '--id', 'gone', '--json')).toBe(1);
+    expect(h.out.map((l) => JSON.parse(l))).toEqual([{ id: 'gone', outcome: 'not found' }]);
+  });
+
+  it('shows the targets on stderr in --json mode before confirming', async () => {
+    const busy = await onFake('a-1', { roster: [{ name: 'Alice', kind: 'human' }] });
+    let shownBeforePrompt = '';
+    const h = harness(memoryProvider([busy.c]).p, { prompt: async () => { shownBeforePrompt = h.err.join('\n'); return 'delete 1'; } });
+    expect(await h.run('delete', '--user', 'u-alice', '--json')).toBe(0);
+    expect(shownBeforePrompt).toMatch(/a-1.*Alice/);
+    expect(h.out.map((l) => JSON.parse(l))).toEqual([{ id: 'a-1', outcome: 'deleted' }]);
+  });
+
   it('--all --yes deletes everything', async () => {
     const { p, all } = memoryProvider([comp('a-1'), comp('b-1', { owner: 'u-bob' })]);
     expect(await harness(p).run('delete', '--all', '--yes')).toBe(0);
@@ -334,6 +351,25 @@ describe('admin update', () => {
     expect(await h.run('update', '--id', 'busyup', '--json')).toBe(0);
     expect(r.f.s.applied).toBe(0);
     expect(results(h)[0]).toMatchObject({ outcome: 'updated', after: '1.1.0' });
+  });
+
+  it('takes a result already in the apply response, but not one left from an earlier upgrade', async () => {
+    const fast = await onFake('fast', { latest: '1.1.0', behaviour: 'instant', state: 'succeeded', at: '2026-01-01T00:00:00.000Z' });
+    let h = harness(memoryProvider([fast.c]).p);
+    expect(await h.run('update', '--id', 'fast', '--timeout', '2s', '--json')).toBe(0);
+    expect(results(h)[0]).toMatchObject({ outcome: 'updated', after: '1.1.0' });
+    const old = await onFake('old', { latest: '1.1.0', behaviour: 'hang', state: 'succeeded', at: '2026-01-01T00:00:00.000Z' });
+    h = harness(memoryProvider([old.c]).p);
+    expect(await h.run('update', '--id', 'old', '--timeout', '300ms', '--json')).toBe(1);
+    expect(results(h)[0]).toMatchObject({ outcome: 'timeout' });
+  });
+
+  it('gives an update check longer than the probe budget', async () => {
+    const slow = await onFake('slowcheck', { checkDelayMs: 300 });
+    const { ComputerApi } = await import('../src/computer-api.ts');
+    const api = new ComputerApi(slow.c, 100);
+    await expect(api.presence()).resolves.toEqual([]);
+    await expect(api.checkUpdate()).resolves.toMatchObject({ available: false });
   });
 
   it('gives up at --timeout', async () => {
