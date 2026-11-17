@@ -1,0 +1,20 @@
+# Where alerts go: email for now (other destinations, e.g. Google Chat, later).
+# Grafana's SMTP settings (GF_SMTP_*) and the recipients (ALERT_EMAIL_TO) come from .env
+# through compose.yml; nothing secret is committed. Alerting provisioning loads at Grafana
+# startup only: after changing these files, `docker compose restart grafana`.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: ozwell-email
+    receivers:
+      - uid: ozwell-email
+        type: email
+        settings:
+          # Several addresses: separate them with ";".
+          addresses: $ALERT_EMAIL_TO
+          # One email per notification (a group of alerts), not one per recipient.
+          singleEmail: true
+          subject: '{{ template "ozwell.email.subject" . }}'
+          message: '{{ template "ozwell.email.message" . }}'
+        disableResolveMessage: false

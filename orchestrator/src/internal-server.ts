@@ -71,7 +71,11 @@ export async function buildInternalServer(opts: InternalServerOptions): Promise<
       .then((computers) => {
         cache = { at: Date.now(), computers };
         opts.metrics.setComputers(computers, provider.scheme);
+        opts.metrics.computerListings.inc({ provider: provider.scheme, outcome: 'ok' });
         return computers;
+      }, (e) => {
+        opts.metrics.computerListings.inc({ provider: provider.scheme, outcome: 'error' });
+        throw e;
       })
       .finally(() => { inflight = undefined; });
     return inflight;
@@ -94,8 +98,11 @@ export async function buildInternalServer(opts: InternalServerOptions): Promise<
   const address = opts.sdAddress ?? '127.0.0.1:8091';
   app.get('/sd', noTrace, (req, reply) => untraced(async () => {
     try {
-      return reply.send(sdTargets(await listing!(), provider!.scheme, address));
+      const targets = sdTargets(await listing!(), provider!.scheme, address);
+      opts.metrics.sdRequests.inc({ outcome: 'ok' });
+      return reply.send(targets);
     } catch (e) {
+      opts.metrics.sdRequests.inc({ outcome: 'error' });
       // vmagent keeps its last good target list when discovery fails.
       req.log.warn({ err: (e as Error).message }, 'service discovery failed');
       return reply.code(502).send({ error: { reason: 'provider_error', message: (e as Error).message } });

@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { observedUser, type Computer, type Provider, type Requester } from './providers/types.ts';
-import { InstanceClient, InstanceError } from './instance-client.ts';
+import { INVALID_REQUEST_CODES, InstanceClient, InstanceError } from './instance-client.ts';
 import { SpanStatusCode, trace, type Span } from '@opentelemetry/api';
 import type { Metrics } from './metrics.ts';
 import type { OpKind, Operation, OperationTracker } from './operations.ts';
@@ -120,7 +120,7 @@ export async function isReady(provider: Provider, id: string): Promise<{ c: Comp
 
 /** Wait until ready or the budget runs out (wait, then hand off; see create_computer). While
  * `starting`, a stopped status is expected (the platform hasn't caught up) and not final. */
-function waitReady(provider: Provider, c: Computer, timeoutMs: number, starting = false) {
+export function waitReady(provider: Provider, c: Computer, timeoutMs: number, starting = false, intervalMs = 1500) {
   return tracer.startActiveSpan('readiness.poll', { attributes: { 'ozwell.instance_id': c.id, 'ozwell.starting': starting } }, async (span) => {
     const end = Date.now() + timeoutMs;
     let last = { c: c as Computer | null, ready: false };
@@ -135,7 +135,7 @@ function waitReady(provider: Provider, c: Computer, timeoutMs: number, starting 
           span.setAttributes({ 'ozwell.ready': ready, 'ozwell.attempts': attempt, 'ozwell.dead': dead });
           return { c: last.c ?? c, ready };
         }
-        await new Promise((r) => setTimeout(r, 1500));
+        await new Promise((r) => setTimeout(r, intervalMs));
       }
     } finally {
       span.end();
@@ -157,20 +157,30 @@ const argsAttr = (args: Record<string, unknown>) => {
   return j.length <= MAX_ATTR ? j : `${j.slice(0, MAX_ATTR)}…(${j.length} bytes)`;
 };
 
+/** The reason of an isError tool result: ours and the computer's are JSON
+ * `{error:{reason}}`; the MCP SDK reports invalid arguments as "MCP error -32602: ...". */
+export function errorReason(text: string | undefined): string {
+  try {
+    const r = JSON.parse(text ?? '')?.error?.reason;
+    if (typeof r === 'string') return r;
+  } catch { /* not JSON */ }
+  const code = /^MCP error (-\d+)/.exec(text ?? '')?.[1];
+  return code && INVALID_REQUEST_CODES.has(Number(code)) ? 'invalid_request' : 'tool_error';
+}
+
 /** End a tool-call span from its result: `isError` results are errors with their reason. */
-function finishToolSpan(span: Span, result: any): string {
+function finishToolSpan(span: Span, result: any): { outcome: 'ok' | 'error'; reason?: string } {
   let reason: string | undefined;
   let ready: unknown;
   if (result?.isError) {
-    try { reason = JSON.parse(result.content?.[0]?.text ?? '{}')?.error?.reason; } catch { /* not ours */ }
-    reason ??= 'tool_error';
+    reason = errorReason(result.content?.[0]?.text);
     span.setStatus({ code: SpanStatusCode.ERROR, message: reason });
     span.setAttribute('error.type', reason);
   } else {
     try { ready = JSON.parse(result?.content?.[0]?.text ?? '{}')?.ready; } catch { /* not JSON */ }
     if (typeof ready === 'boolean') span.setAttribute('ozwell.ready', ready);
   }
-  return reason ? 'error' : 'ok';
+  return reason ? { outcome: 'error', reason } : { outcome: 'ok' };
 }
 
 export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server {
@@ -260,13 +270,13 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
       },
     }, async (span) => {
       const t0 = performance.now();
-      let outcome = 'error';
+      let end: { outcome: string; reason?: string } = { outcome: 'error', reason: 'internal' };
       try {
         const result = await callTool(name, args);
-        outcome = finishToolSpan(span, result);
+        end = finishToolSpan(span, result);
         return result;
       } finally {
-        deps.metrics?.observeToolCall(name, outcome, (performance.now() - t0) / 1000);
+        deps.metrics?.observeToolCall(name, end.outcome, (performance.now() - t0) / 1000, end.reason);
         span.end();
       }
     });

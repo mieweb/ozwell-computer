@@ -51,7 +51,7 @@ The "Later" items are not.
 | Metric cardinality | No limits for now. Revisit if series growth becomes a problem. |
 | Grafana auth | Local admin only, with credentials set in compose. Dashboards are committed to the repo and read-only in the UI. |
 | Grafana access | Grafana publishes its own dedicated port (`GRAFANA_PORT`, default 3000). The existing external reverse proxy handles routing and TLS. The orchestrator does not proxy Grafana. |
-| Alerting | Later phase. |
+| Alerting | Grafana Alerting only (no vmalert, no Alertmanager), declarative: rules, contact point, notification policy and templates in `orchestrator/deploy/grafana/provisioning/alerting/`, read at Grafana startup. Email only for now, SMTP from `.env` (`GF_SMTP_*`), recipients `ALERT_EMAIL_TO`. Notifications only: no paging. Grouped by `alertname` and `provider`. Every rule has `severity` (`critical`/`warning`) for routing later. Per-computer rules are gated on `up{job="orchestrator"}` instead of inhibition, and keep their state while it is down. What each alert means: `docs/alerts.md`. Alerts carry `instance_id`, never owner emails or tool arguments; emails link to the Instance drill-down. |
 | Replicas | One orchestrator replica, two briefly during an update: `docker rollout orchestrator` (docker-rollout plugin) starts the new one, then the old one drains. Caddy (`proxy`) owns port 8090 and retries refused connections on the other replica. Computer logs may be pulled twice for the few seconds of overlap. |
 | Retention | Metrics 30 days, logs 14 days, traces 7 days. |
 
@@ -164,6 +164,9 @@ All scrape routes are served **only on the internal listener**.
      `instance_id`.
    - `__metrics_path__=/instances/<id>/metrics`
    - `__address__=orchestrator:8091`
+   - Failures are counted for alerting: `ozwell_orchestrator_sd_requests_total{outcome}`
+     (`ok`, `error`) and, for the listing `/sd` shares with the computer metadata,
+     `ozwell_orchestrator_computer_listings_total{provider,outcome}`.
 2. **Scrape proxy.** `GET /instances/:id/metrics` fetches
    `{internalUrl}/api/v1/metrics` with the instance bearer token (timeout 10 s) and
    streams the response back. It returns 404 for an unknown instance and 503 for a
@@ -175,6 +178,9 @@ All scrape routes are served **only on the internal listener**.
    the operation metrics and the tool-call metrics.
 4. **vmagent.** One `http_sd_configs` job against `/sd`, plus a static job for
    `/metrics`. It runs with no `sample_limit` for now.
+5. **Self-monitoring.** Static jobs `victoriametrics`, `victorialogs`, `victoriatraces`
+   and `vmagent` scrape the stack's own `/metrics`, for alerts on disk space, read-only
+   storage, dropped rows and the remote-write backlog.
 
 ## Workstream 3: Logs
 
@@ -188,6 +194,12 @@ All scrape routes are served **only on the internal listener**.
     `?token=` URLs.
 - pino keeps writing to stdout. `@opentelemetry/instrumentation-pino` adds
   `trace_id`/`span_id` and sends records over OTLP to VictoriaLogs.
+- The admin CLI (`bin/admin`, see `orchestrator/README.md`) preloads the same
+  `telemetry.ts`: its audit lines (`component: admin`, one per create, delete and update,
+  with the operator) and its `admin <command>` / `provider.*` spans reach VictoriaLogs
+  and VictoriaTraces when the OTLP endpoints are set, as the service
+  `ozwell-computer-admin`. It is a separate process, so its
+  operations are not in the orchestrator's operation metrics.
 
 ### Instances (pull)
 
@@ -289,7 +301,14 @@ All scrape routes are served **only on the internal listener**.
    - the full tool arguments as `ozwell.tool.arguments`, with large binary result
      payloads summarised by size
 3. **Tool-call metrics:** `ozwell_orchestrator_tool_call_duration_seconds{tool,outcome}`
-   (with exemplars) and `ozwell_orchestrator_tool_calls_total{tool,outcome}`.
+   (with exemplars) and `ozwell_orchestrator_tool_calls_total{tool,outcome,reason}`.
+   `reason` is a fixed set so alerts can tell real failures from agent mistakes:
+   `none` (ok); the orchestrator's `invalid_request`, `target_unavailable`,
+   `computer_stopped`, `quota_exceeded`, `unauthenticated`, `internal`; a computer's own
+   reasons passed through (`src/errors.ts`: `path_not_found`, `stale_handle`, ...); and
+   `other` for anything unrecognised. MCP argument validation errors (JSON-RPC -32600,
+   -32601, -32602, as an error or the SDK's "MCP error -32602" result) are
+   `invalid_request`, so only real failures are `internal`.
 4. **Instance spans (pull, issue #64).** Tracing is push-only (no OTLP pull protocol), and
    computers must not know where telemetry goes or reach the observability network, so
    the orchestrator collects them like logs:
@@ -375,7 +394,16 @@ All scrape routes are served **only on the internal listener**.
       the command ends, so long jobs show their real duration even though the tool call
       that started them returned early.
   - **Orchestrator logs.**
-- Alerting comes in a later phase.
+- **Alerting:** provisioned from `orchestrator/deploy/grafana/provisioning/alerting/`
+  (see the Alerting decision and the orchestrator README, "Alerts"). Rule groups:
+  `orchestrator` (down, creates/starts failing, internal tool-call errors, provider API
+  errors, service discovery, slow creates, log shipping, logged errors), `computers`
+  (unreachable, cgroup pressure, memory near the limit) and `stack` (component down,
+  disk low or read-only, ingestion errors, remote-write backlog). What each means and what
+  to do: [alerts.md](alerts.md). There is no X display rule: the computer's server stops
+  with X, so it shows as unreachable. While the orchestrator is down, computer alerts keep
+  their state (`noDataState: KeepLast`) instead of resolving.
+  Not covered: Grafana itself stopping, and an outside check of the public URL.
 
 ## Retention
 
@@ -395,7 +423,7 @@ All scrape routes are served **only on the internal listener**.
 | 5 | Log puller | fake instance + fake VictoriaLogs |
 | 6 | Dockerfile, compose (plus a docker:// override), vmagent config, Grafana provisioning + dashboards | manual bring-up; smoke script asserting a trace, a metric series and a log line arrive |
 | 7 | Instance spans: `GET /api/v1/traces` span buffer; puller traces stream to VictoriaTraces | root `test:unit` (buffer, route); `test/integration/traces.test.ts`; orchestrator fake instance + fake VictoriaTraces |
-| Later | Alerts; PHI/anonymization layer; cardinality limits | — |
+| Later | Paging and other alert destinations; PHI/anonymization layer; cardinality limits | — |
 
 If computer MCP tools change, regenerate the catalog: `make build && npm run mcp-tools`.
 
@@ -417,5 +445,7 @@ The instance gets no new runtime dependencies; it uses the existing `journalctl`
 - Full arguments and user emails in logs and traces mean the observability stack holds
   PHI. Access is limited to the Grafana admin on the same host until the anonymization
   layer lands.
+- Admin CLI creates, deletes and updates are in the audit log and traces only, not on the
+  operation dashboards (separate process, no metrics endpoint).
 - Having no cardinality limit means a large fleet can grow VictoriaMetrics series
   quickly. Watch `vm_cache_entries` and the active-series metrics.

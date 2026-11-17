@@ -54,7 +54,8 @@ describe('internal server', () => {
   it('serves /sd from a cached listing and reports provider failures', async () => {
     let fail = false;
     const p = provider(() => { if (fail) throw new Error('api down'); return [comp('a'), comp('b', { stopped: true })]; });
-    const app = await buildInternalServer({ metrics: new Metrics({ defaultMetrics: false }), provider: p, sdAddress: 'orch:8091', sdCacheMs: 50 });
+    const metrics = new Metrics({ defaultMetrics: false });
+    const app = await buildInternalServer({ metrics, provider: p, sdAddress: 'orch:8091', sdCacheMs: 50 });
     try {
       const [r1, r2] = await Promise.all([app.inject('/sd'), app.inject('/sd')]);
       expect(r1.statusCode).toBe(200);
@@ -65,6 +66,12 @@ describe('internal server', () => {
       expect((await app.inject('/sd')).statusCode).toBe(200); // still cached
       await new Promise((r) => setTimeout(r, 60));
       expect((await app.inject('/sd')).statusCode).toBe(502);
+      // Failures are counted, for alerting: /sd requests and the shared listing.
+      const body = await metrics.registry.metrics();
+      expect(body).toContain('ozwell_orchestrator_sd_requests_total{outcome="ok"} 3');
+      expect(body).toContain('ozwell_orchestrator_sd_requests_total{outcome="error"} 1');
+      expect(body).toContain('ozwell_orchestrator_computer_listings_total{provider="memory",outcome="ok"} 1');
+      expect(body).toContain('ozwell_orchestrator_computer_listings_total{provider="memory",outcome="error"} 1');
     } finally {
       await app.close();
     }

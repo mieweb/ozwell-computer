@@ -1,0 +1,9 @@
+#!/usr/bin/env node
+// ozwell-computer admin CLI: `bin/admin <command>` from any directory (see ../README.md).
+// Order matters: the environment (orchestrator/.env, if any, and the service name) must be
+// set before telemetry.ts loads, and telemetry.ts before the rest so it can instrument it.
+const { prepareAdminEnv } = await import('../src/admin-env.ts');
+prepareAdminEnv(new URL('../.env', import.meta.url));
+await import('../src/telemetry.ts');
+const { main } = await import('../src/admin.ts');
+await main();
