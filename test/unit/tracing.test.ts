@@ -69,6 +69,14 @@ describe('Tracer', () => {
     expect(spansOf(t.collect(undefined).body).map((s) => s.name)).toEqual(['req']);
   });
 
+  it('keeps the error status when the message is empty', () => {
+    const t = new Tracer();
+    const s = t.start('x', { root: true })!;
+    s.fail(new Error(''));
+    s.end();
+    expect(spansOf(t.collect(undefined).body)[0].status).toEqual({ code: 2, message: '' });
+  });
+
   it('caps attributes and value lengths', () => {
     const t = new Tracer();
     const s = t.start('x', { root: true })!;
@@ -164,6 +172,7 @@ describe('GET /api/v1/traces', () => {
     await app.inject({ url: '/api/v1/exec/jobs', headers: auth });
     await app.inject({ url: '/api/v1/exec/jobs/j-000000000000', headers: auth });
     await app.inject({ url: '/api/v1/update', headers: auth });
+    await app.inject({ method: 'DELETE', url: '/mcp', headers: { ...auth, 'mcp-session-id': 'gone' } });
     expect(await since()).toEqual([]);
   });
 

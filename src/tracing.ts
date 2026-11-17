@@ -242,7 +242,7 @@ export class Tracer {
             name: s.name, kind: s.kind,
             startTimeUnixNano: String(s.start), endTimeUnixNano: String(s.end),
             attributes: kvs(s.attrs),
-            status: s.error ? { code: 2, message: s.error } : {},
+            status: s.error !== undefined ? { code: 2, message: s.error } : {},
           })),
         }],
       }],
