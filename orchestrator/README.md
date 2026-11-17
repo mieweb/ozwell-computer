@@ -236,6 +236,10 @@ one per computer) and `templates.yml` (the email, with a link to the Instance
 drill-down dashboard). They are read-only in the UI; change them in the repo. Emails
 carry computer ids, never owner emails or tool arguments.
 
+What each alert means, its threshold and what to check first:
+[docs/alerts.md](../docs/alerts.md). Update it with `rules.yml` (a test checks every rule
+is listed).
+
 Set in `.env` (nothing secret is committed):
 
 | Variable | |

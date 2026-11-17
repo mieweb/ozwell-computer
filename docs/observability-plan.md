@@ -51,7 +51,7 @@ The "Later" items are not.
 | Metric cardinality | No limits for now. Revisit if series growth becomes a problem. |
 | Grafana auth | Local admin only, with credentials set in compose. Dashboards are committed to the repo and read-only in the UI. |
 | Grafana access | Grafana publishes its own dedicated port (`GRAFANA_PORT`, default 3000). The existing external reverse proxy handles routing and TLS. The orchestrator does not proxy Grafana. |
-| Alerting | Grafana Alerting only (no vmalert, no Alertmanager), declarative: rules, contact point, notification policy and templates in `orchestrator/deploy/grafana/provisioning/alerting/`, read at Grafana startup. Email only for now, SMTP from `.env` (`GF_SMTP_*`), recipients `ALERT_EMAIL_TO`. Notifications only: no paging. Grouped by `alertname` and `provider`. Every rule has `severity` (`critical`/`warning`) for routing later. Per-computer rules are gated on `up{job="orchestrator"}` instead of inhibition. Alerts carry `instance_id`, never owner emails or tool arguments; emails link to the Instance drill-down. |
+| Alerting | Grafana Alerting only (no vmalert, no Alertmanager), declarative: rules, contact point, notification policy and templates in `orchestrator/deploy/grafana/provisioning/alerting/`, read at Grafana startup. Email only for now, SMTP from `.env` (`GF_SMTP_*`), recipients `ALERT_EMAIL_TO`. Notifications only: no paging. Grouped by `alertname` and `provider`. Every rule has `severity` (`critical`/`warning`) for routing later. Per-computer rules are gated on `up{job="orchestrator"}` instead of inhibition, and keep their state while it is down. What each alert means: `docs/alerts.md`. Alerts carry `instance_id`, never owner emails or tool arguments; emails link to the Instance drill-down. |
 | Replicas | One orchestrator replica, two briefly during an update: `docker rollout orchestrator` (docker-rollout plugin) starts the new one, then the old one drains. Caddy (`proxy`) owns port 8090 and retries refused connections on the other replica. Computer logs may be pulled twice for the few seconds of overlap. |
 | Retention | Metrics 30 days, logs 14 days, traces 7 days. |
 
@@ -338,8 +338,11 @@ All scrape routes are served **only on the internal listener**.
   (see the Alerting decision and the orchestrator README, "Alerts"). Rule groups:
   `orchestrator` (down, creates/starts failing, internal tool-call errors, provider API
   errors, service discovery, slow creates, log shipping, logged errors), `computers`
-  (unreachable, cgroup pressure, memory near the limit, X display down) and `stack`
-  (component down, disk low or read-only, ingestion errors, remote-write backlog).
+  (unreachable, cgroup pressure, memory near the limit) and `stack` (component down,
+  disk low or read-only, ingestion errors, remote-write backlog). What each means and what
+  to do: [alerts.md](alerts.md). There is no X display rule: the computer's server stops
+  with X, so it shows as unreachable. While the orchestrator is down, computer alerts keep
+  their state (`noDataState: KeepLast`) instead of resolving.
   Not covered: Grafana itself stopping, and an outside check of the public URL.
 
 ## Retention
