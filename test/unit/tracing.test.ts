@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { makeApp } from '../helpers.js';
 import { Tracer, tracer } from '../../src/tracing.js';
 import { runCommand } from '../../src/process/exec.js';
+import { parseTraceparent } from '../../src/trace-context.js';
 
 const TRACE = '0af7651916cd43dd8448eb211c80319c';
 const PARENT = 'b7ad6b7169203331';
@@ -124,6 +125,23 @@ describe('GET /api/v1/traces', () => {
 
   it('rejects a bad limit', async () => {
     expect((await app.inject({ url: '/api/v1/traces?limit=0', headers: auth })).statusCode).toBe(400);
+  });
+
+  it('keeps the context when traceparent arrives twice (combined "a, b")', async () => {
+    const other = `00-${'3'.repeat(32)}-${'4'.repeat(16)}-01`;
+    await app.inject({ url: '/api/v1/capabilities', headers: { ...auth, traceparent: `${traceparent}, ${other}` } });
+    const [req] = await since();
+    expect(req).toMatchObject({ name: 'GET /api/v1/capabilities', traceId: TRACE, parentSpanId: PARENT });
+  });
+});
+
+describe('parseTraceparent', () => {
+  it('takes the first valid value of a combined or repeated header', () => {
+    const other = `00-${'3'.repeat(32)}-${'4'.repeat(16)}-01`;
+    expect(parseTraceparent(`garbage, ${traceparent}, ${other}`)).toEqual({ trace_id: TRACE, span_id: PARENT });
+    expect(parseTraceparent([other, traceparent])).toEqual({ trace_id: '3'.repeat(32), span_id: '4'.repeat(16) });
+    expect(parseTraceparent('a, b')).toBeNull();
+    expect(parseTraceparent(`${traceparent},${'x'.repeat(3000)}`)).toBeNull();
   });
 });
 
