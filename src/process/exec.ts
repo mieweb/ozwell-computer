@@ -30,7 +30,9 @@ export type ExecChunk = { stream: 'stdout' | 'stderr'; data: string } | { exit: 
 export function runCommand(req: ExecRequest, display: string, onChunk?: (c: ExecChunk) => void, signal?: AbortSignal): Promise<ExecResult> {
   // The command line itself is not recorded: it may carry secrets.
   return withSpan('exec', { 'exec.streamed': Boolean(onChunk), 'exec.shell': req.shell }, async (span) => {
-    const r = await run(req, display, onChunk, signal);
+    let r: ExecResult;
+    // Errors can quote the command (e.g. "command not found"): the span gets only the reason.
+    try { r = await run(req, display, onChunk, signal); } catch (e) { span?.failRedacted(e, 'exec'); throw e; }
     span?.set({ 'process.exit.code': r.exit_code ?? undefined, 'exec.signal': r.signal ?? undefined, 'exec.timed_out': r.timed_out, 'exec.truncated': r.truncated });
     return r;
   });

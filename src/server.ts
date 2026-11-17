@@ -80,7 +80,7 @@ export function strictResponses(app: FastifyInstance) {
  */
 export const UNTRACED_ROUTES = new Set([
   'GET /health', 'GET /api/v1/metrics', 'GET /api/v1/logs/entries', 'GET /api/v1/traces',
-  'GET /api/v1/events', 'GET /api/v1/presence', 'POST /api/v1/presence/cursor', 'GET /api/v1/pty',
+  'GET /api/v1/events', 'GET /api/v1/exec/jobs', 'GET /api/v1/exec/jobs/:id', 'GET /api/v1/exec/jobs/:id/stream', 'GET /api/v1/presence', 'POST /api/v1/presence/cursor', 'GET /api/v1/pty',
   'GET /websockify', 'GET /mcp',
 ]);
 

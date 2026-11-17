@@ -96,6 +96,8 @@ export class Jobs {
    * the watcher sees it stop. A job still running when this server stops loses its span.
    */
   private spans = new Map<string, Span>();
+  /** Spans started whose job is still being spawned (they count against MAX_OPEN_SPANS). */
+  private starting = 0;
   private timer: NodeJS.Timeout | null = null;
 
   /** onChange gets a job's summary when it starts and when it stops running; onRemove its id when pruned. */
@@ -144,16 +146,21 @@ export class Jobs {
 
   async start(req: JobStart): Promise<string> {
     // The command line itself is not recorded: it may carry secrets.
-    const span = this.spans.size < MAX_OPEN_SPANS
+    // The slot is reserved before the await, so concurrent starts can't exceed the cap.
+    const span = this.spans.size + this.starting < MAX_OPEN_SPANS
       ? tracer.start('exec', { attrs: { 'exec.streamed': false, 'exec.shell': !req.args?.length, 'exec.job': true } }) : null;
+    if (span) this.starting++;
     try {
       const id = await this.startJob(req);
       if (span) { span.set({ 'exec.job_id': id }); this.spans.set(id, span); }
       return id;
     } catch (e) {
-      span?.fail(e);
+      // Errors can quote the working directory: the span gets only the reason.
+      span?.failRedacted(e, 'exec');
       span?.end();
       throw e;
+    } finally {
+      if (span) this.starting--;
     }
   }
 

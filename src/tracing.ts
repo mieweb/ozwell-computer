@@ -83,10 +83,22 @@ export class Span {
     return this;
   }
 
+  /** Mark the span failed. The first failure wins (a caller may record a redacted one first). */
   fail(e: unknown) {
+    if (this.error !== undefined) return;
     const err = e as { message?: unknown; reason?: unknown } | null;
     this.error = String(err?.message ?? e).slice(0, MAX_VALUE);
     if (typeof err?.reason === 'string') this.set({ 'error.type': err.reason });
+  }
+
+  /**
+   * Fail with only the error's reason/code, not its message: for work whose errors can echo
+   * user input that may carry secrets (a command line, a path).
+   */
+  failRedacted(e: unknown, what: string) {
+    const err = e as { reason?: unknown; code?: unknown } | null;
+    const kind = typeof err?.reason === 'string' ? err.reason : typeof err?.code === 'string' ? err.code : 'error';
+    this.fail({ message: `${what} failed (${kind})`, reason: kind });
   }
 
   end() {
@@ -193,10 +205,11 @@ export class Tracer {
   collect(cursor: string | undefined, limit = 1000, maxBytes = 4 * 1024 * 1024): Collected {
     const m = cursor ? /^([0-9a-f]+):(\d+)$/.exec(cursor) : null;
     // "end": no spans, only a cursor at the end (a puller's first pull doesn't backfill).
-    let after = cursor === 'end' ? this.seq : m && m[1] === this.boot ? Number(m[2]) : 0;
-    if (after > this.seq) after = 0; // not from this buffer
+    // A cursor from this buffer, including boot:0 (cursor=end before any span was recorded).
+    const known = cursor === 'end' || (!!m && m[1] === this.boot && Number(m[2]) <= this.seq);
+    const after = cursor === 'end' ? this.seq : known ? Number(m![2]) : 0;
     const first = this.buf.length ? this.buf[0].seq : this.seq + 1;
-    const dropped = after > 0 ? Math.max(0, first - after - 1) : 0;
+    const dropped = known ? Math.max(0, first - after - 1) : 0;
     const out: FinishedSpan[] = [];
     let bytes = 0;
     let more = false;

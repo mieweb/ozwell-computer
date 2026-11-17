@@ -85,6 +85,14 @@ describe('Tracer', () => {
     expect(spansOf(t.collect(end.cursor).body).map((s) => s.name)).toEqual(['later']);
   });
 
+  it('counts drops after a boot:0 cursor (cursor=end before any span)', () => {
+    const t = new Tracer({ maxSpans: 5 });
+    const end = t.collect('end');
+    expect(end.cursor).toBe(`${t.boot}:0`);
+    for (let i = 0; i < 8; i++) t.start(`s${i}`, { root: true })!.end();
+    expect(t.collect(end.cursor)).toMatchObject({ spans: 5, dropped: 3 });
+  });
+
   it('caps a response in bytes, but always returns at least one span', () => {
     const t = new Tracer();
     for (let i = 0; i < 3; i++) t.start('x', { root: true, attrs: { big: 'v'.repeat(1000) } })!.end();
@@ -135,6 +143,19 @@ describe('GET /api/v1/traces', () => {
     await app.inject({ url: '/health' });
     const names = (await since()).map((s) => s.name);
     expect(names).toEqual(['GET /api/v1/capabilities']);
+  });
+
+  it('does not trace the jobs list, job polling or job streams', async () => {
+    await app.inject({ url: '/api/v1/exec/jobs', headers: auth });
+    await app.inject({ url: '/api/v1/exec/jobs/j-000000000000', headers: auth });
+    expect(await since()).toEqual([]);
+  });
+
+  it('keeps the command line out of a failed exec span', async () => {
+    await app.inject({ method: 'POST', url: '/api/v1/exec', headers: { ...auth, traceparent }, payload: { cmd: '/nonexistent-secret-token-123', args: [] } });
+    const exec = (await since()).find((s) => s.name === 'exec');
+    expect(exec.status.code).toBe(2);
+    expect(JSON.stringify(exec)).not.toContain('secret-token');
   });
 
   it('rejects a bad limit', async () => {
@@ -191,6 +212,24 @@ describe('background jobs (MCP run_command)', () => {
     expect(attr(span, 'exec.state')).toEqual({ stringValue: 'exited' });
     expect(JSON.stringify(span)).not.toContain('secret-arg');
     expect(BigInt(span.endTimeUnixNano) - BigInt(span.startTimeUnixNano)).toBeGreaterThan(1_000_000_000n);
+  });
+
+  it('never holds more than 64 job spans, even when starts overlap', async () => {
+    const call = tracer.start('mcp.tool run_command', { traceparent })!;
+    const ids = await tracer.runWith(call, () => Promise.all(Array.from({ length: 70 }, () => jobs.start({ command: 'sleep 30' }))));
+    call.end();
+    expect((jobs as any).spans.size).toBe(64);
+    await Promise.all(ids.map((id) => jobs.cancel(id)));
+    expect((jobs as any).spans.size).toBe(0);
+  }, 30_000);
+
+  it('records only the reason when a job fails to start', async () => {
+    const cursor = tracer.collect('end').cursor;
+    const call = tracer.start('mcp.tool run_command', { traceparent })!;
+    await expect(tracer.runWith(call, () => jobs.start({ command: 'true', cwd: '/nonexistent-secret-dir' }))).rejects.toThrow();
+    call.end();
+    const exec = spansOf(tracer.collect(cursor).body).find((s) => s.name === 'exec');
+    expect(exec.status).toEqual({ code: 2, message: 'exec failed (path_not_found)' });
   });
 
   it('ends the span on cancel, and records nothing for jobs started outside a request', async () => {
