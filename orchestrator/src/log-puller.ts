@@ -12,6 +12,15 @@
 //   recheckMs (and as soon as they reappear after a stop). 401 backs off the same way;
 //   other failures back off exponentially. One instance never delays another.
 // - Stopped or destroyed instances are dropped; there is no drain before destroy.
+//
+// Instance traces (workstream 4, issue #64) ride the same loop as a second stream per
+// instance: finished spans are pulled from GET /api/v1/traces (OTLP JSON, from the
+// computer's bounded span buffer), tagged with ozwell.instance_id, ozwell.user and
+// ozwell.provider, re-encoded as OTLP protobuf (otlp.ts) and posted to VictoriaTraces.
+// Discovery, scheduling, backoff and the 404 handling for older computers are shared; each
+// stream has its own cursor and backoff. As with logs, the first pull starts at "now"
+// (cursor=end): spans buffered before are not backfilled.
+import { otlpJsonToProto } from './otlp.ts';
 import type { Metrics } from './metrics.ts';
 import { untraced } from './untraced.ts';
 import { observedOwner, type Computer, type Provider } from './providers/types.ts';
@@ -21,8 +30,13 @@ export interface LogLogger { info: (o: object, m: string) => void; warn: (o: obj
 export interface LogPullerOptions {
   provider: Provider;
   /** VictoriaLogs journald ingest, e.g. http://victorialogs:9428/insert/journald/upload
-   * (the path systemd-journal-upload posts to: /insert/journald alone is a 400). */
-  shipUrl: string;
+   * (the path systemd-journal-upload posts to: /insert/journald alone is a 400). Unset: no logs. */
+  shipUrl?: string;
+  /** VictoriaTraces OTLP/HTTP traces ingest, e.g.
+   * http://victoriatraces:10428/insert/opentelemetry/v1/traces. Unset: no instance traces. */
+  traceShipUrl?: string;
+  /** Spans per trace pull (default 1000). */
+  traceBatch?: number;
   metrics?: Metrics;
   log?: LogLogger;
   /** Between pulls of one instance (ORCHESTRATOR_LOG_POLL_MS, default 5000). */
@@ -37,7 +51,7 @@ export interface LogPullerOptions {
   maxBackoffMs?: number;
   /** Entries per pull (default 1000). */
   batch?: number;
-  /** Bytes read from one journal response (default 16 MiB); the rest waits for the next pull. */
+  /** Bytes read from one journal or traces response (default 16 MiB); the rest waits for the next pull. */
   maxResponseBytes?: number;
   requestTimeoutMs?: number;
   now?: () => number;
@@ -45,7 +59,11 @@ export interface LogPullerOptions {
 
 type Outcome = 'ok' | 'unsupported' | 'unauthorized' | 'unavailable' | 'ship_error' | 'error';
 
+type Stream = 'logs' | 'traces';
+
 interface InstanceState {
+  stream: Stream;
+  id: string;
   /** Start of the first pull's realtime range (epoch seconds). */
   since: number;
   cursor?: string;
@@ -56,6 +74,8 @@ interface InstanceState {
   busy: boolean;
   /** The last pull filled a whole batch: more is waiting. */
   more?: boolean;
+  /** Traces: spans to ask for; halved while responses exceed maxResponseBytes. */
+  limit?: number;
 }
 
 export const JOURNAL_EXPORT = 'application/vnd.fdo.journal';
@@ -133,7 +153,7 @@ export async function readBounded(res: Response, limit: number): Promise<{ buf: 
 }
 
 export class LogPuller {
-  private readonly o: Required<Omit<LogPullerOptions, 'metrics' | 'log'>> & Pick<LogPullerOptions, 'metrics' | 'log'>;
+  private readonly o: Required<Omit<LogPullerOptions, 'metrics' | 'log' | 'shipUrl' | 'traceShipUrl'>> & Pick<LogPullerOptions, 'metrics' | 'log' | 'shipUrl' | 'traceShipUrl'>;
   private readonly states = new Map<string, InstanceState>();
   private computers = new Map<string, Computer>();
   private lastDiscover = -Infinity;
@@ -147,7 +167,7 @@ export class LogPuller {
     const given = Object.fromEntries(Object.entries(opts).filter(([, v]) => v !== undefined)) as LogPullerOptions;
     this.o = {
       pollMs: 5000, concurrency: 8, discoverMs: 15_000, recheckMs: 600_000, maxBackoffMs: 300_000,
-      batch: 1000, maxResponseBytes: 16 * 1024 * 1024, requestTimeoutMs: 30_000, now: Date.now, ...given,
+      batch: 1000, traceBatch: 1000, maxResponseBytes: 16 * 1024 * 1024, requestTimeoutMs: 30_000, now: Date.now, ...given,
     };
   }
 
@@ -179,9 +199,9 @@ export class LogPuller {
       const due = [...this.states.entries()]
         .filter(([, s]) => !s.busy && s.nextAt <= now)
         .sort(([, a], [, b]) => a.nextAt - b.nextAt);
-      for (const [id, s] of due) {
+      for (const [, s] of due) {
         if (this.inFlight >= this.o.concurrency) break;
-        const c = this.computers.get(id);
+        const c = this.computers.get(s.id);
         if (!c) continue;
         s.busy = true;
         this.inFlight++;
@@ -201,11 +221,15 @@ export class LogPuller {
         const running = all.filter((c) => !c.stopped && c.internalUrl && c.token);
         this.computers = new Map(running.map((c) => [c.id, c]));
         const nowSec = Math.floor(this.o.now() / 1000);
+        const streams: Stream[] = [...(this.o.shipUrl ? ['logs' as const] : []), ...(this.o.traceShipUrl ? ['traces' as const] : [])];
         for (const c of running) {
-          if (!this.states.has(c.id)) this.states.set(c.id, { since: nowSec, nextAt: 0, failures: 0, busy: false });
+          for (const stream of streams) {
+            const key = `${stream}:${c.id}`;
+            if (!this.states.has(key)) this.states.set(key, { stream, id: c.id, since: nowSec, nextAt: 0, failures: 0, busy: false });
+          }
         }
         // Stopped or gone: forget it (a restart starts again from "now").
-        for (const id of this.states.keys()) if (!this.computers.has(id)) this.states.delete(id);
+        for (const [key, s] of this.states) if (!this.computers.has(s.id)) this.states.delete(key);
         this.lastDiscover = this.o.now();
       } catch (e) {
         this.o.log?.warn({ err: (e as Error).message }, 'log puller: listing computers failed');
@@ -219,20 +243,21 @@ export class LogPuller {
   }
 
   private updateUnsupported() {
-    let n = 0;
-    for (const s of this.states.values()) if (s.reported === 'unsupported') n++;
-    this.o.metrics?.logPullUnsupported.set(n);
+    const n = { logs: 0, traces: 0 };
+    for (const s of this.states.values()) if (s.reported === 'unsupported') n[s.stream]++;
+    if (this.o.shipUrl) this.o.metrics?.logPullUnsupported.set(n.logs);
+    if (this.o.traceShipUrl) this.o.metrics?.tracePullUnsupported.set(n.traces);
   }
 
   private async pull(c: Computer, s: InstanceState): Promise<void> {
-    const outcome = await this.pullOnce(c, s).catch((e: Error): Outcome => {
+    const outcome = await (s.stream === 'traces' ? this.pullTraces(c, s) : this.pullOnce(c, s)).catch((e: Error): Outcome => {
       this.report(c, s, 'error', e.message);
       return 'error';
     });
-    this.o.metrics?.logPulls.inc({ outcome });
+    (s.stream === 'traces' ? this.o.metrics?.tracePulls : this.o.metrics?.logPulls)?.inc({ outcome });
     const now = this.o.now();
     if (outcome === 'ok') {
-      if (s.reported) this.o.log?.info({ instance_id: c.id }, 'log puller: instance logs flowing again');
+      if (s.reported) this.o.log?.info({ instance_id: c.id, stream: s.stream }, `log puller: instance ${s.stream} flowing again`);
       s.failures = 0;
       s.reported = undefined;
       s.nextAt = s.more ? now : now + this.o.pollMs;
@@ -240,7 +265,8 @@ export class LogPuller {
       s.nextAt = now + this.o.recheckMs;
     } else {
       s.failures++;
-      s.nextAt = now + Math.min(this.o.maxBackoffMs, this.o.pollMs * 2 ** s.failures);
+      // A traces response that was too large is retried at once with a smaller limit.
+      s.nextAt = s.more ? now : now + Math.min(this.o.maxBackoffMs, this.o.pollMs * 2 ** s.failures);
     }
     this.updateUnsupported();
   }
@@ -248,9 +274,9 @@ export class LogPuller {
   private report(c: Computer, s: InstanceState, outcome: Outcome, detail: string) {
     if (s.reported === outcome) return;
     s.reported = outcome;
-    const fields = { instance_id: c.id, provider: this.o.provider.scheme, outcome, detail };
-    if (outcome === 'unsupported') this.o.log?.info(fields, 'log puller: instance has no logs route (older version); re-checking later');
-    else this.o.log?.warn(fields, 'log puller: pulling instance logs failed');
+    const fields = { instance_id: c.id, provider: this.o.provider.scheme, stream: s.stream, outcome, detail };
+    if (outcome === 'unsupported') this.o.log?.info(fields, `log puller: instance has no ${s.stream} route (older version); re-checking later`);
+    else this.o.log?.warn(fields, `log puller: pulling instance ${s.stream} failed`);
   }
 
   private async pullOnce(c: Computer, s: InstanceState): Promise<Outcome> {
@@ -295,7 +321,7 @@ export class LogPuller {
     }
     let shipped: Response;
     try {
-      shipped = await fetch(this.o.shipUrl, {
+      shipped = await fetch(this.o.shipUrl!, {
         method: 'POST', headers: { 'content-type': JOURNAL_EXPORT }, body: new Uint8Array(body),
         signal: AbortSignal.timeout(this.o.requestTimeoutMs),
       });
@@ -310,6 +336,86 @@ export class LogPuller {
     // A full batch: more is waiting, pull again right away.
     // A full batch, or a response cut at the byte budget: more is waiting.
     s.more = entries >= n || truncated;
+    return 'ok';
+  }
+
+  private async pullTraces(c: Computer, s: InstanceState): Promise<Outcome> {
+    s.more = false;
+    const limit = s.limit ?? this.o.traceBatch;
+    // The first pull only finds the end of the buffer: like logs, nothing is backfilled.
+    const q = new URLSearchParams({ cursor: s.cursor ?? 'end', limit: String(limit) });
+    let res: Response;
+    try {
+      res = await fetch(`${c.internalUrl}/api/v1/traces?${q}`, {
+        headers: { authorization: `Bearer ${c.token}`, accept: 'application/json' },
+        signal: AbortSignal.timeout(this.o.requestTimeoutMs),
+      });
+    } catch (e) {
+      this.report(c, s, 'unavailable', (e as Error).message);
+      return 'unavailable';
+    }
+    if (!res.ok) {
+      await res.body?.cancel().catch(() => undefined);
+      if (res.status === 404) { this.report(c, s, 'unsupported', 'HTTP 404'); return 'unsupported'; }
+      if (res.status === 401 || res.status === 403) { this.report(c, s, 'unauthorized', `HTTP ${res.status}`); return 'unauthorized'; }
+      this.report(c, s, res.status >= 500 ? 'unavailable' : 'error', `HTTP ${res.status}`);
+      return res.status >= 500 ? 'unavailable' : 'error';
+    }
+    const next = res.headers.get('ozwell-trace-cursor') ?? undefined;
+    // Losses since the requested cursor: counted only when the cursor moves past them, so a
+    // retry of the same cursor doesn't count them again.
+    const reported = Number(res.headers.get('ozwell-trace-dropped') ?? 0);
+    const dropped = Number.isSafeInteger(reported) && reported > 0 ? reported : 0;
+    const advance = () => {
+      if (!next) return;
+      s.cursor = next;
+      if (dropped) this.o.metrics?.traceSpansDropped.inc(dropped);
+    };
+    // The instance is agent-controlled: never buffer an unbounded response.
+    const { buf, truncated } = await readBounded(res, this.o.maxResponseBytes);
+    if (truncated) {
+      if (limit > 1) {
+        // Ask for fewer spans at once, right away.
+        s.limit = Math.max(1, Math.floor(limit / 2));
+        s.more = true;
+        this.report(c, s, 'error', `traces response exceeds ${this.o.maxResponseBytes} bytes; asking for ${s.limit} spans`);
+        return 'error';
+      }
+      // One span is larger than the whole budget: skip it.
+      advance();
+      s.limit = undefined;
+      this.report(c, s, 'error', `a span exceeds ${this.o.maxResponseBytes} bytes; skipped`);
+      return 'error';
+    }
+    let body: Buffer, spans: number;
+    try {
+      ({ body, spans } = otlpJsonToProto(JSON.parse(buf.toString('utf8')), {
+        'ozwell.instance_id': c.id, 'ozwell.user': observedOwner(c), 'ozwell.provider': this.o.provider.scheme,
+      }));
+    } catch (e) {
+      // Invalid JSON can't get better by retrying: skip past it.
+      advance();
+      this.report(c, s, 'error', `invalid traces response: ${(e as Error).message}`);
+      return 'error';
+    }
+    if (spans > 0) {
+      let shipped: Response;
+      try {
+        shipped = await fetch(this.o.traceShipUrl!, {
+          method: 'POST', headers: { 'content-type': 'application/x-protobuf' }, body: new Uint8Array(body),
+          signal: AbortSignal.timeout(this.o.requestTimeoutMs),
+        });
+        await shipped.body?.cancel().catch(() => undefined);
+      } catch (e) {
+        this.report(c, s, 'ship_error', (e as Error).message);
+        return 'ship_error';
+      }
+      if (!shipped.ok) { this.report(c, s, 'ship_error', `VictoriaTraces HTTP ${shipped.status}`); return 'ship_error'; }
+      this.o.metrics?.traceSpansShipped.inc(spans);
+    }
+    advance();
+    s.more = res.headers.get('ozwell-trace-more') === '1';
+    if (!s.more) s.limit = undefined;
     return 'ok';
   }
 }

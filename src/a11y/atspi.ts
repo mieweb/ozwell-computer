@@ -3,6 +3,7 @@ import type { Logger } from 'pino';
 import { ApiError, unsupported } from '../errors.js';
 import type { Desktop } from '../desktop.js';
 import { getProperty, parseWindowId } from '../x11/windows.js';
+import { withSpan } from '../tracing.js';
 
 const { Message } = dbus as any;
 
@@ -312,13 +313,25 @@ export class A11y {
   }
 
   async tree(opts: TreeOptions = {}): Promise<{ snapshot_id: string; truncated: boolean; nodes: A11yNode[] }> {
-    return this.walk(
+    return withSpan('a11y.tree', { 'a11y.window': opts.window }, async (span) => {
+      const r = await this.walk(
       { window: opts.window, maxNodes: Math.min(opts.max_nodes ?? 5000, 20000), maxDepth: opts.max_depth ?? 64, hidden: opts.hidden },
       () => true,
-    );
+      );
+      span?.set({ 'a11y.nodes': r.nodes.length, 'a11y.truncated': r.truncated });
+      return r;
+    });
   }
 
-  async find(o: FindOptions) {
+  find(o: FindOptions) {
+    return withSpan('a11y.find', { 'a11y.window': o.window, 'a11y.role': o.role }, async (span) => {
+      const r = await this.findUntraced(o);
+      span?.set({ 'a11y.matches': r.total, 'a11y.truncated': r.truncated });
+      return r;
+    });
+  }
+
+  private async findUntraced(o: FindOptions) {
     const max = o.max_results ?? 50;
     const nc = o.name_contains?.toLowerCase();
     const vc = o.value_contains?.toLowerCase();
@@ -333,7 +346,11 @@ export class A11y {
     return { snapshot_id, truncated, matches: matches.slice(0, max), total: matches.length };
   }
 
-  async act(snapshotId: string, elementId: string, action: string, value?: string) {
+  act(snapshotId: string, elementId: string, action: string, value?: string) {
+    return withSpan('a11y.act', { 'a11y.action': action }, () => this.actUntraced(snapshotId, elementId, action, value));
+  }
+
+  private async actUntraced(snapshotId: string, elementId: string, action: string, value?: string) {
     const bus = await this.connect();
     const snap = this.snapshots.find((s) => s.id === snapshotId);
     if (!snap) throw new ApiError('stale_snapshot', `snapshot ${snapshotId} expired; fetch the tree again`);

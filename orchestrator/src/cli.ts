@@ -21,6 +21,10 @@
 //   ORCHESTRATOR_LOG_SHIP_URL  VictoriaLogs journald ingest (…/insert/journald/upload): pull every
 //                        running computer's journal there. Unset disables the puller.
 //   ORCHESTRATOR_LOG_POLL_MS  between pulls of one computer (default 5000)
+//   ORCHESTRATOR_TRACE_SHIP_URL  VictoriaTraces OTLP/HTTP traces ingest
+//                        (…/insert/opentelemetry/v1/traces): pull every running computer's
+//                        spans there, in the log puller's loop. Defaults to
+//                        OTEL_EXPORTER_OTLP_TRACES_ENDPOINT; "off" disables it.
 //   ORCHESTRATOR_OP_TIMEOUT_MS  give up timing a create/start/destroy after this (default 600000)
 import { readFileSync } from 'node:fs';
 import { providerFromUri } from './providers/index.ts';
@@ -82,14 +86,17 @@ const sdAddress = env.ORCHESTRATOR_SD_ADDRESS || `${sdHost.includes(':') ? `[${s
 const internal = rawInternal ? await buildInternalServer({ metrics, provider, sdAddress, token: internalToken, logger: { ...logger, level: env.LOG_LEVEL || 'warn' } }) : null;
 await internal?.listen({ host: internalHost, port: Number(rawInternal) });
 
-const logPuller = env.ORCHESTRATOR_LOG_SHIP_URL
+const traceShipUrl = env.ORCHESTRATOR_TRACE_SHIP_URL === 'off' ? undefined
+  : env.ORCHESTRATOR_TRACE_SHIP_URL || env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT || undefined;
+const logPuller = env.ORCHESTRATOR_LOG_SHIP_URL || traceShipUrl
   ? new LogPuller({
-    provider, shipUrl: env.ORCHESTRATOR_LOG_SHIP_URL, metrics, log: app.log.child({ component: 'log-puller' }),
+    provider, shipUrl: env.ORCHESTRATOR_LOG_SHIP_URL || undefined, traceShipUrl, metrics, log: app.log.child({ component: 'log-puller' }),
     pollMs: rawLogPoll ? Number(rawLogPoll) : undefined,
   })
   : null;
 logPuller?.start();
-if (logPuller) app.log.info({ shipUrl: env.ORCHESTRATOR_LOG_SHIP_URL }, 'pulling instance logs');
+if (env.ORCHESTRATOR_LOG_SHIP_URL) app.log.info({ shipUrl: env.ORCHESTRATOR_LOG_SHIP_URL }, 'pulling instance logs');
+if (traceShipUrl) app.log.info({ traceShipUrl }, 'pulling instance traces');
 
 const stop = () => Promise.all([app.close(), internal?.close(), logPuller?.stop()]).then(shutdownTelemetry).then(() => process.exit(0));
 for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { void stop(); });

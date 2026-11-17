@@ -12,6 +12,7 @@ import { ocr } from './ocr.js';
 import { ApiError, unsupported } from './errors.js';
 import { EventBus, Presence, type Principal } from './presence/index.js';
 import { m } from './metrics.js';
+import { withSpan } from './tracing.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -125,7 +126,9 @@ export class Desktop {
 
   async screenshot(o: ScreenshotOptions = {}): Promise<ScreenshotResult> {
     const end = m.screenshotSeconds.startTimer({ format: o.format ?? 'png' });
-    try { return await this.takeScreenshot(o); } finally { end(); }
+    try {
+      return await withSpan('screenshot', { 'screenshot.format': o.format ?? 'png', 'screenshot.window': o.window, 'screenshot.ocr': o.ocr }, () => this.takeScreenshot(o));
+    } finally { end(); }
   }
 
   private async takeScreenshot(o: ScreenshotOptions): Promise<ScreenshotResult> {
@@ -142,20 +145,23 @@ export class Desktop {
     const epoch = s.geometryEpoch;
     let frame;
     try {
-      frame = await captureRect(s, region);
+      frame = await withSpan('screenshot.capture', { 'screenshot.region.width': region.w, 'screenshot.region.height': region.h }, () => captureRect(s, region));
     } catch (e) {
       if (e instanceof RangeError) throw new ApiError('invalid_request', e.message);
       throw e;
     }
     if (o.cursor) {
-      const c = await getCursorImage(s).catch(() => null);
-      if (c) compositeCursor(frame, c);
+      await withSpan('screenshot.cursor', undefined, async () => {
+        const c = await getCursorImage(s).catch(() => null);
+        if (c) compositeCursor(frame, c);
+      });
     }
     const fit = fitSize(frame.width, frame.height, o.max_dimension);
     // OCR reads the native-resolution capture, not the possibly downscaled image.
     const [enc, text] = await Promise.all([
-      encodeFrame(frame, format, { quality: o.quality, width: fit.width, height: fit.height }),
-      o.ocr ? ocr(frame) : undefined,
+      withSpan('screenshot.encode', { 'screenshot.format': format, 'screenshot.width': fit.width, 'screenshot.height': fit.height },
+        async (span) => { const r = await encodeFrame(frame, format, { quality: o.quality, width: fit.width, height: fit.height }); span?.set({ 'screenshot.bytes': r.data.length }); return r; }),
+      o.ocr ? withSpan('screenshot.ocr', undefined, () => ocr(frame)) : undefined,
     ]);
     const entry = this.registry.add({
       origin: { x: frame.x, y: frame.y },
@@ -235,7 +241,7 @@ export class Desktop {
     const button = BUTTONS[req.button ?? 'left'];
     if (!button) throw new ApiError('invalid_request', `unknown button: ${req.button}`);
     const mods = this.mods(req.modifiers);
-    return ctl.input.run(async () => {
+    return withSpan('input.pointer', { 'input.action': req.action, 'input.button': req.button }, () => ctl.input.run(async () => {
       const start = await ctl.input.pointer();
       const before = { active: await ctl.windows.activeId().catch(() => 0), x: start.x, y: start.y };
       const moveTo = async (pt: { x: number; y: number } | null) => {
@@ -297,7 +303,7 @@ export class Desktop {
           throw new ApiError('invalid_request', `unknown pointer action: ${(req as any).action}`);
       }
       return this.finish(ctl, before, principal);
-    });
+    }));
   }
 
   private keysym(key: string): number {
@@ -310,7 +316,7 @@ export class Desktop {
     if (!ctl.input.available) throw unsupported('input', 'the XTEST extension is not available');
     const mods = this.mods(req.modifiers);
     const repeat = Math.max(1, Math.min(100, req.repeat ?? 1));
-    return ctl.input.run(async () => {
+    return withSpan('input.keyboard', { 'input.action': req.action }, () => ctl.input.run(async () => {
       const start = await ctl.input.pointer();
       const before = { active: await ctl.windows.activeId().catch(() => 0), x: start.x, y: start.y };
       switch (req.action) {
@@ -359,7 +365,7 @@ export class Desktop {
           throw new ApiError('invalid_request', `unknown keyboard action: ${(req as any).action}`);
       }
       return this.finish(ctl, before, principal);
-    });
+    }));
   }
 
   private async paste(ctl: Controllers, text: string) {

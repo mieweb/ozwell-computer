@@ -2,6 +2,8 @@ import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { logRoutes } from './routes/logs.js';
 import { parseTraceparent } from './trace-context.js';
+import { traceRoutes } from './routes/traces.js';
+import { SpanKind, tracer, type Span } from './tracing.js';
 import fastifyWebsocket from '@fastify/websocket';
 import fastifySwagger from '@fastify/swagger';
 import fastifySwaggerUi from '@fastify/swagger-ui';
@@ -72,9 +74,48 @@ export function strictResponses(app: FastifyInstance) {
   });
 }
 
+/**
+ * Routes that are polled, scraped or long-lived (streams, websockets) get no request span:
+ * tracing them would fill the span buffer with background noise (issue #64, requirement 6).
+ */
+export const UNTRACED_ROUTES = new Set([
+  'GET /health', 'GET /api/v1/metrics', 'GET /api/v1/logs/entries', 'GET /api/v1/traces',
+  'GET /api/v1/events', 'GET /api/v1/update', 'GET /api/v1/exec/jobs', 'GET /api/v1/exec/jobs/:id', 'GET /api/v1/exec/jobs/:id/stream', 'GET /api/v1/presence', 'POST /api/v1/presence/cursor', 'GET /api/v1/pty',
+  'GET /websockify', 'GET /mcp',
+  // The orchestrator ends idle MCP sessions from a background reaper.
+  'DELETE /mcp',
+]);
+
+const requestSpans = new WeakMap<FastifyRequest, Span>();
+
+/** A SERVER span per API/MCP request, continuing the caller's traceparent, active while the request runs. */
+export function traceRequests(app: FastifyInstance) {
+  app.addHook('onRequest', (req, _reply, done) => {
+    const route = req.routeOptions?.url;
+    if (!route || !(route.startsWith('/api/') || route === '/mcp') || UNTRACED_ROUTES.has(`${req.method} ${route}`)) return done();
+    const span = tracer.start(`${req.method} ${route}`, {
+      kind: SpanKind.SERVER, root: true, traceparent: req.headers.traceparent,
+      attrs: { 'http.request.method': req.method, 'http.route': route },
+    });
+    if (!span) return done();
+    requestSpans.set(req, span);
+    // Run the rest of the request (hooks, handler) with the span active.
+    tracer.runWith(span, done);
+  });
+  app.addHook('onResponse', async (req, reply) => {
+    const span = requestSpans.get(req);
+    if (!span) return;
+    requestSpans.delete(req);
+    span.set({ 'http.response.status_code': reply.statusCode });
+    if (reply.statusCode >= 500) span.fail(`HTTP ${reply.statusCode}`);
+    span.end();
+  });
+}
+
 export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   setCpus(ctx.config.cpus);
   setVersion(ctx.version);
+  tracer.setResource({ 'service.version': ctx.version });
   const app: FastifyInstance = Fastify({
     loggerInstance: ctx.log as any,
     // Requests from the orchestrator carry its trace context: put the ids on every log line.
@@ -124,6 +165,8 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   const staticDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'web', 'static');
   await app.register(fastifyStatic, { root: staticDir, prefix: '/static/', index: false });
 
+  traceRequests(app);
+
   app.addHook('onResponse', async (req, reply) => {
     const route = req.routeOptions?.url ?? 'unmatched';
     if (route === '/health') return;
@@ -142,6 +185,7 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   });
 
   await app.register(async (s) => logRoutes(s));
+  await app.register(async (s) => traceRoutes(s));
   await app.register(async (s) => coreRoutes(s, ctx));
   // Read per hello, so a viewer rebuilt under a running server (dev compose) reports its new id.
   await app.register(async (s) => windowRoutes(s, ctx, () => webBuild(staticDir)));

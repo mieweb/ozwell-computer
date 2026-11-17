@@ -47,3 +47,20 @@ datasources:
         spanEndTimeShift: 5m
         customQuery: true
         query: 'trace_id:="$${__span.traceId}" OR "$${__span.traceId}"'
+
+  # The same spans as rows, queried with LogsQL (VictoriaTraces stores spans as log entries):
+  # tables can filter and show any span or resource attribute, which Jaeger search can't
+  # (its results carry no tool name or arguments). Used by the Instance drill-down.
+  - name: VictoriaTraces (spans)
+    uid: victoriatraces-spans
+    type: victoriametrics-logs-datasource
+    access: proxy
+    url: http://victoriatraces:10428
+    editable: false
+    jsonData:
+      derivedFields:
+        - name: trace_id
+          matcherType: label
+          matcherRegex: trace_id
+          url: "$${__value.raw}"
+          datasourceUid: victoriatraces
