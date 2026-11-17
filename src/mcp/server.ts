@@ -35,6 +35,12 @@ async function wrap(fn: () => Promise<ToolResult>): Promise<ToolResult> {
   }
 }
 
+/** The `reason` of a wrap()ped error result, else "error". */
+function errorReason(r: ToolResult): string {
+  const t = r.content.find((c): c is Extract<Content, { type: 'text' }> => c.type === 'text')?.text;
+  try { const reason = JSON.parse(t ?? '').error?.reason; return typeof reason === 'string' ? reason.slice(0, 64) : 'error'; } catch { return 'error'; }
+}
+
 const Coord = {
   x: z.number().describe('X coordinate'),
   y: z.number().describe('Y coordinate'),
@@ -74,7 +80,8 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
       const meta = extra?._meta as { traceparent?: unknown } | undefined;
       const r = await tracer.withSpan(`mcp.tool ${name}`, { 'mcp.tool.name': name }, async (span) => {
         const res = await cb(...a);
-        if (res.isError) span?.fail(res.content.find((c): c is Extract<Content, { type: 'text' }> => c.type === 'text')?.text ?? 'tool error');
+        // Only the error's reason: its message can quote tool arguments (a path, a command).
+        if (res.isError) span?.failRedacted({ reason: errorReason(res) }, `tool ${name}`);
         return res;
       }, { traceparent: meta?.traceparent ?? extra?.requestInfo?.headers?.traceparent });
       m.mcpToolCalls.inc({ tool: name, outcome: r.isError ? 'error' : 'ok' });

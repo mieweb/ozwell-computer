@@ -3,6 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { makeApp } from '../helpers.js';
 import { Tracer, tracer } from '../../src/tracing.js';
 import { runCommand } from '../../src/process/exec.js';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { parseTraceparent } from '../../src/trace-context.js';
 import { Jobs } from '../../src/process/jobs.js';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -52,6 +54,14 @@ describe('Tracer', () => {
     const [tool] = spansOf(t.collect(undefined).body);
     expect(tool).toMatchObject({ parentSpanId: root.ctx.spanId, status: { code: 2, message: 'boom' } });
     expect(tool.attributes).toContainEqual({ key: 'error.type', value: { stringValue: 'stale_snapshot' } });
+  });
+
+  it('records nothing for an unsampled traceparent, not even a new root', async () => {
+    const t = new Tracer();
+    const unsampled = `00-${TRACE}-${PARENT}-00`;
+    expect(t.start('req', { traceparent: unsampled, root: true })).toBeNull();
+    await t.withSpan('child', undefined, async (s) => { expect(s).toBeNull(); }, { traceparent: unsampled });
+    expect(t.size).toBe(0);
   });
 
   it('caps attributes and value lengths', () => {
@@ -156,6 +166,21 @@ describe('GET /api/v1/traces', () => {
     const exec = (await since()).find((s) => s.name === 'exec');
     expect(exec.status.code).toBe(2);
     expect(JSON.stringify(exec)).not.toContain('secret-token');
+  });
+
+  it('records only the reason on a failed MCP tool span, not the error text', async () => {
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
+    const client = new Client({ name: 'trace-redact', version: '1' });
+    await client.connect(new StreamableHTTPClientTransport(new URL(base + '/mcp'), { requestInit: { headers: auth } }));
+    try {
+      const r: any = await client.callTool({ name: 'run_command', arguments: { command: 'true', cwd: '/nonexistent-secret-dir' }, _meta: { traceparent } });
+      expect(r.isError).toBe(true);
+    } finally { await client.close(); }
+    const tool = (await since()).find((s) => s.name === 'mcp.tool run_command');
+    expect(tool.status.code).toBe(2);
+    expect(tool.status.message).toMatch(/^tool run_command failed \(\w+\)$/);
+    expect(JSON.stringify(await since())).not.toContain('secret-dir');
   });
 
   it('rejects a bad limit', async () => {

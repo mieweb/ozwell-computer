@@ -11,6 +11,12 @@ export interface TraceIds { trace_id: string; span_id: string }
  * than losing the context.
  */
 export function parseTraceparent(v: unknown): TraceIds | null {
+  const c = parseContext(v);
+  return c && { trace_id: c.trace_id, span_id: c.span_id };
+}
+
+/** parseTraceparent plus the sampled flag (trace-flags bit 0). */
+export function parseContext(v: unknown): (TraceIds & { sampled: boolean }) | null {
   if (Array.isArray(v)) v = v.join(',');
   if (typeof v === 'string' && v.includes(',')) {
     if (v.length > 2048) return null;
@@ -23,15 +29,15 @@ export function parseTraceparent(v: unknown): TraceIds | null {
   return parseOne(v);
 }
 
-function parseOne(v: unknown): TraceIds | null {
+function parseOne(v: unknown): (TraceIds & { sampled: boolean }) | null {
   if (typeof v !== 'string' || v.length > 256) return null;
   const m = TRACEPARENT.exec(v.trim());
   if (!m) return null;
-  const [, version, trace, span] = m;
+  const [, version, trace, span, flags] = m;
   // Version ff is invalid; future versions may append fields (allowed by the regex's tail).
   if (version === 'ff' || (version === '00' && m[5])) return null;
   if (/^0+$/.test(trace) || /^0+$/.test(span)) return null;
-  return { trace_id: trace, span_id: span };
+  return { trace_id: trace, span_id: span, sampled: (parseInt(flags, 16) & 1) === 1 };
 }
 
 /** From an MCP request's `params._meta.traceparent` first, else the HTTP header. */

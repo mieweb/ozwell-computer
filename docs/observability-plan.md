@@ -303,7 +303,9 @@ All scrape routes are served **only on the internal listener**.
      of the call that started them but covers the command's whole run: it ends when the
      job ends, even after the call has returned (at most 64 open at once; lost if the
      server restarts first). A `traceparent` header sent twice (`a, b`) uses the first
-     valid value. Polled, scraped and streaming
+     valid value. An unsampled `traceparent` (flags `-00`, e.g. `OTEL_TRACES_SAMPLER`
+     below 100%) records nothing for that request. Failed exec and tool spans record only
+     the error's reason, since messages can quote arguments. Polled, scraped and streaming
      routes (`/health`, metrics, logs, traces, events, presence, pty, websockify,
      `GET /mcp`) and work outside a request are never traced.
    - **Bounded cost.** Finished spans sit in an in-memory ring of 4096 spans (oldest

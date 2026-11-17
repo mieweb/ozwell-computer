@@ -15,7 +15,7 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomBytes } from 'node:crypto';
 import { hostname } from 'node:os';
-import { parseTraceparent } from './trace-context.js';
+import { parseContext } from './trace-context.js';
 
 export type AttrValue = string | number | boolean;
 export type Attrs = Record<string, AttrValue | undefined>;
@@ -154,7 +154,11 @@ export class Tracer {
    * continues that trace; with neither it starts a new trace (`root`) or returns null.
    */
   start(name: string, o: { traceparent?: unknown; kind?: number; attrs?: Attrs; root?: boolean } = {}): Span | null {
-    const remote = parseTraceparent(o.traceparent);
+    const remote = parseContext(o.traceparent);
+    // The caller decided not to sample this trace (e.g. OTEL_TRACES_SAMPLER below 100%):
+    // record nothing for it, so there are no spans whose parents were never exported.
+    // Without an active span, children of this request are not recorded either.
+    if (remote && !remote.sampled) return null;
     const active = this.active();
     let traceId: string, parent: string | undefined;
     // Prefer the active span when it is in the same trace (e.g. an MCP tool call inside the
