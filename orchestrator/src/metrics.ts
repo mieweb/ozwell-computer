@@ -12,6 +12,27 @@ export function exemplar(): Record<string, string> | undefined {
   return ctx && ctx.traceId !== '00000000000000000000000000000000' ? { trace_id: ctx.traceId } : undefined;
 }
 
+/** The tool-call error reasons kept as a label value: the orchestrator's own, then the
+ * computer's (src/errors.ts `Reason`, passed through), then "other" for anything else. A
+ * fixed set keeps the label's cardinality bounded whatever a computer returns. Alerts
+ * treat "internal" as a real failure; the rest are the agent's mistakes or a computer's
+ * state (docs/alerts.md). */
+export const TOOL_ERROR_REASONS = [
+  // the orchestrator's
+  'invalid_request', 'target_unavailable', 'computer_stopped', 'quota_exceeded', 'unauthenticated', 'internal',
+  // the computer's
+  'feature_unsupported', 'permission_denied', 'stale_geometry', 'stale_handle', 'stale_snapshot',
+  'would_require_activation', 'path_not_found', 'checksum_mismatch', 'limit_exceeded', 'rate_limited',
+  'other',
+] as const;
+export type ToolErrorReason = typeof TOOL_ERROR_REASONS[number];
+
+/** The reason label for a tool-call error reason (undefined: ok). */
+export function toolErrorReason(reason: string | undefined): ToolErrorReason | 'none' {
+  if (reason === undefined) return 'none';
+  return (TOOL_ERROR_REASONS as readonly string[]).includes(reason) ? reason as ToolErrorReason : 'other';
+}
+
 export class Metrics {
   readonly registry = (() => {
     const r = new Registry<OpenMetricsContentType>();
@@ -30,8 +51,8 @@ export class Metrics {
 
   readonly toolCalls = new Counter({
     name: 'ozwell_orchestrator_tool_calls_total',
-    help: 'MCP tools/call requests handled',
-    labelNames: ['tool', 'outcome'] as const,
+    help: 'MCP tools/call requests handled; reason is the error reason from a fixed set ("other" for an unknown one), "none" when ok',
+    labelNames: ['tool', 'outcome', 'reason'] as const,
     registers: [this.registry],
   });
 
@@ -106,6 +127,21 @@ export class Metrics {
     }
   }
 
+  // Computer listings for /sd and the computer metadata (internal-server.ts).
+  readonly computerListings = new Counter({
+    name: 'ozwell_orchestrator_computer_listings_total',
+    help: 'Provider listings of all computers, shared by /sd and the computer metadata in /metrics: ok or error',
+    labelNames: ['provider', 'outcome'] as const,
+    registers: [this.registry],
+  });
+
+  readonly sdRequests = new Counter({
+    name: 'ozwell_orchestrator_sd_requests_total',
+    help: 'Service discovery (/sd) requests answered: ok, or error (502, vmagent keeps its last targets)',
+    labelNames: ['outcome'] as const,
+    registers: [this.registry],
+  });
+
   readonly computerCache = new Counter({
     name: 'ozwell_orchestrator_computer_cache_total',
     help: 'Computer lookups for desktop tool calls: hit (no provider call), miss, or revalidated (a cached entry failed and was looked up again)',
@@ -137,10 +173,11 @@ export class Metrics {
     if (opts.defaultMetrics ?? true) collectDefaultMetrics({ register: this.registry, prefix: 'ozwell_orchestrator_' });
   }
 
-  observeToolCall(tool: string, outcome: string, seconds: number) {
+  /** reason: the error reason when outcome is error (mapped to TOOL_ERROR_REASONS). */
+  observeToolCall(tool: string, outcome: string, seconds: number, reason?: string) {
     const labels = { tool, outcome };
     this.toolCallDuration.observe({ labels, value: seconds, exemplarLabels: exemplar() });
-    this.toolCalls.inc(labels);
+    this.toolCalls.inc({ ...labels, reason: toolErrorReason(outcome === 'ok' ? undefined : reason ?? 'internal') });
   }
 
   /** Pass to instrumentProvider. */

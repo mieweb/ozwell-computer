@@ -227,6 +227,40 @@ Rollout on the orchestrator host:
 
 Rollback: `docker compose down && sudo systemctl enable --now ozwell-computer-orchestrator`.
 
+#### Alerts
+
+Grafana Alerting evaluates the rules in `deploy/grafana/provisioning/alerting/` and
+emails them: `rules.yml` (the rules, with `severity` `critical` or `warning`),
+`contact-points.yml` (email), `policies.yml` (one email per alert name and provider, not
+one per computer) and `templates.yml` (the email, with a link to the Instance
+drill-down dashboard). They are read-only in the UI; change them in the repo. Emails
+carry computer ids, never owner emails or tool arguments.
+
+What each alert means, its threshold and what to check first:
+[docs/alerts.md](../docs/alerts.md). Update it with `rules.yml` (a test checks every rule
+is listed).
+
+Set in `.env` (nothing secret is committed):
+
+| Variable | |
+|---|---|
+| `ALERT_EMAIL_TO` | recipients, `;`-separated |
+| `GF_SMTP_ENABLED` | `true` to send email |
+| `GF_SMTP_HOST` | `host:port`, e.g. `smtp.example.com:587` |
+| `GF_SMTP_USER` / `GF_SMTP_PASSWORD` | SMTP login, if any |
+| `GF_SMTP_FROM_ADDRESS` / `GF_SMTP_FROM_NAME` | sender |
+| `GF_SMTP_STARTTLS_POLICY` | `OpportunisticStartTLS` (default), `MandatoryStartTLS` or `NoStartTLS` |
+| `GF_SERVER_ROOT_URL` | Grafana's public URL: the links in emails use it |
+
+Unlike dashboards, alerting files are only read when Grafana starts: after changing them
+or these variables, run `docker compose up -d grafana` (`.env` changes) or
+`docker compose restart grafana` (file changes). Alert state survives restarts (it is in
+the `grafana` volume). To check the email settings, use **Test** on the `ozwell-email`
+contact point (Alerting → Contact points).
+
+Not covered: if Grafana or the host stops, alerts stop silently, and nothing checks the
+orchestrator's public URL from outside.
+
 #### Updating without dropping calls
 
 Install [docker-rollout](https://github.com/wowu/docker-rollout) once:

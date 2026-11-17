@@ -1,0 +1,42 @@
+# Notification templates for the email contact point (contact-points.yml).
+# No personal data: alerts carry instance_id, never owner emails or tool arguments. Links
+# use Grafana's root URL, so GF_SERVER_ROOT_URL must be the public Grafana URL.
+apiVersion: 1
+
+templates:
+  - orgId: 1
+    name: ozwell
+    template: |
+      {{ define "ozwell.root" }}{{ reReplaceAll "/$" "" .ExternalURL }}{{ end }}
+
+      {{ define "ozwell.email.subject" -}}
+      [{{ .Status | toUpper }}{{ if eq .Status "firing" }}:{{ .Alerts.Firing | len }}{{ end }}] ozwell-computer: {{ .CommonLabels.alertname }}{{ if .CommonLabels.provider }} ({{ .CommonLabels.provider }}){{ end }}
+      {{- end }}
+
+      {{/* A list of alerts; .Root is Grafana's root URL (an alert alone has no ExternalURL). */}}
+      {{ define "ozwell.email.alerts" -}}
+      {{ $root := .Root }}{{ range .Alerts -}}
+      {{ if .Annotations.summary }}{{ .Annotations.summary }}{{ else }}{{ .Labels.alertname }}{{ end }}
+      Severity: {{ .Labels.severity }}{{ if .Labels.instance_id }}, computer: {{ .Labels.instance_id }}{{ end }}
+      {{ if .Annotations.description }}{{ .Annotations.description }}
+      {{ end -}}
+      Started: {{ .StartsAt.UTC.Format "2006-01-02 15:04:05 UTC" }}{{ if eq .Status "resolved" }}, resolved: {{ .EndsAt.UTC.Format "2006-01-02 15:04:05 UTC" }}{{ end }}
+      {{ if .Labels.instance_id -}}
+      Instance drill-down: {{ $root }}/d/instance/instance-drill-down?var-instance_id={{ .Labels.instance_id }}
+      {{ else if .Annotations.dashboard -}}
+      Dashboard: {{ $root }}/d/{{ .Annotations.dashboard }}
+      {{ end }}
+      {{ end -}}
+      {{- end }}
+
+      {{ define "ozwell.email.message" -}}
+      {{ if gt (len .Alerts.Firing) 0 -}}
+      Firing ({{ len .Alerts.Firing }}):
+
+      {{ template "ozwell.email.alerts" (coll.Dict "Root" (tmpl.Exec "ozwell.root" .) "Alerts" .Alerts.Firing) }}{{ end -}}
+      {{ if gt (len .Alerts.Resolved) 0 -}}
+      Resolved ({{ len .Alerts.Resolved }}):
+
+      {{ template "ozwell.email.alerts" (coll.Dict "Root" (tmpl.Exec "ozwell.root" .) "Alerts" .Alerts.Resolved) }}{{ end -}}
+      Alert rules: {{ template "ozwell.root" . }}/alerting/list
+      {{- end }}
