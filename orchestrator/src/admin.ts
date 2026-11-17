@@ -277,6 +277,8 @@ async function updateOne(deps: AdminDeps, c: Computer, o: { force: boolean; time
       if (people.length && !o.force) {
         return { ...base, outcome: 'in use', before, detail: `connected: ${people.map(describePerson).join(', ')} (use --force)` };
       }
+      // Never start a disruptive upgrade we have no time left to watch.
+      if (Date.now() >= deadline) return { ...base, outcome: 'timeout', before, detail: `--timeout ran out before applying; nothing was changed` };
       deps.audit({ action: 'update', instance: c.id, owner: observedOwner(c), from: before, to: checked.latest, forced: people.length > 0, outcome: 'requested' }, 'admin update');
       await api.applyUpdate();
     } // else already upgrading: wait on it

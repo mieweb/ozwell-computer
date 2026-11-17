@@ -372,6 +372,15 @@ describe('admin update', () => {
     await expect(api.checkUpdate()).resolves.toMatchObject({ available: false });
   });
 
+  it('does not apply once --timeout has run out during the checks', async () => {
+    const late = await onFake('late', { latest: '1.1.0', checkDelayMs: 300 });
+    const h = harness(memoryProvider([late.c]).p);
+    expect(await h.run('update', '--id', 'late', '--timeout', '100ms', '--json')).toBe(1);
+    expect(results(h)[0]).toMatchObject({ outcome: 'timeout', detail: expect.stringMatching(/before applying/) });
+    expect(late.f.s.applied).toBe(0);
+    expect(h.audit).toEqual([]);
+  });
+
   it('gives up at --timeout', async () => {
     const r = await onFake('slow', { latest: '1.1.0', behaviour: 'hang' });
     const h = harness(memoryProvider([r.c]).p);
