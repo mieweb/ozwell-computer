@@ -345,8 +345,12 @@ All scrape routes are served **only on the internal listener**.
   - The proxy must forward websockets (Grafana Live).
   - VictoriaMetrics, VictoriaLogs, VictoriaTraces and vmagent publish no ports.
 - **Provisioning:** under `orchestrator/deploy/grafana/provisioning/`.
-  - Datasources: VictoriaMetrics, VictoriaLogs (plugin), and VictoriaTraces (Jaeger
-    type).
+  - Datasources: VictoriaMetrics, VictoriaLogs (plugin), VictoriaTraces (Jaeger
+    type), and "VictoriaTraces (spans)": the same VictoriaTraces through the VictoriaLogs
+    plugin, querying spans with LogsQL. Jaeger search can filter on span tags, but its
+    results are one row per trace named after the root span, with no tool, status or
+    arguments, and it can't filter on resource attributes (the computer spans'
+    `ozwell.instance_id`). LogsQL returns any span with any attribute as a table row.
   - Correlations: trace → logs on `trace_id`, and logs → trace via a derived field.
     Metrics → trace via exemplars is **not available**: vmagent and VictoriaMetrics
     (v1.156) drop exemplars. The orchestrator still exposes them on `/metrics`; the
@@ -360,8 +364,16 @@ All scrape routes are served **only on the internal listener**.
   - **Tool calls:** RED metrics per tool, slowest traces.
   - **Fleet:** instance count by state, scrape `up`, instance memory and CPU, instance
     HTTP and MCP metrics.
-  - **Instance drill-down:** variables for `instance_id` and `unit`. The `unit` variable
-    defaults to `ozwell-computer.service`.
+  - **Instance drill-down:** variables for `instance_id`, `unit` and `calls`. The `unit`
+    variable defaults to `ozwell-computer.service`. Alert emails link here.
+    - **Tool calls on this computer:** the orchestrator's `mcp.tools/call` spans for
+      `$instance_id` in the time range: time, tool, duration, status, error type and
+      arguments (the command, for `run_command`). Clicking the trace id opens the trace,
+      with the computer's spans under it. `calls` = "errors only" shows failed calls.
+    - **Commands run on this computer:** the computer's own `exec` spans: duration, job
+      id, state, exit code, timeout, redacted error. A background job's span lasts until
+      the command ends, so long jobs show their real duration even though the tool call
+      that started them returned early.
   - **Orchestrator logs.**
 - Alerting comes in a later phase.
 

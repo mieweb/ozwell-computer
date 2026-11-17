@@ -1,7 +1,7 @@
 {
   "uid": "instance",
   "title": "Instance drill-down",
-  "description": "One computer: metrics and its journal. Unit defaults to ozwell-computer.service.",
+  "description": "One computer: metrics, the tool calls and commands run on it (traces), and its journal. Unit defaults to ozwell-computer.service.",
   "editable": false,
   "tags": [
     "ozwell-computer"
@@ -58,6 +58,29 @@
           {
             "text": "all units",
             "value": ".*",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "name": "calls",
+        "label": "Calls",
+        "type": "custom",
+        "description": "Tool calls table: all calls, or only failed ones",
+        "query": "all : *,errors only : =2",
+        "current": {
+          "text": "all",
+          "value": "*"
+        },
+        "options": [
+          {
+            "text": "all",
+            "value": "*",
+            "selected": true
+          },
+          {
+            "text": "errors only",
+            "value": "=2",
             "selected": false
           }
         ]
@@ -335,6 +358,388 @@
       "id": 6
     },
     {
+      "type": "table",
+      "title": "Tool calls on this computer",
+      "description": "MCP tool calls the orchestrator made to this computer in the time range, newest first (at most 200). Arguments include the command for run_command. Click a trace id to open the trace: the orchestrator's spans and the computer's (mcp.tool, exec, screenshot, input, a11y). Use the Calls variable to show only errors.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "victoriatraces-spans"
+      },
+      "id": 13,
+      "gridPos": {
+        "w": 24,
+        "h": 10,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "victoriatraces-spans"
+          },
+          "expr": "\"resource_attr:service.name\":=\"ozwell-computer-orchestrator\" \"span_attr:mcp.method.name\":=\"tools/call\" \"span_attr:ozwell.instance_id\":=\"$instance_id\" status_code:$calls | math round(duration / 1e6) as duration_ms | fields _time, \"span_attr:gen_ai.tool.name\", duration_ms, status_code, \"span_attr:error.type\", \"span_attr:ozwell.tool.arguments\", trace_id | sort by (_time desc) | limit 200",
+          "queryType": "instant",
+          "maxLines": 200
+        }
+      ],
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "labels",
+            "replace": true,
+            "keepTime": true
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "_time": true
+            },
+            "indexByName": {
+              "Time": 0,
+              "span_attr:gen_ai.tool.name": 1,
+              "duration_ms": 2,
+              "status_code": 3,
+              "span_attr:error.type": 4,
+              "span_attr:ozwell.tool.arguments": 5,
+              "trace_id": 6
+            },
+            "renameByName": {
+              "Time": "Time",
+              "span_attr:gen_ai.tool.name": "Tool",
+              "duration_ms": "Duration (ms)",
+              "status_code": "Status",
+              "span_attr:error.type": "Error",
+              "span_attr:ozwell.tool.arguments": "Arguments"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "trace_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Trace"
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open trace",
+                    "url": "",
+                    "internal": {
+                      "datasourceUid": "victoriatraces",
+                      "datasourceName": "VictoriaTraces",
+                      "query": {
+                        "query": "${__value.raw}"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 290
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "span_attr:gen_ai.tool.name"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_ms"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status_code"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 70
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "span_attr:error.type"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "status_code"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "ok",
+                        "color": "green",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "ok",
+                        "color": "green",
+                        "index": 1
+                      },
+                      "2": {
+                        "text": "error",
+                        "color": "red",
+                        "index": 2
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Time",
+            "desc": true
+          }
+        ]
+      }
+    },
+    {
+      "type": "table",
+      "title": "Commands run on this computer (exec spans)",
+      "description": "The computer's own exec spans: run_command and the exec API. A background job's span lasts until the command ends (to about a second), even when the tool call that started it returned earlier, so long-running commands show their real duration and exit code here. The command itself is in the trace's tool-call arguments (click the trace id). Spans arrive up to a poll interval (5 s) plus indexing (about 20 s) late.",
+      "datasource": {
+        "type": "victoriametrics-logs-datasource",
+        "uid": "victoriatraces-spans"
+      },
+      "id": 14,
+      "gridPos": {
+        "w": 24,
+        "h": 8,
+        "x": 0,
+        "y": 18
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "victoriametrics-logs-datasource",
+            "uid": "victoriatraces-spans"
+          },
+          "expr": "\"resource_attr:service.name\":=\"ozwell-computer\" \"resource_attr:ozwell.instance_id\":=\"$instance_id\" name:=\"exec\" | math round(duration / 1e6) as duration_ms | fields _time, duration_ms, \"span_attr:exec.job_id\", \"span_attr:exec.state\", \"span_attr:process.exit.code\", \"span_attr:exec.timed_out\", status_message, trace_id | sort by (_time desc) | limit 200",
+          "queryType": "instant",
+          "maxLines": 200
+        }
+      ],
+      "transformations": [
+        {
+          "id": "extractFields",
+          "options": {
+            "source": "labels",
+            "replace": true,
+            "keepTime": true
+          }
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "_time": true
+            },
+            "indexByName": {
+              "Time": 0,
+              "duration_ms": 1,
+              "span_attr:exec.job_id": 2,
+              "span_attr:exec.state": 3,
+              "span_attr:process.exit.code": 4,
+              "span_attr:exec.timed_out": 5,
+              "status_message": 6,
+              "trace_id": 7
+            },
+            "renameByName": {
+              "duration_ms": "Duration (ms)",
+              "span_attr:exec.job_id": "Job",
+              "span_attr:exec.state": "State",
+              "span_attr:process.exit.code": "Exit code",
+              "span_attr:exec.timed_out": "Timed out",
+              "status_message": "Error"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "trace_id"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Trace"
+              },
+              {
+                "id": "links",
+                "value": [
+                  {
+                    "title": "Open trace",
+                    "url": "",
+                    "internal": {
+                      "datasourceUid": "victoriatraces",
+                      "datasourceName": "VictoriaTraces",
+                      "query": {
+                        "query": "${__value.raw}"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 290
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "duration_ms"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "span_attr:exec.job_id"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "span_attr:exec.state"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "span_attr:process.exit.code"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "span_attr:exec.timed_out"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [
+          {
+            "displayName": "Time",
+            "desc": true
+          }
+        ]
+      }
+    },
+    {
       "type": "timeseries",
       "title": "CPU (cores)",
       "datasource": {
@@ -345,7 +750,7 @@
         "w": 12,
         "h": 8,
         "x": 0,
-        "y": 8
+        "y": 26
       },
       "fieldConfig": {
         "defaults": {
@@ -378,7 +783,7 @@
       "gridPos": {
         "w": 12,
         "h": 8,
-        "y": 8,
+        "y": 26,
         "x": 12
       },
       "fieldConfig": {
@@ -413,7 +818,7 @@
         "w": 12,
         "h": 8,
         "x": 0,
-        "y": 16
+        "y": 34
       },
       "fieldConfig": {
         "defaults": {
@@ -446,7 +851,7 @@
         "w": 12,
         "h": 8,
         "x": 12,
-        "y": 16
+        "y": 34
       },
       "fieldConfig": {
         "defaults": {
@@ -479,7 +884,7 @@
         "w": 12,
         "h": 8,
         "x": 0,
-        "y": 24
+        "y": 42
       },
       "fieldConfig": {
         "defaults": {
@@ -512,7 +917,7 @@
         "w": 24,
         "h": 14,
         "x": 0,
-        "y": 32
+        "y": 50
       },
       "options": {
         "showTime": true,
