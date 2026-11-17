@@ -67,6 +67,18 @@ describe('opensource-server provider', () => {
     expect((await providerFromUri(`opensource-server://${os.host}?site=1&domain=2`, env)).scheme).toBe('opensource-server');
   });
 
+  it('creates with a requested id, and refuses a taken or invalid one', async () => {
+    const p = make('');
+    const c = await p.create({ owner: { id: 'u-id' }, id: 'admin-box-1' });
+    expect(c.id).toBe('admin-box-1');
+    expect(os.containers.find((x) => x.hostname === 'admin-box-1')).toBeTruthy();
+    const before = os.containers.length;
+    await expect(p.create({ owner: { id: 'u-id' }, id: 'admin-box-1' })).rejects.toThrow(/already exists/);
+    await expect(p.create({ owner: { id: 'u-id' }, id: 'Not_A_Label' })).rejects.toThrow(/invalid id/);
+    expect(os.containers.length).toBe(before);
+    await p.destroy('admin-box-1');
+  });
+
   it('creates a tagged container with a public viewer service and reads it back statelessly', async () => {
     const p = make('');
     const c = await p.create({ owner: { id: 'u-1', email: 'alice@example.com', name: 'Alice' }, displayName: 'Box' });

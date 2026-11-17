@@ -299,6 +299,69 @@ docker:// provider: also set `DOCKER_GID` (`stat -c %g /var/run/docker.sock`) an
 `-f compose.yml -f compose.docker.yml` to the `docker compose` and `deploy/smoke.sh`
 commands.
 
+## Admin CLI
+
+`bin/admin` manages computers for every user with the orchestrator's own configuration
+(`PROVIDER_URI` and the provider's secrets). It talks to the provider and to the computers
+directly, not to a running orchestrator. Being able to run it (shell on the host or in the
+container) is the admin check: there is no network API or extra token.
+
+```bash
+# Docker Compose (the container already has the configuration)
+docker compose exec -e OZWELL_ADMIN_OPERATOR=$USER orchestrator bin/admin list
+
+# systemd install: load its environment first
+sudo sh -c 'set -a; . /etc/default/ozwell-computer-orchestrator; /opt/ozwell-computer/orchestrator/bin/admin list'
+
+# development, from orchestrator/ (also `npm run -s admin -- list`)
+bin/admin list
+```
+
+`bin/admin` works from any directory. It loads `orchestrator/.env` when there is one
+(variables already set win; no notice when there isn't), then preloads `src/telemetry.ts`
+so its audit lines and traces are exported like the orchestrator's.
+
+```
+admin list   [--user <id|email>] [--json]
+admin create --user <id> [--email <email>] [--name <display name>] [--id <id>] [--wait] [--timeout <duration>] [--json]
+admin delete (--id <id>… | --user <id|email> | --all) [--yes] [--json]
+admin update (--id <id>… | --user <id|email> | --all) [--parallel <n>] [--timeout <duration>] [--force] [--json]
+```
+
+- **`--user`** matches the owner id, or the owner email (case-insensitive). `--id` can be repeated.
+- **`list`** shows id, owner, name, status, stopped and created, plus for running computers
+  their version and who is connected now (blank when a computer doesn't answer within 5 s).
+- **`create`** requires `--user`; `--email` too with `opensource-server` `owner=email` (it
+  picks the account). `--id` sets the id (a DNS label; an existing id is an error).
+  `ORCHESTRATOR_MAX_INSTANCES` is not enforced, only warned about. `--wait` waits for it to
+  be ready (default 5 min), like `create_computer`.
+- **`delete`** shows the targets (with who's connected) first. `--all` and `--user` need
+  `--yes`, or typing `delete <n>` on a terminal; `--id` doesn't ask.
+- **`update`** uses each computer's own update (`/api/v1/update`, the same as the viewer's),
+  not a system upgrade. It skips computers that are stopped (it won't start them), have
+  updates switched off, or have someone connected (an update restarts the server, dropping
+  viewers and MCP sessions; `--force` updates anyway). Current computers are reported as
+  such. It waits for each upgrade, through the restart, up to `--timeout` (default `15m`),
+  `--parallel` at a time (default 4), and prints the end of the upgrade log on failure.
+- **Output:** a table, or with `--json` one JSON object per computer (stdout; messages and
+  the summary go to stderr). Tokens are never printed.
+- **Exit codes:** `0` all succeeded, `1` some failed or were skipped, `2` usage or
+  configuration error.
+- **Audit:** every create, delete and update is a structured log line on stderr
+  (`component: admin`, with an `operator`). With the OTLP endpoints set (they are in
+  `compose.yml`), the lines and the CLI's traces also go to VictoriaLogs and VictoriaTraces,
+  under the service name `ozwell-computer-admin` (unless `OTEL_SERVICE_NAME` is set);
+  output from `docker compose exec` otherwise isn't kept.
+- **Operator:** `--operator <name>` (with any command), else `OZWELL_ADMIN_OPERATOR`, else
+  `$SUDO_USER`, `$USER`, the OS account name, the uid. `docker compose exec` has no
+  `$USER` and runs as `node`, so pass `-e OZWELL_ADMIN_OPERATOR=$USER` (as above) or
+  `--operator` to record the real person.
+
+Known gaps: the CLI is a separate process, so its operations don't appear in the running
+orchestrator's operation metrics; and a computer it deletes stays in the running
+orchestrator's lookup cache until its next tool call fails and is looked up again (then
+reported as not found).
+
 ## Providers
 
 `PROVIDER_URI`'s scheme selects a provider (`src/providers/index.ts`). The rest of the

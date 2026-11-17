@@ -120,7 +120,7 @@ export async function isReady(provider: Provider, id: string): Promise<{ c: Comp
 
 /** Wait until ready or the budget runs out (wait, then hand off; see create_computer). While
  * `starting`, a stopped status is expected (the platform hasn't caught up) and not final. */
-function waitReady(provider: Provider, c: Computer, timeoutMs: number, starting = false) {
+export function waitReady(provider: Provider, c: Computer, timeoutMs: number, starting = false, intervalMs = 1500) {
   return tracer.startActiveSpan('readiness.poll', { attributes: { 'ozwell.instance_id': c.id, 'ozwell.starting': starting } }, async (span) => {
     const end = Date.now() + timeoutMs;
     let last = { c: c as Computer | null, ready: false };
@@ -135,7 +135,7 @@ function waitReady(provider: Provider, c: Computer, timeoutMs: number, starting 
           span.setAttributes({ 'ozwell.ready': ready, 'ozwell.attempts': attempt, 'ozwell.dead': dead });
           return { c: last.c ?? c, ready };
         }
-        await new Promise((r) => setTimeout(r, 1500));
+        await new Promise((r) => setTimeout(r, intervalMs));
       }
     } finally {
       span.end();

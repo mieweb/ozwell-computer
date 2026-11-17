@@ -15,7 +15,7 @@
 import { request } from 'node:http';
 import { randomBytes } from 'node:crypto';
 import type { Computer, CreateOptions, Provider, ProviderFactory } from './types.ts';
-import { computerEnv, generateId } from './types.ts';
+import { computerEnv, createId } from './types.ts';
 
 const L = 'org.mieweb.ozwell-computer.';
 const LABEL = {
@@ -136,7 +136,11 @@ export class DockerProvider implements Provider {
   }
 
   async create(opts: CreateOptions): Promise<Computer> {
-    const id = generateId();
+    const id = createId(opts);
+    // Docker answers 409 for a taken name, but that may be an unmanaged container: say so plainly.
+    if (opts.id !== undefined && (await this.api.call('GET', `/containers/${encodeURIComponent(id)}/json`)).status !== 404) {
+      throw new Error(`a container named ${id} already exists`);
+    }
     const token = randomBytes(24).toString('base64url');
     const body = {
       Image: this.image,

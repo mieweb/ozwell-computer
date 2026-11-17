@@ -23,7 +23,7 @@ interface Session { id: string; protocol: string; lastUsed: number; url: string;
 export const INVALID_REQUEST_CODES = new Set([-32600, -32601, -32602]);
 
 /** fetch failure codes meaning the connection was never made, so nothing was sent. */
-const NOT_SENT = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EHOSTDOWN', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT']);
+export const NOT_SENT = new Set(['ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'EHOSTDOWN', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT']);
 
 export class InstanceError extends Error {
   readonly reason: string;
