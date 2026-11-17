@@ -7,7 +7,10 @@
 #
 # Per-computer rules include the orchestrator's health in their query (`and on() ...`),
 # not inhibition: computers are scraped through the orchestrator, so while it is down they
-# would all look unreachable, and that is one "Orchestrator down" email instead.
+# would all look unreachable, and that is one "Orchestrator down" email instead. While it is
+# down they keep their state (noDataState: KeepLast), so none is reported resolved.
+#
+# What each alert means and what to do: docs/alerts.md (keep it in sync; a test checks).
 #
 # Thresholds are first guesses; check them against real data (Explore) and adjust.
 # Alerting provisioning loads at Grafana startup only: `docker compose restart grafana`.
@@ -235,8 +238,13 @@ groups:
           dashboard: orchestrator-logs
 
   # ---- Computers ----
-  # Gated on the orchestrator being up (see the top of this file). No data is normal: no
-  # running computers, or none with a problem.
+  # Gated on the orchestrator being up (see the top of this file). Each query returns a
+  # series for every scraped computer (1 or the measured value when it has the problem, 0
+  # otherwise) plus an always-0 series without labels, so it is empty only while the
+  # orchestrator is down. That empty result is "no data", and noDataState: KeepLast keeps
+  # every computer alert as it was: no [RESOLVED] emails for computers that are still
+  # broken, and no new ones, until the orchestrator is back. A computer that recovers or is
+  # destroyed drops to 0 or out of the result and resolves normally.
   - orgId: 1
     name: computers
     folder: ozwell-computer
@@ -253,13 +261,14 @@ groups:
               refId: A
               instant: true
               # Only running computers are targets (/sd), so a stopped one never fires.
+              # Also covers a computer whose X display died: its server stops with it.
               expr: |
-                max by (instance_id, provider) (up{job="computers"} == bool 0) > 0
+                (max by (instance_id, provider) (up{job="computers"} == bool 0) or on() vector(0))
                 and on() (max(up{job="orchestrator"}) == 1)
           - *reduce
           - *threshold
         for: 10m
-        noDataState: OK
+        noDataState: KeepLast
         execErrState: KeepLast
         labels: { severity: warning }
         annotations:
@@ -276,17 +285,22 @@ groups:
             model:
               refId: A
               instant: true
-              # Share of time stalled (0-1): all tasks ("full") > 10%, or some > 50%.
+              # Share of time stalled (0-1) when all tasks ("full") were stalled > 10% of the
+              # time, or some > 50%; else 0.
               expr: |
                 (
-                  max by (instance_id, provider, resource) (rate(ozwell_cgroup_pressure_seconds_total{job="computers", kind="full"}[10m])) > 0.1
-                  or max by (instance_id, provider, resource) (rate(ozwell_cgroup_pressure_seconds_total{job="computers", kind="some"}[10m])) > 0.5
+                  (
+                    max by (instance_id, provider, resource) (rate(ozwell_cgroup_pressure_seconds_total{job="computers", kind="full"}[10m])) > 0.1
+                    or max by (instance_id, provider, resource) (rate(ozwell_cgroup_pressure_seconds_total{job="computers", kind="some"}[10m])) > 0.5
+                  )
+                  or 0 * max by (instance_id, provider, resource) (rate(ozwell_cgroup_pressure_seconds_total{job="computers"}[10m]))
+                  or on() vector(0)
                 )
                 and on() (max(up{job="orchestrator"}) == 1)
           - *reduce
           - *threshold
         for: 10m
-        noDataState: OK
+        noDataState: KeepLast
         execErrState: KeepLast
         labels: { severity: warning }
         annotations:
@@ -303,46 +317,27 @@ groups:
             model:
               refId: A
               instant: true
-              # memory.current includes page cache, which the kernel reclaims near the limit:
-              # sustained (10 min) and the pressure rule tell real trouble.
+              # Share of the memory limit in use (0-1). memory.current includes page cache,
+              # which the kernel reclaims near the limit: sustained (10 min) and the
+              # pressure rule tell real trouble.
               expr: |
                 (
                   max by (instance_id, provider) (ozwell_cgroup_memory_bytes{job="computers", scope="container"})
                   / max by (instance_id, provider) (ozwell_cgroup_memory_limit_bytes{job="computers"})
-                ) > 0.9
+                  or on() vector(0)
+                )
                 and on() (max(up{job="orchestrator"}) == 1)
           - *reduce
-          - *threshold
+          - refId: C
+            datasourceUid: __expr__
+            model: { refId: C, type: threshold, expression: B, conditions: [{ evaluator: { type: gt, params: [0.9] } }] }
         for: 10m
-        noDataState: OK
+        noDataState: KeepLast
         execErrState: KeepLast
         labels: { severity: warning }
         annotations:
           summary: 'Computer {{ $labels.instance_id }} uses {{ with $values.B }}{{ humanizePercentage .Value }}{{ end }} of its memory limit'
           description: Above 90% of the container's memory limit for 10 minutes.
-
-      - uid: ozwell-computer-x-down
-        title: Computer's X display down
-        condition: C
-        data:
-          - refId: A
-            relativeTimeRange: { from: 600, to: 0 }
-            datasourceUid: victoriametrics
-            model:
-              refId: A
-              instant: true
-              expr: |
-                max by (instance_id, provider) (ozwell_x_connected{job="computers"} == bool 0) > 0
-                and on() (max(up{job="orchestrator"}) == 1)
-          - *reduce
-          - *threshold
-        for: 5m
-        noDataState: OK
-        execErrState: KeepLast
-        labels: { severity: warning }
-        annotations:
-          summary: 'Computer {{ $labels.instance_id }}: X display disconnected'
-          description: The computer has had no X display for 5 minutes; desktop tools fail.
 
   # ---- The observability stack itself (vmagent's self-monitoring jobs) ----
   - orgId: 1
