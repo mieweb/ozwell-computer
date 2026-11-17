@@ -5,10 +5,10 @@ import { createId, type Computer, type Provider } from '../src/providers/types.t
 
 // ---- fake computers: just the REST routes the CLI uses
 
-type Behaviour = 'succeed' | 'unchanged' | 'fail' | 'restart' | 'hang' | 'instant';
+type Behaviour = 'succeed' | 'unchanged' | 'fail' | 'restart' | 'hang' | 'instant' | 'drop';
 interface FakeOpts {
   version?: string; latest?: string; supported?: boolean; roster?: Array<{ name: string; kind: string }>;
-  behaviour?: Behaviour; state?: string; at?: string; noUpdateRoute?: boolean; checkDelayMs?: number;
+  behaviour?: Behaviour; state?: string; at?: string; noUpdateRoute?: boolean; checkDelayMs?: number; statusDelayMs?: number;
 }
 
 const running = { now: 0, max: 0 };
@@ -43,12 +43,14 @@ async function fakeComputer(o: FakeOpts = {}) {
     if (route === 'GET /api/v1/presence') return send(200, { roster: s.roster });
     if (o.noUpdateRoute && req.url!.startsWith('/api/v1/update')) return send(501, { error: { reason: 'feature_unsupported', message: 'update checks are not running' } });
     if (route === 'POST /api/v1/update/check' && o.checkDelayMs) { setTimeout(() => send(200, status()), o.checkDelayMs); return; }
+    if (route === 'GET /api/v1/update' && o.statusDelayMs && s.applied) { setTimeout(() => send(200, status()), o.statusDelayMs); return; }
     if (route === 'GET /api/v1/update' || route === 'POST /api/v1/update/check') return send(200, status());
     if (route === 'POST /api/v1/update/apply') {
       s.applied++;
       s.upgrade = { state: 'requested', at: new Date().toISOString(), log: '' };
       running.now++; running.max = Math.max(running.max, running.now);
       const b = o.behaviour ?? 'succeed';
+      if (b === 'drop') { setTimeout(() => finish('succeeded'), 60); req.socket.destroy(); return; } // accepted, no answer
       if (b === 'instant') { finish('succeeded'); return send(202, status()); } // done before apply answers
       setTimeout(() => { s.upgrade = { ...s.upgrade, state: 'running' }; }, 20);
       if (b === 'restart') {
@@ -379,6 +381,31 @@ describe('admin update', () => {
     expect(results(h)[0]).toMatchObject({ outcome: 'timeout', detail: expect.stringMatching(/before applying/) });
     expect(late.f.s.applied).toBe(0);
     expect(h.audit).toEqual([]);
+  });
+
+  it('watches an upgrade whose apply response was lost instead of failing it', async () => {
+    const d = await onFake('dropped', { latest: '1.1.0', behaviour: 'drop' });
+    const h = harness(memoryProvider([d.c]).p);
+    expect(await h.run('update', '--id', 'dropped', '--json')).toBe(0);
+    expect(results(h)[0]).toMatchObject({ outcome: 'updated', after: '1.1.0' });
+    expect(d.f.s.applied).toBe(1);
+  });
+
+  it('fails when apply is refused outright', async () => {
+    const d = await onFake('noapply', { latest: '1.1.0', noUpdateRoute: false });
+    d.c.token = 'wrong'; // 401 on every call: never reaches apply
+    const h = harness(memoryProvider([d.c]).p);
+    expect(await h.run('update', '--id', 'noapply', '--json')).toBe(1);
+    expect(results(h)[0]).toMatchObject({ outcome: 'failed' });
+  });
+
+  it('does not count a result that arrives after --timeout', async () => {
+    // Finishes at ~120 ms, but each status answer takes 150 ms: the first poll that could
+    // see it starts before the deadline and would answer after it.
+    const late = await onFake('lateok', { latest: '1.1.0', statusDelayMs: 150 });
+    const h = harness(memoryProvider([late.c]).p, { pollMs: 50 });
+    expect(await h.run('update', '--id', 'lateok', '--timeout', '200ms', '--json')).toBe(1);
+    expect(results(h)[0]).toMatchObject({ outcome: 'timeout' });
   });
 
   it('gives up at --timeout', async () => {

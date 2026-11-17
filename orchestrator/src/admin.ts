@@ -280,7 +280,13 @@ async function updateOne(deps: AdminDeps, c: Computer, o: { force: boolean; time
       // Never start a disruptive upgrade we have no time left to watch.
       if (Date.now() >= deadline) return { ...base, outcome: 'timeout', before, detail: `--timeout ran out before applying; nothing was changed` };
       deps.audit({ action: 'update', instance: c.id, owner: observedOwner(c), from: before, to: checked.latest, forced: people.length > 0, outcome: 'requested' }, 'admin update');
-      await api.applyUpdate();
+      try {
+        await api.applyUpdate();
+      } catch (e) {
+        // Sent but unanswered (e.g. the connection dropped as the server restarted): the
+        // upgrade may be under way, so watch it rather than fail or apply again.
+        if (!(e instanceof InstanceError && e.reason === 'target_unavailable' && !e.unreachable)) throw e;
+      }
     } // else already upgrading: wait on it
   } catch (e) {
     return { ...base, outcome: 'failed', before, detail: (e as Error).message };
@@ -292,7 +298,9 @@ async function updateOne(deps: AdminDeps, c: Computer, o: { force: boolean; time
   let last: UpdateStatus | null = null;
   while (Date.now() < deadline) {
     await sleep(Math.min(deps.pollMs ?? 3000, Math.max(0, deadline - Date.now())));
-    try { last = await api.updateStatus(); } catch { continue; }
+    const left = deadline - Date.now();
+    if (left <= 0) break; // no result received after --timeout counts
+    try { last = await api.updateStatus(left); } catch { continue; }
     const st = last.upgrade?.state;
     if (!TERMINAL.has(st) || `${st}@${last.upgrade.at}` === stale) continue;
     const r = { ...base, before, after: last.current };

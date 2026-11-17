@@ -39,7 +39,7 @@ export class ComputerApi {
       res = await fetch(`${this.url}${path}`, {
         method,
         headers: { authorization: `Bearer ${this.token}`, accept: 'application/json', ...traceCarrier() },
-        signal: AbortSignal.timeout(Math.max(timeoutMs, this.timeoutMs)),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (e) {
       throw new InstanceError('target_unavailable', `cannot reach the computer: ${(e as Error).message}`, NOT_SENT.has((e as any).cause?.code));
@@ -57,10 +57,11 @@ export class ComputerApi {
   async version(): Promise<string> { return (await this.call<{ version: string }>('GET', '/api/v1/capabilities')).version; }
   /** People and agents on the desktop now. */
   async presence(): Promise<Participant[]> { return (await this.call<{ roster: Participant[] }>('GET', '/api/v1/presence')).roster ?? []; }
-  /** Update status; an update-less computer (feature_unsupported) is reported as unsupported. */
-  async updateStatus(): Promise<UpdateStatus> {
+  /** Update status; an update-less computer (feature_unsupported) is reported as unsupported.
+   * `timeoutMs` caps this request below the client's default (a caller's remaining budget). */
+  async updateStatus(timeoutMs?: number): Promise<UpdateStatus> {
     try {
-      return await this.call<UpdateStatus>('GET', '/api/v1/update');
+      return await this.call<UpdateStatus>('GET', '/api/v1/update', Math.min(timeoutMs ?? this.timeoutMs, this.timeoutMs));
     } catch (e) {
       if (e instanceof InstanceError && e.reason === 'feature_unsupported') {
         return { supported: false, limitation: e.message, current: null, latest: null, available: false, error: null, upgrade: { state: 'idle' } };
@@ -69,6 +70,6 @@ export class ComputerApi {
     }
   }
   /** The computer allows its own check 15 s (index fetch or git ls-remote): give it more. */
-  checkUpdate(): Promise<UpdateStatus> { return this.call('POST', '/api/v1/update/check', CHECK_TIMEOUT_MS); }
+  checkUpdate(): Promise<UpdateStatus> { return this.call('POST', '/api/v1/update/check', Math.max(CHECK_TIMEOUT_MS, this.timeoutMs)); }
   applyUpdate(): Promise<UpdateStatus> { return this.call('POST', '/api/v1/update/apply'); }
 }
