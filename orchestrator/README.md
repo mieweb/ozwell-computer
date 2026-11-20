@@ -225,8 +225,10 @@ Rollout on the orchestrator host:
 3. `sudo systemctl disable --now ozwell-computer-orchestrator`
 4. `docker compose up -d --build`, then `deploy/smoke.sh`.
 5. Reverse proxy: the orchestrator is on `127.0.0.1:8090` (`ORCHESTRATOR_PUBLISH_PORT`). Add Grafana at
-   `127.0.0.1:3000` and set `GF_SERVER_ROOT_URL` in `.env` to its public URL.
-   grafana-mcp is on `127.0.0.1:8092` (see "LLM access for root-cause analysis").
+   `127.0.0.1:3000` and set `GF_SERVER_ROOT_URL` in `.env` to its public URL. If
+   grafana-mcp should be reachable from other machines, add it at `127.0.0.1:8000` and set
+   `GRAFANA_MCP_ALLOWED_HOSTS` to its public hostname (see "LLM access for root-cause
+   analysis").
 
 Rollback: `docker compose down && sudo systemctl enable --now ozwell-computer-orchestrator`.
 
@@ -273,11 +275,15 @@ orchestrator's public URL from outside.
 gives an MCP client (Claude Code, OpenCode, VS Code, ...) read-only access to the
 metrics, logs and traces through Grafana, to investigate incidents.
 
-- **Endpoint:** `http://127.0.0.1:8092/mcp` (Streamable HTTP), published by `proxy`
-  (`GRAFANA_MCP_BIND`, `GRAFANA_MCP_PORT`). It is never on the computers network. From
-  another machine, tunnel it (`ssh -L 8092:127.0.0.1:8092 <host>`) or route it through
-  the external reverse proxy with TLS, as a route of its own (not under the
-  orchestrator's).
+- **Endpoint:** `http://127.0.0.1:8000/mcp` (Streamable HTTP). Like Grafana, it
+  publishes its own port (`GRAFANA_MCP_BIND`, `GRAFANA_MCP_PORT`), and is never on the
+  computers network. From another machine, tunnel it (`ssh -L 8000:127.0.0.1:8000
+  <host>`) or route a hostname to it in the external reverse proxy, with TLS.
+- **Host check:** grafana-mcp answers only requests whose `Host` is
+  `localhost`/`127.0.0.1`/`[::1]` with the published port, or one of
+  `GRAFANA_MCP_ALLOWED_HOSTS` (comma-separated; set it to the reverse proxy's hostname,
+  e.g. `grafana-mcp.example.com`). Anything else gets 403 `host not allowed`. A tunnel
+  must use the same local port.
 - **Caller token:** clients send `Authorization: Bearer <MCP_GRAFANA_SERVER_TOKEN>` (from
   `.env`). It only opens grafana-mcp; it is not a Grafana credential.
 - **Grafana credential:** one Viewer service account, `mcp`, shared by every caller. The
@@ -290,8 +296,9 @@ metrics, logs and traces through Grafana, to investigate incidents.
   `docker compose exec grafana grafana cli admin reset-admin-password '<new>'`.
 - **Read-only:** `--disable-write` (no create, update or delete tools), `--disable-api`
   (no raw Grafana API passthrough), only the tool categories RCA needs, and a Viewer
-  token, so Grafana refuses writes anyway. `proxy` drops `X-Grafana-*` request headers,
-  so callers can't pick another Grafana, org or credential.
+  token, so Grafana refuses writes anyway. Choosing another Grafana (`X-Grafana-URL`) is
+  off; a caller can still send its own `X-Grafana-Service-Account-Token`, which only
+  gives it what that token already allows.
 - **Data:** metrics through VictoriaMetrics, logs through VictoriaLogs (LogsQL, with the
   Loki tools), traces through `VictoriaTraces (Tempo)`, a Tempo datasource on
   VictoriaTraces' Tempo-compatible API (experimental there; the dashboards keep the
@@ -309,14 +316,14 @@ metrics, logs and traces through Grafana, to investigate incidents.
 Connect a client, e.g. Claude Code:
 
 ```bash
-claude mcp add --transport http ozwell-grafana http://127.0.0.1:8092/mcp \
+claude mcp add --transport http ozwell-grafana http://127.0.0.1:8000/mcp \
   --header "Authorization: Bearer $(grep ^MCP_GRAFANA_SERVER_TOKEN= orchestrator/.env | cut -d= -f2-)"
 ```
 
 or any client's JSON configuration:
 
 ```json
-{ "mcpServers": { "ozwell-grafana": { "type": "http", "url": "http://127.0.0.1:8092/mcp",
+{ "mcpServers": { "ozwell-grafana": { "type": "http", "url": "http://127.0.0.1:8000/mcp",
   "headers": { "Authorization": "Bearer <MCP_GRAFANA_SERVER_TOKEN>" } } } }
 ```
 

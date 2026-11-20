@@ -1,5 +1,5 @@
 // grafana-mcp: the token bootstrap (deploy/grafana-mcp/bootstrap-token.ts) against a fake
-// Grafana, and the compose, proxy and guide configuration it relies on.
+// Grafana, and the compose and guide configuration it relies on.
 import { mkdtempSync, readFileSync, statSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -137,16 +137,18 @@ describe('grafana-mcp configuration', () => {
   const service = compose.slice(compose.indexOf('\n  grafana-mcp:\n'), compose.indexOf('\nvolumes:\n'));
 
   it('runs read-only, behind a caller token, never at debug level', () => {
-    for (const flag of ['--disable-write', '--disable-api', '--transport=streamable-http', '--allowed-hosts=grafana-mcp:8000', '--usage-stats=disabled', '--log-level=info'])
+    for (const flag of ['--disable-write', '--disable-api', '--transport=streamable-http', '--address=0.0.0.0:8000', '--usage-stats=disabled', '--log-level=info'])
       expect(service).toContain(`- ${flag}\n`);
     expect(service).not.toMatch(/--log-level=debug|- --debug|--enabled-tools=[^\n]*\b(api|admin|rendering|runpanelquery)\b/);
     expect(service).toContain('MCP_GRAFANA_SERVER_TOKEN: ${MCP_GRAFANA_SERVER_TOKEN:?');
     expect(service).toContain('GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE: /run/grafana-mcp/token');
     expect(service).toContain('grafana-mcp-token: { condition: service_completed_successfully }');
-    // Published only through the proxy, which sets the Host it accepts and drops callers'
-    // Grafana URL, org and credential headers.
-    expect(service).not.toMatch(/^\s+ports:/m);
-    expect(caddy).toMatch(/:8092 \{\n\treverse_proxy grafana-mcp:8000 \{[^}]*header_up Host grafana-mcp:8000[^}]*header_up -X-Grafana-\*/);
+  });
+
+  it('is published like Grafana: its own loopback port, accepting that Host', () => {
+    expect(service).toContain('- "${GRAFANA_MCP_BIND:-127.0.0.1}:${GRAFANA_MCP_PORT:-8000}:8000"');
+    expect(service).toContain('- --allowed-hosts=localhost:${GRAFANA_MCP_PORT:-8000},127.0.0.1:${GRAFANA_MCP_PORT:-8000},[::1]:${GRAFANA_MCP_PORT:-8000},${GRAFANA_MCP_ALLOWED_HOSTS:-}\n');
+    expect(caddy).not.toContain('grafana-mcp');
   });
 
   it('has a Tempo datasource on VictoriaTraces, and the guide names only provisioned uids', () => {

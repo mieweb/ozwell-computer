@@ -45,8 +45,6 @@ services:
     volumes: [./deploy/caddy:/etc/caddy:ro]
     ports:
       - "${ORCHESTRATOR_BIND:-127.0.0.1}:${ORCHESTRATOR_PUBLISH_PORT:-8090}:8090"
-      # grafana-mcp, for LLM root-cause analysis (README.md).
-      - "${GRAFANA_MCP_BIND:-127.0.0.1}:${GRAFANA_MCP_PORT:-8092}:8092"
 
   victoriametrics:
     image: victoriametrics/victoria-metrics:v1.156.0
@@ -151,8 +149,9 @@ services:
     command:
       - --transport=streamable-http
       - --address=0.0.0.0:8000
-      # Only `proxy` reaches it, and it sets this Host (deploy/caddy/Caddyfile).
-      - --allowed-hosts=grafana-mcp:8000
+      # The Host values it accepts (a DNS-rebinding guard): the published loopback address,
+      # plus GRAFANA_MCP_ALLOWED_HOSTS (e.g. the external reverse proxy's hostname).
+      - --allowed-hosts=localhost:${GRAFANA_MCP_PORT:-8000},127.0.0.1:${GRAFANA_MCP_PORT:-8000},[::1]:${GRAFANA_MCP_PORT:-8000},${GRAFANA_MCP_ALLOWED_HOSTS:-}
       # Read-only: no create/update tools, no raw Grafana API passthrough. Only the
       # categories RCA needs (the defaults add IRM, OnCall, rendering, ... we don't run).
       - --disable-write
@@ -171,6 +170,9 @@ services:
     volumes:
       - grafana-mcp-token:/run/grafana-mcp:ro
       - ./deploy/grafana-mcp:/etc/grafana-mcp:ro
+    # Like Grafana: its own port, routed and TLS-terminated by the external reverse proxy.
+    ports:
+      - "${GRAFANA_MCP_BIND:-127.0.0.1}:${GRAFANA_MCP_PORT:-8000}:8000"
     depends_on:
       grafana-mcp-token: { condition: service_completed_successfully }
 

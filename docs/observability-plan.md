@@ -56,7 +56,8 @@ The "Later" items are not.
 | Retention | Metrics 30 days, logs 14 days, traces 7 days. |
 | LLM access (RCA) | One MCP server, `grafana/mcp-grafana` (pinned), as `grafana-mcp` in `orchestrator/compose.yml`, over Streamable HTTP. Not the VictoriaMetrics/Logs/Traces MCP servers, and the backends are unchanged. Metrics through the VictoriaMetrics datasource, logs through VictoriaLogs (mcp-grafana's Loki tools speak LogsQL to it), traces through a Tempo datasource on VictoriaTraces' Tempo API (its trace tools are Tempo-only). See "LLM access for root-cause analysis" below. |
 | LLM access: credentials | One shared Grafana Viewer service account (`mcp`), with a token minted on every `docker compose up` by the one-shot `grafana-mcp-token` and older tokens revoked; nothing set by hand. Callers authenticate to grafana-mcp with a separate token, `MCP_GRAFANA_SERVER_TOKEN` from `.env`. No per-person attribution for now. |
-| LLM access: read-only | `--disable-write`, `--disable-api`, only the tool categories RCA needs, a Viewer token, and `proxy` drops callers' `X-Grafana-*` headers. Published only through `proxy` on `127.0.0.1:8092`, never on the computers network. |
+| LLM access: read-only | `--disable-write`, `--disable-api`, only the tool categories RCA needs, and a Viewer token. |
+| LLM access: publishing | Like Grafana: grafana-mcp publishes its own port (`GRAFANA_MCP_PORT`, default 8000) on loopback, and the external reverse proxy handles routing and TLS. Not through `proxy` (Caddy is there for orchestrator rollouts), never on the computers network. It accepts only `Host` values for that port on loopback plus `GRAFANA_MCP_ALLOWED_HOSTS`. |
 
 ## Current state (summary)
 
@@ -417,11 +418,11 @@ view of all three signals. Setup and client configuration: `orchestrator/README.
 "LLM access for root-cause analysis".
 
 ```
-MCP client ──Bearer MCP_GRAFANA_SERVER_TOKEN──► proxy :8092 ──► grafana-mcp :8000
-                                                                  │ Viewer token (file, re-read per request)
-                                                                  ▼
-                                                    Grafana ──► VictoriaMetrics, VictoriaLogs,
-                                                                VictoriaTraces (/select/tempo)
+MCP client ──Bearer MCP_GRAFANA_SERVER_TOKEN──► grafana-mcp 127.0.0.1:8000
+             (external reverse proxy or a tunnel)   │ Viewer token (file, re-read per request)
+                                                    ▼
+                                      Grafana ──► VictoriaMetrics, VictoriaLogs,
+                                                  VictoriaTraces (/select/tempo)
 grafana-mcp-token (one-shot, every `up`) ──admin──► Grafana: ensure SA `mcp` = Viewer, new token, revoke old
 ```
 
