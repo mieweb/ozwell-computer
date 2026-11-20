@@ -64,3 +64,24 @@ datasources:
           matcherRegex: trace_id
           url: "$${__value.raw}"
           datasourceUid: victoriatraces
+
+  # The same traces through VictoriaTraces' Tempo-compatible API (experimental there), for
+  # grafana-mcp: its trace tools (TraceQL search, fetch by id, attribute names and values)
+  # only work with Tempo datasources. Dashboards keep using the Jaeger one above.
+  - name: VictoriaTraces (Tempo)
+    uid: victoriatraces-tempo
+    type: tempo
+    access: proxy
+    url: http://victoriatraces:10428/select/tempo
+    editable: false
+    jsonData:
+      # VictoriaTraces has no gRPC streaming API.
+      streamingEnabled:
+        search: false
+        metrics: false
+      tracesToLogsV2:
+        datasourceUid: victorialogs
+        spanStartTimeShift: -5m
+        spanEndTimeShift: 5m
+        customQuery: true
+        query: 'trace_id:="$${__span.traceId}" OR "$${__span.traceId}"'
