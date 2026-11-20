@@ -1,7 +1,8 @@
 // Run by smoke.sh inside the orchestrator container (the backends publish no ports).
 // Sends one traced request to the orchestrator, then waits for its trace in VictoriaTraces,
 // the orchestrator's metrics in VictoriaMetrics, its log line in VictoriaLogs, and a journal
-// entry sent to ORCHESTRATOR_LOG_SHIP_URL (the instance log path).
+// entry sent to ORCHESTRATOR_LOG_SHIP_URL (the instance log path). Then reads the same
+// metric, log line and trace back through grafana-mcp (behind `proxy`), as an MCP client.
 import { randomBytes } from 'node:crypto';
 
 const trace = randomBytes(16).toString('hex');
@@ -48,4 +49,52 @@ await shipped.body?.cancel();
 if (!shipped.ok) fail(`${ship} answered ${shipped.status}`);
 await waitFor('journal entry in VictoriaLogs', async () =>
   (await (await fetch('http://victorialogs:9428/select/logsql/query?query=' + encodeURIComponent(`"${marker}"`))).text()).includes(marker));
+
+// grafana-mcp: one MCP session through `proxy`, then a metric, the log line and the trace.
+const mcpToken = process.env.MCP_GRAFANA_SERVER_TOKEN;
+if (!mcpToken) fail('MCP_GRAFANA_SERVER_TOKEN is not set (smoke.sh reads it from .env)');
+let session;
+let rpcId = 0;
+async function mcp(method, params) {
+  const id = method.startsWith('notifications/') ? undefined : ++rpcId;
+  const res = await fetch('http://proxy:8092/mcp', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${mcpToken}`, 'content-type': 'application/json',
+      accept: 'application/json, text/event-stream', ...(session ? { 'mcp-session-id': session } : {}),
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', ...(id ? { id } : {}), method, params }),
+  });
+  session = res.headers.get('mcp-session-id') ?? session;
+  const text = await res.text();
+  if (!res.ok) fail(`grafana-mcp ${method}: HTTP ${res.status} ${text.slice(0, 200)}`);
+  if (!id) return null;
+  // A JSON body, or an SSE stream whose data lines carry the response.
+  const msgs = res.headers.get('content-type')?.includes('event-stream')
+    ? text.split('\n').filter((l) => l.startsWith('data:')).map((l) => JSON.parse(l.slice(5)))
+    : [JSON.parse(text)];
+  const msg = msgs.find((m) => m.id === id);
+  if (!msg || msg.error) fail(`grafana-mcp ${method}: ${JSON.stringify(msg?.error ?? text).slice(0, 200)}`);
+  return msg.result;
+}
+const tool = async (name, args) => {
+  const r = await mcp('tools/call', { name, arguments: args });
+  if (r.isError) throw new Error(r.content?.[0]?.text);
+  return r.content.map((c) => c.text ?? '').join('\n');
+};
+await mcp('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'smoke', version: '0' } });
+await mcp('notifications/initialized');
+const tools = (await mcp('tools/list')).tools.map((t) => t.name);
+for (const t of ['query_prometheus', 'query_loki_logs', 'get_tempo_trace', 'search_tempo_traces'])
+  if (!tools.includes(t)) fail(`grafana-mcp has no ${t} tool`);
+// Read-only: no write tools are offered.
+for (const t of ['update_dashboard', 'create_annotation', 'alerting_rules_write'])
+  if (tools.includes(t)) fail(`grafana-mcp offers the write tool ${t}`);
+console.log('ok: grafana-mcp session, read-only tool list');
+await waitFor('metric through grafana-mcp', async () =>
+  (await tool('query_prometheus', { datasourceUid: 'victoriametrics', expr: 'up{job="orchestrator"}', queryType: 'instant', endTime: 'now' })).includes('"job":"orchestrator"'));
+await waitFor('log line through grafana-mcp', async () =>
+  (await tool('query_loki_logs', { datasourceUid: 'victorialogs', logql: `trace_id:="${trace}"`, limit: 1, startRfc3339: 'now-15m' })).includes(trace));
+await waitFor('trace through grafana-mcp (Tempo API)', async () =>
+  (await tool('get_tempo_trace', { datasourceUid: 'victoriatraces-tempo', trace_id: trace })).includes('ozwell-computer-orchestrator'));
 console.log('smoke test passed');

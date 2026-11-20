@@ -1,6 +1,6 @@
 # Observability plan: orchestrator and instances
 
-Status: plan with decisions recorded. Phases 0–6 are implemented (`telemetry.ts`, `metrics.ts`, `operations.ts`,
+Status: plan with decisions recorded. Phases 0–8 are implemented (`telemetry.ts`, `metrics.ts`, `operations.ts`,
 `instrument-provider.ts`, `internal-server.ts`, `log-puller.ts` in `orchestrator/src/`; `journal.ts`, `routes/logs.ts`,
 `trace-context.ts` in the instance's `src/`; `orchestrator/Dockerfile` and `orchestrator/deploy/`).
 The "Later" items are not.
@@ -54,6 +54,9 @@ The "Later" items are not.
 | Alerting | Grafana Alerting only (no vmalert, no Alertmanager), declarative: rules, contact point, notification policy and templates in `orchestrator/deploy/grafana/provisioning/alerting/`, read at Grafana startup. Email only for now, SMTP from `.env` (`GF_SMTP_*`), recipients `ALERT_EMAIL_TO`. Notifications only: no paging. Grouped by `alertname` and `provider`. Every rule has `severity` (`critical`/`warning`) for routing later. Per-computer rules are gated on `up{job="orchestrator"}` instead of inhibition, and keep their state while it is down. What each alert means: `docs/alerts.md`. Alerts carry `instance_id`, never owner emails or tool arguments; emails link to the Instance drill-down. |
 | Replicas | One orchestrator replica, two briefly during an update: `docker rollout orchestrator` (docker-rollout plugin) starts the new one, then the old one drains. Caddy (`proxy`) owns port 8090 and retries refused connections on the other replica. Computer logs may be pulled twice for the few seconds of overlap. |
 | Retention | Metrics 30 days, logs 14 days, traces 7 days. |
+| LLM access (RCA) | One MCP server, `grafana/mcp-grafana` (pinned), as `grafana-mcp` in `orchestrator/compose.yml`, over Streamable HTTP. Not the VictoriaMetrics/Logs/Traces MCP servers, and the backends are unchanged. Metrics through the VictoriaMetrics datasource, logs through VictoriaLogs (mcp-grafana's Loki tools speak LogsQL to it), traces through a Tempo datasource on VictoriaTraces' Tempo API (its trace tools are Tempo-only). See "LLM access for root-cause analysis" below. |
+| LLM access: credentials | One shared Grafana Viewer service account (`mcp`), with a token minted on every `docker compose up` by the one-shot `grafana-mcp-token` and older tokens revoked; nothing set by hand. Callers authenticate to grafana-mcp with a separate token, `MCP_GRAFANA_SERVER_TOKEN` from `.env`. No per-person attribution for now. |
+| LLM access: read-only | `--disable-write`, `--disable-api`, only the tool categories RCA needs, a Viewer token, and `proxy` drops callers' `X-Grafana-*` headers. Published only through `proxy` on `127.0.0.1:8092`, never on the computers network. |
 
 ## Current state (summary)
 
@@ -365,7 +368,8 @@ All scrape routes are served **only on the internal listener**.
   - VictoriaMetrics, VictoriaLogs, VictoriaTraces and vmagent publish no ports.
 - **Provisioning:** under `orchestrator/deploy/grafana/provisioning/`.
   - Datasources: VictoriaMetrics, VictoriaLogs (plugin), VictoriaTraces (Jaeger
-    type), and "VictoriaTraces (spans)": the same VictoriaTraces through the VictoriaLogs
+    type), "VictoriaTraces (Tempo)" (the Tempo API, for grafana-mcp; below), and
+    "VictoriaTraces (spans)": the same VictoriaTraces through the VictoriaLogs
     plugin, querying spans with LogsQL. Jaeger search can filter on span tags, but its
     results are one row per trace named after the root span, with no tool, status or
     arguments, and it can't filter on resource attributes (the computer spans'
@@ -405,6 +409,63 @@ All scrape routes are served **only on the internal listener**.
   their state (`noDataState: KeepLast`) instead of resolving.
   Not covered: Grafana itself stopping, and an outside check of the public URL.
 
+## LLM access for root-cause analysis
+
+Issue #71. An MCP client (an LLM assistant) investigates incidents through one MCP server,
+[`grafana/mcp-grafana`](https://github.com/grafana/mcp-grafana), with Grafana's read-only
+view of all three signals. Setup and client configuration: `orchestrator/README.md`,
+"LLM access for root-cause analysis".
+
+```
+MCP client ──Bearer MCP_GRAFANA_SERVER_TOKEN──► proxy :8092 ──► grafana-mcp :8000
+                                                                  │ Viewer token (file, re-read per request)
+                                                                  ▼
+                                                    Grafana ──► VictoriaMetrics, VictoriaLogs,
+                                                                VictoriaTraces (/select/tempo)
+grafana-mcp-token (one-shot, every `up`) ──admin──► Grafana: ensure SA `mcp` = Viewer, new token, revoke old
+```
+
+- **Signals.** Metrics: `query_prometheus` and friends on `victoriametrics`. Logs:
+  `query_loki_logs` with LogsQL on `victorialogs`. Traces: `search_tempo_traces` (TraceQL),
+  `get_tempo_trace` and the attribute tools on `victoriatraces-tempo`.
+- **Tempo API, verified.** VictoriaTraces calls its Tempo API experimental; it was checked
+  against our data with mcp-grafana 2.3.0 and VictoriaTraces v0.13.0: search by span name
+  (`{ name = "mcp.tools/call run_command" }`), by `ozwell.*` attributes
+  (`{ span.ozwell.instance_id = "…" && status = error }`, `{ span.ozwell.kind =
+  "operation" }`, `{ resource.ozwell.instance_id = "…" }` for computer spans) and fetch by
+  trace id (orchestrator and computer spans in one trace). Limits found: attributes must be
+  scoped (`span.`/`resource.`; unscoped `.attr` matches nothing),
+  `list_tempo_attribute_names` returns nothing when given a `scope` (it works without
+  one), and LogsQL `| stats` results only come back through `query_loki_logs` with a
+  `_time` field. All three are in the RCA guide. `deploy/smoke.sh` reads a metric, a log line and a trace back through
+  grafana-mcp, so a regression shows there.
+- **Bootstrap.** Grafana's file provisioning can't create service accounts or tokens, so
+  `orchestrator/deploy/grafana-mcp/bootstrap-token.ts` runs as the one-shot
+  `grafana-mcp-token` (plain `node` image, admin credentials only there): wait for
+  Grafana, ensure the `mcp` account with role Viewer (create, or reset a changed role or a
+  disabled account), mint a token, check it works, write it atomically (`0600`, owned by
+  mcp-grafana's image user `1000:999`) to the `grafana-mcp-token` volume, revoke the
+  account's older tokens. It rotates on every `up` rather than only when the token stops
+  working: simpler, and a leaked token lives at most until the next `up`. grafana-mcp
+  mounts the volume read-only and starts only after the one-shot succeeded.
+- **Teaching the model our data.** `orchestrator/deploy/grafana-mcp/rca-guide.md`: the
+  datasources, metric names and labels (and the join on
+  `ozwell_orchestrator_computer_info`), log fields of the orchestrator and the journals,
+  span names and attributes, a recipe (instance id and time → metadata, scrape status and
+  pressure → logs → traces) and pitfalls. grafana-mcp sends it to every client in its
+  server instructions (`--instructions-append`).
+- **Privacy (open decision).** Tool results go to the LLM provider behind the client: full
+  tool arguments, user emails and computers' journals (anonymization is still deferred).
+  Only models or providers under an appropriate agreement, or self-hosted, should be used;
+  which ones is not decided yet. grafana-mcp logs at `info`, never `debug` (which logs
+  Grafana responses), and sends no usage statistics.
+- **Later.** Per-person identity once Grafana has SSO (Grafana JWT auth plus mcp-grafana's
+  `GRAFANA_FORWARD_HEADERS`; configuration only); higher-level tools
+  (`investigate_computer`, `explain_tool_call`) if the generic tools and the guide fall
+  short; automatic first-draft RCAs from alerts.
+- **Limits.** No self-monitoring of the stack yet (#65, gap 3); computers' journals,
+  pressure and versions exist only from 2026.11.3, and their spans from 2026.11.4.
+
 ## Retention
 
 - VictoriaMetrics: `-retentionPeriod=30d`
@@ -423,7 +484,8 @@ All scrape routes are served **only on the internal listener**.
 | 5 | Log puller | fake instance + fake VictoriaLogs |
 | 6 | Dockerfile, compose (plus a docker:// override), vmagent config, Grafana provisioning + dashboards | manual bring-up; smoke script asserting a trace, a metric series and a log line arrive |
 | 7 | Instance spans: `GET /api/v1/traces` span buffer; puller traces stream to VictoriaTraces | root `test:unit` (buffer, route); `test/integration/traces.test.ts`; orchestrator fake instance + fake VictoriaTraces |
-| Later | Paging and other alert destinations; PHI/anonymization layer; cardinality limits | — |
+| 8 | grafana-mcp (LLM access for RCA): Tempo datasource, token bootstrap, RCA guide | `orchestrator`: `npm test` (`test/grafana-mcp.test.ts`: bootstrap against a fake Grafana, compose and proxy flags); `docker compose up -d`; `deploy/smoke.sh` (metric, log and trace through grafana-mcp) |
+| Later | Paging and other alert destinations; PHI/anonymization layer; cardinality limits; per-person Grafana identity for grafana-mcp | — |
 
 If computer MCP tools change, regenerate the catalog: `make build && npm run mcp-tools`.
 
@@ -443,8 +505,8 @@ The instance gets no new runtime dependencies; it uses the existing `journalctl`
 - Restarting the orchestrator loses in-flight operation timings, and instance logs
   emitted while it was down are not backfilled.
 - Full arguments and user emails in logs and traces mean the observability stack holds
-  PHI. Access is limited to the Grafana admin on the same host until the anonymization
-  layer lands.
+  PHI. Access is limited to the Grafana admin on the same host, and to grafana-mcp's
+  callers (and so their LLM provider), until the anonymization layer lands.
 - Admin CLI creates, deletes and updates are in the audit log and traces only, not on the
   operation dashboards (separate process, no metrics endpoint).
 - Having no cardinality limit means a large fleet can grow VictoriaMetrics series

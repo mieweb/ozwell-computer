@@ -23,3 +23,16 @@
 		}
 	}
 }
+
+# grafana-mcp (README.md, "LLM access for root-cause analysis"): its own port, so a public
+# route to the orchestrator never exposes it. grafana-mcp checks the caller token
+# (MCP_GRAFANA_SERVER_TOKEN) itself.
+:8092 {
+	reverse_proxy grafana-mcp:8000 {
+		# The one Host grafana-mcp accepts (--allowed-hosts): it guards against DNS rebinding.
+		header_up Host grafana-mcp:8000
+		# Callers can't pick another Grafana, org or credential: every call uses the
+		# Viewer service account token from grafana-mcp-token.
+		header_up -X-Grafana-*
+	}
+}
