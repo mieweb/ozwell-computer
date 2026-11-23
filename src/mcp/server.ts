@@ -163,15 +163,25 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
 
   const a11y = () => { if (!ctx.a11y) throw new ApiError('feature_unsupported', 'accessibility disabled', { feature: 'a11y' }); return ctx.a11y; };
   mcp.registerTool('get_ui_tree', {
-    description: 'Accessibility tree (flat, pre-order) for a window or the whole desktop. Use element_id + snapshot_id with ui_action.',
+    description: 'Accessibility tree (flat, pre-order) for a window or the whole desktop. Includes nonempty accessible descriptions (useful for icon controls). Use element_id + snapshot_id with ui_action.',
     inputSchema: { window: z.string().optional(), max_depth: z.number().int().optional(), max_nodes: z.number().int().max(5000).optional() },
   }, async (a) => wrap(async () => {
     const t = await a11y().tree({ window: a.window, max_depth: a.max_depth, max_nodes: a.max_nodes ?? 800 });
-    return text({ ...t, nodes: t.nodes.map(({ description: _d, app: _a, ...n }) => n) });
+    return text({ ...t, nodes: t.nodes.map(({ description, app: _a, ...n }) => ({ ...n, ...(description ? { description } : {}) })) });
   }));
   mcp.registerTool('find_element', {
-    description: 'Find accessible elements by role (button, text_field, menuitem, …), name, or states.',
-    inputSchema: { role: z.string().optional(), name: z.string().optional(), name_contains: z.string().optional(), value_contains: z.string().optional(), states: z.array(z.string()).optional(), window: z.string().optional(), max_results: z.number().int().max(200).optional() },
+    description: 'Find accessible elements by role, name, description, value, or states. All supplied filters must match. Empty string filters are ignored; use name_empty: true to find unnamed controls.',
+    inputSchema: {
+      role: z.string().optional().describe('Normalized or AT-SPI role, e.g. button, text_field, menuitem'),
+      name: z.string().optional().describe('Exact, case-sensitive accessible name; empty string is ignored'),
+      name_contains: z.string().optional().describe('Case-insensitive substring of the accessible name'),
+      name_empty: z.boolean().optional().describe('When true, only match controls with an empty accessible name; false adds no constraint'),
+      description: z.string().optional().describe('Exact, case-sensitive accessible description; empty string is ignored'),
+      description_contains: z.string().optional().describe('Case-insensitive substring of the accessible description, useful for icon controls'),
+      value_contains: z.string().optional().describe('Case-insensitive substring of the value'),
+      states: z.array(z.string()).optional().describe('States that must all be present'),
+      window: z.string().optional(), max_results: z.number().int().max(200).optional(),
+    },
   }, async (a) => wrap(async () => text(await a11y().find(a))));
   mcp.registerTool('ui_action', {
     description: 'Perform an accessibility action on an element: press, focus, set_value, or any action name it lists. Does not move the mouse.',

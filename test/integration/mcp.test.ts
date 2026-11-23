@@ -111,10 +111,15 @@ describe('MCP tools', () => {
     const id = await zenity(['--entry', '--text=mcp'], '/tmp/oz-mcp-a11y.txt', 'oz-mcp-a11y');
     const tree = await tool('get_ui_tree', { window: id });
     expect(tree.nodes.some((n: any) => n.role === 'text_field')).toBe(true);
+    expect(tree.nodes.every((n: any) => !('description' in n) || n.description.length > 0)).toBe(true);
     const field = await tool('find_element', { role: 'text_field', window: id });
     expect(field.matches).toHaveLength(1);
     expect((await tool('ui_action', { snapshot_id: field.snapshot_id, element_id: field.matches[0].element_id, action: 'set_value', value: 'via mcp ✓' })).ok).toBe(true);
     const ok = await tool('find_element', { role: 'button', name: 'OK', window: id });
+    const substring = await tool('find_element', { role: 'button', name: '', name_contains: 'ok', window: id });
+    expect(substring.matches.map((n: any) => n.name)).toContain('OK');
+    const httpSubstring = await api('POST', '/api/v1/a11y/find', { role: 'button', name: '', name_contains: 'ok', window: id });
+    expect(httpSubstring.body.matches.map((n: any) => n.name)).toContain('OK');
     expect((await tool('ui_action', { snapshot_id: ok.snapshot_id, element_id: ok.matches[0].element_id, action: 'press' })).ok).toBe(true);
     expect(await fileContent('/tmp/oz-mcp-a11y.txt')).toBe('via mcp ✓\n');
   });

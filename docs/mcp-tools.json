@@ -418,7 +418,7 @@
     },
     {
       "name": "get_ui_tree",
-      "description": "Accessibility tree (flat, pre-order) for a window or the whole desktop. Use element_id + snapshot_id with ui_action.",
+      "description": "Accessibility tree (flat, pre-order) for a window or the whole desktop. Includes nonempty accessible descriptions (useful for icon controls). Use element_id + snapshot_id with ui_action.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
@@ -441,24 +441,41 @@
     },
     {
       "name": "find_element",
-      "description": "Find accessible elements by role (button, text_field, menuitem, …), name, or states.",
+      "description": "Find accessible elements by role, name, description, value, or states. All supplied filters must match. Empty string filters are ignored; use name_empty: true to find unnamed controls.",
       "inputSchema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
         "properties": {
           "role": {
+            "description": "Normalized or AT-SPI role, e.g. button, text_field, menuitem",
             "type": "string"
           },
           "name": {
+            "description": "Exact, case-sensitive accessible name; empty string is ignored",
             "type": "string"
           },
           "name_contains": {
+            "description": "Case-insensitive substring of the accessible name",
+            "type": "string"
+          },
+          "name_empty": {
+            "description": "When true, only match controls with an empty accessible name; false adds no constraint",
+            "type": "boolean"
+          },
+          "description": {
+            "description": "Exact, case-sensitive accessible description; empty string is ignored",
+            "type": "string"
+          },
+          "description_contains": {
+            "description": "Case-insensitive substring of the accessible description, useful for icon controls",
             "type": "string"
           },
           "value_contains": {
+            "description": "Case-insensitive substring of the value",
             "type": "string"
           },
           "states": {
+            "description": "States that must all be present",
             "type": "array",
             "items": {
               "type": "string"
