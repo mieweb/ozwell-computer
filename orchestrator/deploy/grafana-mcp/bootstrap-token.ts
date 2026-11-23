@@ -18,6 +18,8 @@ export interface BootstrapOptions {
   role?: string;
   /** How long to wait for Grafana to answer /api/health. */
   waitMs?: number;
+  /** Time limit for each Grafana API request (and each health check). */
+  requestTimeoutMs?: number;
   fetch?: typeof fetch;
   sleep?: (ms: number) => Promise<void>;
   log?: (msg: string) => void;
@@ -41,12 +43,16 @@ export async function bootstrap(o: BootstrapOptions): Promise<BootstrapResult> {
   const role = o.role ?? 'Viewer';
   const base = o.url.replace(/\/+$/, '');
   const basic = 'Basic ' + Buffer.from(`${o.user}:${o.password}`).toString('base64');
+  // Every request has a time limit: Grafana accepting a connection and never answering
+  // must fail the one-shot, not hang it (and grafana-mcp, which waits for it).
+  const requestTimeout = o.requestTimeoutMs ?? 30_000;
 
   async function api<T>(method: string, path: string, body?: unknown, auth = basic): Promise<T> {
     const res = await f(base + path, {
       method,
       headers: { authorization: auth, accept: 'application/json', ...(body === undefined ? {} : { 'content-type': 'application/json' }) },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(requestTimeout),
     });
     const text = await res.text();
     if (!res.ok) {
@@ -62,7 +68,9 @@ export async function bootstrap(o: BootstrapOptions): Promise<BootstrapResult> {
   const deadline = Date.now() + (o.waitMs ?? 120_000);
   for (;;) {
     try {
-      const res = await f(`${base}/api/health`);
+      // Never past the deadline, so a stalled health check still ends in the error below.
+      const left = Math.max(1, Math.min(requestTimeout, deadline - Date.now()));
+      const res = await f(`${base}/api/health`, { signal: AbortSignal.timeout(left) });
       await res.body?.cancel();
       if (res.ok) break;
     } catch { /* not up yet */ }

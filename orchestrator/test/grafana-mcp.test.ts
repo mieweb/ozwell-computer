@@ -126,6 +126,25 @@ describe('grafana-mcp token bootstrap', () => {
     const g = fakeGrafana({ healthFailures: Infinity });
     await expect(bootstrap({ ...opts(g, tokenFile()), waitMs: 0 })).rejects.toThrow(/did not come up/);
   });
+
+  // A Grafana that accepts connections but never answers: requests honour their signal.
+  const hanging = (async (_: unknown, init?: RequestInit) => new Promise<Response>((_r, reject) => {
+    init?.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+  })) as typeof fetch;
+
+  it('a stalled health check ends at the startup deadline', async () => {
+    const started = Date.now();
+    await expect(bootstrap({ ...opts(fakeGrafana(), tokenFile()), fetch: hanging, waitMs: 50, requestTimeoutMs: 60_000 }))
+      .rejects.toThrow(/did not come up/);
+    expect(Date.now() - started).toBeLessThan(5000);
+  });
+
+  it('a stalled API request fails instead of hanging', async () => {
+    const g = fakeGrafana();
+    const f = (async (input: string | URL | Request, init?: RequestInit) =>
+      String(input).endsWith('/api/health') ? g.fetch(input, init) : hanging(input, init)) as typeof fetch;
+    await expect(bootstrap({ ...opts(g, tokenFile()), fetch: f, requestTimeoutMs: 50 })).rejects.toThrow(/timeout|aborted/i);
+  });
 });
 
 describe('grafana-mcp configuration', () => {
