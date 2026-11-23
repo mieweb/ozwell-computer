@@ -313,11 +313,13 @@ metrics, logs and traces through Grafana, to investigate incidents.
   appropriate agreement (or self-hosted). grafana-mcp logs at `info`; don't raise it to
   `debug`, which logs Grafana responses.
 
-Connect a client, e.g. Claude Code:
+Connect a client, e.g. Claude Code. The token is read from the running container, so it
+is exactly what Compose resolved from `.env` (quotes and all):
 
 ```bash
+token=$(cd orchestrator && docker compose exec -T grafana-mcp printenv MCP_GRAFANA_SERVER_TOKEN)
 claude mcp add --transport http ozwell-grafana http://127.0.0.1:8000/mcp \
-  --header "Authorization: Bearer $(grep ^MCP_GRAFANA_SERVER_TOKEN= orchestrator/.env | cut -d= -f2-)"
+  --header "Authorization: Bearer $token"
 ```
 
 or any client's JSON configuration:
