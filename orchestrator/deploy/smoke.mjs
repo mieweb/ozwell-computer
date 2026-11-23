@@ -9,6 +9,10 @@ import { request } from 'node:http';
 const trace = randomBytes(16).toString('hex');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const fail = (m) => { console.error(`FAIL: ${m}`); process.exit(1); };
+// Every request is time-limited, so a service that accepts a connection and never answers
+// fails the check (or lets waitFor retry) instead of hanging it.
+const REQUEST_MS = 20_000;
+const timed = (url, init = {}) => fetch(url, { ...init, signal: AbortSignal.timeout(REQUEST_MS) });
 
 async function waitFor(what, check, secs = 90) {
   const end = Date.now() + secs * 1000;
@@ -19,7 +23,7 @@ async function waitFor(what, check, secs = 90) {
   }
 }
 
-const r = await fetch('http://127.0.0.1:8090/mcp', {
+const r = await timed('http://127.0.0.1:8090/mcp', {
   method: 'POST',
   headers: {
     authorization: `Bearer ${process.env.ORCHESTRATOR_TOKEN}`, 'x-ozwell-user-id': 'smoke-test',
@@ -33,48 +37,51 @@ if (r.status !== 200) fail(`POST /mcp answered ${r.status}`);
 console.log(`sent request with trace ${trace}`);
 
 await waitFor('trace in VictoriaTraces', async () =>
-  (await (await fetch(`http://victoriatraces:10428/select/jaeger/api/traces/${trace}`)).text()).includes(`"traceID":"${trace}"`));
+  (await (await timed(`http://victoriatraces:10428/select/jaeger/api/traces/${trace}`)).text()).includes(`"traceID":"${trace}"`));
 await waitFor('orchestrator metrics in VictoriaMetrics', async () =>
-  (await (await fetch('http://victoriametrics:8428/api/v1/query?query=' + encodeURIComponent('up{job="orchestrator"}==1'))).json()).data.result.length > 0);
+  (await (await timed('http://victoriametrics:8428/api/v1/query?query=' + encodeURIComponent('up{job="orchestrator"}==1'))).json()).data.result.length > 0);
 await waitFor('orchestrator log line in VictoriaLogs', async () =>
-  (await (await fetch('http://victorialogs:9428/select/logsql/query?query=' + encodeURIComponent(`trace_id:="${trace}"`))).text()).includes(trace));
+  (await (await timed('http://victorialogs:9428/select/logsql/query?query=' + encodeURIComponent(`trace_id:="${trace}"`))).text()).includes(trace));
 // The instance log path: one journal entry to ORCHESTRATOR_LOG_SHIP_URL, as the puller sends it.
 const ship = process.env.ORCHESTRATOR_LOG_SHIP_URL;
 if (!ship) fail('ORCHESTRATOR_LOG_SHIP_URL is not set');
 const marker = `smoke-journal-${trace}`;
-const shipped = await fetch(ship, {
+const shipped = await timed(ship, {
   method: 'POST', headers: { 'content-type': 'application/vnd.fdo.journal' },
   body: `__REALTIME_TIMESTAMP=${Date.now() * 1000}\nMESSAGE=${marker}\nOZWELL_INSTANCE_ID=smoke-test\n\n`,
 });
 await shipped.body?.cancel();
 if (!shipped.ok) fail(`${ship} answered ${shipped.status}`);
 await waitFor('journal entry in VictoriaLogs', async () =>
-  (await (await fetch('http://victorialogs:9428/select/logsql/query?query=' + encodeURIComponent(`"${marker}"`))).text()).includes(marker));
+  (await (await timed('http://victorialogs:9428/select/logsql/query?query=' + encodeURIComponent(`"${marker}"`))).text()).includes(marker));
 
 // grafana-mcp: an MCP client on the compose network. It only accepts its published Host
 // (localhost:<GRAFANA_MCP_PORT>), which fetch can't set, hence node:http.
 const mcpToken = process.env.MCP_GRAFANA_SERVER_TOKEN;
-if (!mcpToken) fail('MCP_GRAFANA_SERVER_TOKEN is not set (smoke.sh reads it from .env)');
+if (!mcpToken) fail('MCP_GRAFANA_SERVER_TOKEN is not set (smoke.sh reads it from the running grafana-mcp)');
 const mcpHost = `localhost:${process.env.GRAFANA_MCP_PORT || 8000}`;
 let rpcId = 0;
 function post(body) {
   return new Promise((resolve, reject) => {
     const req = request('http://grafana-mcp:8000/mcp', {
       method: 'POST',
+      signal: AbortSignal.timeout(REQUEST_MS),
       headers: {
         host: mcpHost, authorization: `Bearer ${mcpToken}`, 'content-type': 'application/json',
         accept: 'application/json, text/event-stream',
       },
     }, (res) => {
       let text = '';
-      res.setEncoding('utf8').on('data', (d) => { text += d; }).on('end', () => resolve({ status: res.statusCode, text }));
+      res.setEncoding('utf8').on('data', (d) => { text += d; }).on('end', () => resolve({ status: res.statusCode, text }))
+        .on('error', reject);
     });
     req.on('error', reject).end(body);
   });
 }
 async function mcp(method, params) {
   const id = method.startsWith('notifications/') ? undefined : ++rpcId;
-  const { status, text } = await post(JSON.stringify({ jsonrpc: '2.0', ...(id ? { id } : {}), method, params }));
+  const { status, text } = await post(JSON.stringify({ jsonrpc: '2.0', ...(id ? { id } : {}), method, params }))
+    .catch((e) => fail(`grafana-mcp ${method}: ${e.message}`));
   if (status >= 300) fail(`grafana-mcp ${method}: HTTP ${status} ${text.slice(0, 200)}`);
   if (!id) return null;
   // A JSON body, or an SSE stream whose data lines carry the response.
