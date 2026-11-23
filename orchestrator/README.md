@@ -213,20 +213,27 @@ the environment take precedence.
 Configure Ozwell's workspace MCP server as `http(s)://<orchestrator>/mcp` (Streamable
 HTTP) with the header `Authorization: Bearer <psk>`. Put TLS in front of it.
 
-### With Docker Compose (orchestrator + metrics, logs, traces, Grafana)
+### With Docker Compose (orchestrator + metrics, logs, traces, Grafana, grafana-mcp)
 
 Rollout on the orchestrator host:
 
 1. `cd orchestrator && sudo install -m 600 -o $USER /etc/default/ozwell-computer-orchestrator .env`
    (or `cp .env.example .env` on a new host).
 2. Add to `.env` (generate each with `openssl rand -base64 32`):
-   `ORCHESTRATOR_INTERNAL_TOKEN=…` and `GF_SECURITY_ADMIN_PASSWORD=…`.
+   `ORCHESTRATOR_INTERNAL_TOKEN=…`, `GF_SECURITY_ADMIN_PASSWORD=…` and
+   `MCP_GRAFANA_SERVER_TOKEN=…`.
 3. `sudo systemctl disable --now ozwell-computer-orchestrator`
 4. `docker compose up -d --build`, then `deploy/smoke.sh`.
 5. Reverse proxy: the orchestrator is on `127.0.0.1:8090` (`ORCHESTRATOR_PUBLISH_PORT`). Add Grafana at
-   `127.0.0.1:3000` and set `GF_SERVER_ROOT_URL` in `.env` to its public URL.
+   `127.0.0.1:3000` and set `GF_SERVER_ROOT_URL` in `.env` to its public URL. If
+   grafana-mcp should be reachable from other machines, add it at `127.0.0.1:8000` and set
+   `GRAFANA_MCP_ALLOWED_HOSTS` to its public hostname (see "LLM access for root-cause
+   analysis").
 
 Rollback: `docker compose down && sudo systemctl enable --now ozwell-computer-orchestrator`.
+
+An existing stack needs `MCP_GRAFANA_SERVER_TOKEN` in `.env` before its next `git pull`
+and `docker compose up` (or `docker rollout`): compose refuses to start without it.
 
 #### Alerts
 
@@ -261,6 +268,68 @@ contact point (Alerting → Contact points).
 
 Not covered: if Grafana or the host stops, alerts stop silently, and nothing checks the
 orchestrator's public URL from outside.
+
+#### LLM access for root-cause analysis
+
+`grafana-mcp` ([grafana/mcp-grafana](https://github.com/grafana/mcp-grafana), pinned)
+gives an MCP client (Claude Code, OpenCode, VS Code, ...) read-only access to the
+metrics, logs and traces through Grafana, to investigate incidents.
+
+- **Endpoint:** `http://127.0.0.1:8000/mcp` (Streamable HTTP). Like Grafana, it
+  publishes its own port (`GRAFANA_MCP_BIND`, `GRAFANA_MCP_PORT`), and is never on the
+  computers network. From another machine, tunnel it (`ssh -L 8000:127.0.0.1:8000
+  <host>`) or route a hostname to it in the external reverse proxy, with TLS.
+- **Host check:** grafana-mcp answers only requests whose `Host` is
+  `localhost`/`127.0.0.1`/`[::1]` with the published port, or one of
+  `GRAFANA_MCP_ALLOWED_HOSTS` (comma-separated; set it to the reverse proxy's hostname,
+  e.g. `grafana-mcp.example.com`). Anything else gets 403 `host not allowed`. A tunnel
+  must use the same local port.
+- **Caller token:** clients send `Authorization: Bearer <MCP_GRAFANA_SERVER_TOKEN>` (from
+  `.env`). It only opens grafana-mcp; it is not a Grafana credential.
+- **Grafana credential:** one Viewer service account, `mcp`, shared by every caller. The
+  one-shot `grafana-mcp-token` service (`deploy/grafana-mcp/bootstrap-token.ts`) runs on
+  every `docker compose up`: it creates the account or resets its role to Viewer, writes
+  a new token to the `grafana-mcp-token` volume, which grafana-mcp re-reads on every
+  request, then revokes the older tokens. Nothing is set by hand. If it fails (see
+  `docker compose logs grafana-mcp-token`), grafana-mcp doesn't start. Grafana applies
+  `GF_SECURITY_ADMIN_PASSWORD` only on its first start: after changing it, also run
+  `docker compose exec grafana grafana cli admin reset-admin-password '<new>'`.
+- **Read-only:** `--disable-write` (no create, update or delete tools), `--disable-api`
+  (no raw Grafana API passthrough), only the tool categories RCA needs, and a Viewer
+  token, so Grafana refuses writes anyway. Choosing another Grafana (`X-Grafana-URL`) is
+  off; a caller can still send its own `X-Grafana-Service-Account-Token`, which only
+  gives it what that token already allows.
+- **Data:** metrics through VictoriaMetrics, logs through VictoriaLogs (LogsQL, with the
+  Loki tools), traces through `VictoriaTraces (Tempo)`, a Tempo datasource on
+  VictoriaTraces' Tempo-compatible API (experimental there; the dashboards keep the
+  Jaeger one).
+- **RCA guide:** [`deploy/grafana-mcp/rca-guide.md`](deploy/grafana-mcp/rca-guide.md)
+  explains our data (metric names, log fields, span names, a recipe and pitfalls). Every
+  client gets it in the server instructions (`--instructions-append`); it can also be
+  loaded as a prompt or skill. Restart grafana-mcp after changing it
+  (`docker compose up -d --force-recreate grafana-mcp`).
+- **Privacy:** whatever the tools read goes to the LLM provider behind the client: full
+  tool arguments, user emails, computers' journals. Only use models covered by an
+  appropriate agreement (or self-hosted). grafana-mcp logs at `info`; don't raise it to
+  `debug`, which logs Grafana responses.
+
+Connect a client, e.g. Claude Code. The token is read from the running container, so it
+is exactly what Compose resolved from `.env` (quotes and all):
+
+```bash
+token=$(cd orchestrator && docker compose exec -T grafana-mcp printenv MCP_GRAFANA_SERVER_TOKEN)
+claude mcp add --transport http ozwell-grafana http://127.0.0.1:8000/mcp \
+  --header "Authorization: Bearer $token"
+```
+
+or any client's JSON configuration:
+
+```json
+{ "mcpServers": { "ozwell-grafana": { "type": "http", "url": "http://127.0.0.1:8000/mcp",
+  "headers": { "Authorization": "Bearer <MCP_GRAFANA_SERVER_TOKEN>" } } } }
+```
+
+Then ask, e.g., "why did create_computer fail for ozc-abc123 around 14:00 UTC?".
 
 #### Updating without dropping calls
 

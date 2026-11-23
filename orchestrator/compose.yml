@@ -1,4 +1,5 @@
-# The orchestrator with VictoriaMetrics, vmagent, VictoriaLogs, VictoriaTraces and Grafana.
+# The orchestrator with VictoriaMetrics, vmagent, VictoriaLogs, VictoriaTraces, Grafana, and
+# grafana-mcp (read-only Grafana access for LLM root-cause analysis).
 # Setup and rollout: README.md, "With Docker Compose".
 name: ozwell-orchestrator
 
@@ -120,8 +121,64 @@ services:
       - "${GRAFANA_BIND:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"
     depends_on: [victoriametrics, victorialogs, victoriatraces]
 
+  # Read-only Grafana access for LLM root-cause analysis (README.md, "LLM access for
+  # root-cause analysis"). grafana-mcp-token runs on every `up`: it ensures the Viewer
+  # service account `mcp` and writes a fresh token for grafana-mcp, revoking older ones.
+  grafana-mcp-token:
+    image: node:26-trixie-slim
+    restart: "no"
+    command: [node, /app/bootstrap-token.ts]
+    environment:
+      GRAFANA_URL: http://grafana:3000
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:?set GF_SECURITY_ADMIN_PASSWORD in .env}
+      TOKEN_FILE: /run/grafana-mcp/token
+      # mcp-grafana's image user (uid 1000, gid 999) reads the 0600 file.
+      TOKEN_OWNER: "1000:999"
+    volumes:
+      - ./deploy/grafana-mcp:/app:ro
+      - grafana-mcp-token:/run/grafana-mcp
+    depends_on: [grafana]
+
+  grafana-mcp:
+    image: grafana/mcp-grafana:2.3.0
+    restart: unless-stopped
+    user: "1000:999"
+    # A shell only to pass the RCA guide as --instructions-append; "$$@" is `command`.
+    entrypoint: [/bin/sh, -c, 'exec /app/mcp-grafana "$$@" --instructions-append "$$(cat /etc/grafana-mcp/rca-guide.md)"', mcp-grafana]
+    command:
+      - --transport=streamable-http
+      - --address=0.0.0.0:8000
+      # The Host values it accepts (a DNS-rebinding guard): the published loopback address,
+      # plus GRAFANA_MCP_ALLOWED_HOSTS (e.g. the external reverse proxy's hostname).
+      - --allowed-hosts=localhost:${GRAFANA_MCP_PORT:-8000},127.0.0.1:${GRAFANA_MCP_PORT:-8000},[::1]:${GRAFANA_MCP_PORT:-8000},${GRAFANA_MCP_ALLOWED_HOSTS:-}
+      # Read-only: no create/update tools, no raw Grafana API passthrough. Only the
+      # categories RCA needs (the defaults add IRM, OnCall, rendering, ... we don't run).
+      - --disable-write
+      - --disable-api
+      - --enabled-tools=search,datasource,prometheus,loki,tempo,dashboard,folder,navigation,alerting,annotations
+      - --grafana-timeout=30s
+      # Never debug: it would log tool arguments and Grafana responses.
+      - --log-level=info
+      - --usage-stats=disabled
+    environment:
+      GRAFANA_URL: http://grafana:3000
+      GRAFANA_SERVICE_ACCOUNT_TOKEN_FILE: /run/grafana-mcp/token
+      GRAFANA_ORG_ID: "1"
+      # Callers send "Authorization: Bearer <this>". Not the Grafana token.
+      MCP_GRAFANA_SERVER_TOKEN: ${MCP_GRAFANA_SERVER_TOKEN:?set MCP_GRAFANA_SERVER_TOKEN in .env}
+    volumes:
+      - grafana-mcp-token:/run/grafana-mcp:ro
+      - ./deploy/grafana-mcp:/etc/grafana-mcp:ro
+    # Like Grafana: its own port, routed and TLS-terminated by the external reverse proxy.
+    ports:
+      - "${GRAFANA_MCP_BIND:-127.0.0.1}:${GRAFANA_MCP_PORT:-8000}:8000"
+    depends_on:
+      grafana-mcp-token: { condition: service_completed_successfully }
+
 volumes:
   vmdata:
   vldata:
   vtdata:
   grafana:
+  grafana-mcp-token:
