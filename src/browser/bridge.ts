@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { connect, createServer, type Server, type Socket } from 'node:net';
 import { chmod, lstat, mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -86,9 +86,12 @@ export class BrowserBridge {
   private server: Server | null = null;
   private readonly conns = new Set<Conn>();
   private readonly ready: Conn[] = [];
-  private readonly pending = new Map<number, Pending>();
+  private readonly pending = new Map<string, Pending>();
   private readonly waiters = new Set<() => void>();
   private nextId = 1;
+  /** Prefixes request ids: a native host that outlived a previous server may still
+   * deliver that server's replies, which must not answer this one's requests. */
+  private readonly nonce = randomBytes(6).toString('base64url');
   /** Inode of the socket this bridge put at `path`, while listening. */
   private inode: number | null = null;
   /** The lock on `path` (see acquireLock()), while listening. */
@@ -173,7 +176,7 @@ export class BrowserBridge {
   }
 
   private send<T>(conn: Conn, method: string, params: unknown): Promise<T> {
-    const id = this.nextId++;
+    const id = `${this.nonce}.${this.nextId++}`;
     return new Promise<T>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
@@ -228,10 +231,10 @@ export class BrowserBridge {
   private receive(body: Buffer) {
     let msg: { id?: unknown; result?: unknown; error?: unknown };
     try { msg = JSON.parse(body.toString('utf8')); } catch { return; }
-    const p = typeof msg.id === 'number' ? this.pending.get(msg.id) : undefined;
+    const p = typeof msg.id === 'string' ? this.pending.get(msg.id) : undefined;
     if (!p) return;
     clearTimeout(p.timer);
-    this.pending.delete(msg.id as number);
+    this.pending.delete(msg.id as string);
     if (msg.error !== undefined) p.reject(new ApiError('invalid_request', `Firefox: ${String(msg.error)}`));
     else p.resolve(msg.result);
   }

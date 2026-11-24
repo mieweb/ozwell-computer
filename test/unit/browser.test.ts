@@ -119,8 +119,12 @@ class FakeFirefox {
 
   disconnect() { this.socket?.destroy(); }
 
-  private answer(s: Socket, { id, method, params }: { id: number; method: string; params: any }) {
+  /** Before each answer, send a reply that a previous server's request with the same counter would get. */
+  stale = false;
+
+  private answer(s: Socket, { id, method, params }: { id: string; method: string; params: any }) {
     this.calls.push({ method, params });
+    if (this.stale && method !== 'browser.info') s.write(frame({ id: id.replace(/^[^.]*/, 'old-server'), result: [{ name: 'stale' }] }));
     if (method === 'browser.info') return s.write(frame({ id, result: { name: 'Firefox', version: '153.0' } }));
     if (this.silent) return;
     if (this.fail) return s.write(frame({ id, error: this.fail }));
@@ -229,6 +233,21 @@ describe('browser cookie API', () => {
         for (let i = 0; i < 50 && bridge.info(); i++) await new Promise((res) => setTimeout(res, 10));
       }
     }
+  });
+
+  it('ignores replies to a previous server\'s requests, which a surviving host may still deliver', async () => {
+    await connected();
+    ff.stale = true;
+    const r = await req('GET', '/api/v1/browser/cookies?domain=nothing.example');
+    expect(r.json()).toEqual({ cookies: [] });
+  });
+
+  it('uses hosts in the form Firefox stores them (127.1 is 127.0.0.1)', async () => {
+    await connected();
+    const set = (await req('PUT', '/api/v1/browser/cookies', { name: 'ip', value: 'x', domain: '127.1' })).json();
+    expect(set).toMatchObject({ domain: '127.0.0.1', host_only: true });
+    expect((await req('GET', '/api/v1/browser/cookies?domain=127.1')).json().cookies.map((c: any) => c.name)).toEqual(['ip']);
+    expect((await req('DELETE', '/api/v1/browser/cookies?name=ip&domain=0x7f000001')).json().deleted.map((c: any) => c.domain)).toEqual(['127.0.0.1']);
   });
 
   it('replies are never cached: they carry credentials', async () => {

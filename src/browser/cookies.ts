@@ -47,11 +47,15 @@ interface WebExtCookie {
 
 const HOST = /^(?=.{1,253}$)[a-z0-9_]([a-z0-9_-]*[a-z0-9_])?(\.[a-z0-9_]([a-z0-9_-]*[a-z0-9_])?)*$|^\[[0-9a-f:.]+\]$/i;
 
-/** The host part of a cookie domain (without its leading dot), validated. */
+/**
+ * The host part of a cookie domain (without its leading dot), validated and in the form
+ * Firefox stores it: as a URL would parse it, so e.g. 127.1 becomes 127.0.0.1.
+ */
 function hostOf(domain: string): string {
   const host = domain.startsWith('.') ? domain.slice(1) : domain;
-  if (!HOST.test(host)) throw new ApiError('invalid_request', `domain must be a host name such as example.com or .example.com, not ${JSON.stringify(domain)}`);
-  return host.toLowerCase();
+  const bad = () => new ApiError('invalid_request', `domain must be a host name such as example.com or .example.com, not ${JSON.stringify(domain)}`);
+  if (!HOST.test(host)) throw bad();
+  try { return new URL(`http://${host}/`).hostname; } catch { throw bad(); }
 }
 
 /** A Path attribute (RFC 6265 4.1.1: any character but controls and ";"). */
