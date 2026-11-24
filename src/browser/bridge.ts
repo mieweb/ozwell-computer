@@ -198,7 +198,10 @@ export class BrowserBridge {
         socket.destroy();
         return;
       }
-      for (const b of bodies) this.receive(b);
+      for (const b of bodies) {
+        // An exception here would be uncaught, and stop the server.
+        try { this.receive(b); } catch (e) { this.log.warn({ err: (e as Error).message }, 'browser bridge: bad reply ignored'); }
+      }
     });
     socket.on('error', () => undefined); // 'close' follows
     socket.on('close', () => {
@@ -228,14 +231,17 @@ export class BrowserBridge {
     });
   }
 
+  /** A reply from the extension. Anything else (bad JSON, null, not an object) is ignored. */
   private receive(body: Buffer) {
-    let msg: { id?: unknown; result?: unknown; error?: unknown };
+    let msg: unknown;
     try { msg = JSON.parse(body.toString('utf8')); } catch { return; }
-    const p = typeof msg.id === 'string' ? this.pending.get(msg.id) : undefined;
+    if (typeof msg !== 'object' || msg === null || Array.isArray(msg)) return;
+    const { id, result, error } = msg as { id?: unknown; result?: unknown; error?: unknown };
+    const p = typeof id === 'string' ? this.pending.get(id) : undefined;
     if (!p) return;
     clearTimeout(p.timer);
-    this.pending.delete(msg.id as string);
-    if (msg.error !== undefined) p.reject(new ApiError('invalid_request', `Firefox: ${String(msg.error)}`));
-    else p.resolve(msg.result);
+    this.pending.delete(id as string);
+    if (error === undefined) p.resolve(result);
+    else p.reject(new ApiError('invalid_request', `Firefox: ${typeof error === 'string' ? error : JSON.stringify(error)}`));
   }
 }

@@ -121,9 +121,15 @@ class FakeFirefox {
 
   /** Before each answer, send a reply that a previous server's request with the same counter would get. */
   stale = false;
+  /** Before each answer, send replies that aren't one: valid JSON of the wrong shape, and not JSON. */
+  junk = false;
 
   private answer(s: Socket, { id, method, params }: { id: string; method: string; params: any }) {
     this.calls.push({ method, params });
+    if (this.junk && method !== 'browser.info') {
+      for (const j of [null, 5, 'x', [id], { id: 7 }, { id, error: { toString: null } }]) s.write(frame(j));
+      s.write(Buffer.concat([Buffer.from([3, 0, 0, 0]), Buffer.from('{{{')]));
+    }
     if (this.stale && method !== 'browser.info') s.write(frame({ id: id.replace(/^[^.]*/, 'old-server'), result: [{ name: 'stale' }] }));
     if (method === 'browser.info') return s.write(frame({ id, result: { name: 'Firefox', version: '153.0' } }));
     if (this.silent) return;
@@ -240,6 +246,17 @@ describe('browser cookie API', () => {
     ff.stale = true;
     const r = await req('GET', '/api/v1/browser/cookies?domain=nothing.example');
     expect(r.json()).toEqual({ cookies: [] });
+  });
+
+  it('survives replies that are not one (null, other JSON, not JSON)', async () => {
+    await connected();
+    ff.junk = true;
+    // The first well-formed reply with the request's id answers it: here, an error.
+    const r = await req('GET', '/api/v1/browser/cookies');
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error.message).toBe('Firefox: {"toString":null}');
+    ff.junk = false;
+    expect((await req('GET', '/api/v1/browser/cookies')).statusCode).toBe(200);
   });
 
   it('uses hosts in the form Firefox stores them (127.1 is 127.0.0.1)', async () => {
