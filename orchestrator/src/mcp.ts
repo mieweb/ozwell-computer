@@ -283,7 +283,8 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
   });
 
   const callTool = async (name: string, args: Record<string, unknown>): Promise<any> => {
-    // Full arguments by decision (docs/observability-plan.md); no tokens travel in them.
+    // Full arguments by decision (docs/observability-plan.md), set_cookie's value included:
+    // secrets are left to the anonymization layer, like PHI.
     deps.log?.info({ tool: name, user: observedUser(user), instance: args.instance_id, args }, 'tool call');
     try {
       switch (name) {

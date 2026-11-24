@@ -83,14 +83,14 @@ describe('maintainer scripts', () => {
 
   it('the upgrade service cannot time out mid-transaction, and the script recovers and waits for locks', () => {
     expect(read('contrib/systemd/ozwell-computer-upgrade.service')).toMatch(/^TimeoutStartSec=infinity$/m);
-    const sh = read('contrib/upgrade.sh');
+    const sh = read('bin/ozwell-computer-upgrade.in');
     expect(sh).toContain('dpkg --configure -a');
     expect(sh).toContain('DPkg::Lock::Timeout');
   });
 });
 
 describe('git update channel', () => {
-  const sh = read('contrib/upgrade.sh');
+  const sh = read('bin/ozwell-computer-upgrade.in');
   const git = /^from_git\(\) \{\n([\s\S]*?)\n\}$/m.exec(sh)?.[1] ?? '';
 
   it('upgrade.sh builds, then stops only the server while installing and starts it again', () => {
@@ -202,7 +202,18 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
     // From the source checkout: the installed tree (e.g. /opt) has no git history.
     expect(mk).toContain('npm pkg set version="$$(cd "$(CURDIR)" && ./package-version node)"');
     expect(mk).toContain('$(call conffile,contrib/default/ozwell-computer,');
-    expect(mk).toMatch(/sed 's\|@PREFIX@\|\$\(PREFIX\)\|g' contrib\/upgrade\.sh/);
+  });
+
+  // bin/X.in becomes bin/X in the checkout (mirroring $(PREFIX)), then is installed as is.
+  it('make generates bin/ from bin/*.in, also when upgrades skip build, and installs it', () => {
+    const dry = (...args: string[]) => spawnSync('make', ['-n', ...args], { cwd: new URL('../..', import.meta.url), encoding: 'utf8' }).stdout;
+    const gen = "sed 's|@PREFIX@|/x|g' bin/ozwell-computer-upgrade.in > bin/ozwell-computer-upgrade.tmp";
+    // As bin/ozwell-computer-upgrade runs it: build is skipped, a changed template is still regenerated.
+    const upgrade = dry('-W', 'bin/ozwell-computer-upgrade.in', '-o', 'build', '-o', 'system-deps', 'install', 'PREFIX=/x', 'DESTDIR=/tmp/oz-stage');
+    expect(upgrade).toContain(gen);
+    expect(upgrade).toContain('install -m 0755 bin/ozwell-computer-browser-host bin/ozwell-computer-upgrade /tmp/oz-stage/x/bin/');
+    expect(dry('-W', 'bin/ozwell-computer-upgrade.in', 'build')).toContain("sed 's|@PREFIX@|/opt/ozwell-computer|g' bin/ozwell-computer-upgrade.in");
+    expect(read('.gitignore')).toMatch(/^\/bin\/\*\n!\/bin\/\*\.in\n!\/bin\/Makefile$/m);
   });
 });
 
@@ -230,6 +241,8 @@ describe('desktop session', () => {
     expect(server).toMatch(/^Requires=ozwell-computer-desktop\.service$/m);
     expect(server).toMatch(/^After=ozwell-computer-desktop\.service /m);
     expect(server).toMatch(/^KillMode=process$/m);
+    // Apps it launches (Firefox: hundreds of threads) share its task limit.
+    expect(server).toMatch(/^TasksMax=infinity$/m);
     expect(desktop).not.toMatch(/^(After|Wants|Requires|BindsTo|PartOf|Upholds)=.*ozwell-computer\.service/m);
     // After= waits for the PAM session (and so the user's bus), not just the fork.
     expect(desktop).toMatch(/^Type=exec$/m);
@@ -281,5 +294,24 @@ describe('desktop session', () => {
 
   it('Firefox restores the previous session', () => {
     expect(JSON.parse(read('docker/firefox/policies.json')).policies.Homepage.StartPage).toBe('previous-session');
+  });
+
+  // The package, not the image: in-app upgrades (apt or git) must bring the cookie API along.
+  it('the package installs the cookie extension, its native messaging host, and the pref that starts it', () => {
+    const mk = read('Makefile');
+    const manifest = JSON.parse(read('contrib/firefox/extension/manifest.json'));
+    const host = JSON.parse(read('contrib/firefox/native-messaging-host.json'));
+    const id = manifest.browser_specific_settings.gecko.id;
+    // Debian's Firefox loads (unsigned) extensions from the system scope, by id.
+    expect(mk).toContain(`/usr/share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}/${id}`);
+    expect(manifest.permissions).toEqual(expect.arrayContaining(['cookies', 'nativeMessaging', 'storage', '<all_urls>']));
+    expect(host.allowed_extensions).toEqual([id]);
+    expect(read('contrib/firefox/extension/background.js')).toContain(`connectNative('${host.name}')`);
+    expect(host.path).toBe('@PREFIX@/bin/ozwell-computer-browser-host');
+    expect(mk).toContain(`> $(DESTDIR)/usr/lib/mozilla/native-messaging-hosts/${host.name}.json`);
+    expect(read('bin/ozwell-computer-browser-host.in')).toContain('@PREFIX@/dist/browser/native-host.js');
+    // Without it, an extension installed after the profile was created starts one Firefox restart late.
+    expect(read('contrib/firefox/prefs.js')).toMatch(/^pref\("extensions\.startupScanScopes", 8\);$/m);
+    expect(mk).toContain('contrib/firefox/prefs.js $(DESTDIR)/etc/firefox-esr/ozwell-computer.js');
   });
 });

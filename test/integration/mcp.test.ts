@@ -1,5 +1,6 @@
 /**
- * Every MCP tool not already exercised by the end-to-end agent test in e2e.test.ts.
+ * Every MCP tool not already exercised by the end-to-end agent test in e2e.test.ts (the
+ * cookie tools are in browser.test.ts).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -37,9 +38,9 @@ describe('MCP tools', () => {
   it('exposes the full tool set', async () => {
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
     expect(names).toEqual([
-      'activate_window', 'click', 'command_output', 'double_click', 'drag', 'find_element', 'get_clipboard', 'get_ui_tree', 'hotkey',
-      'launch_app', 'list_windows', 'move', 'press_key', 'read_file', 'run_command', 'screenshot', 'scroll',
-      'set_clipboard', 'type_text', 'ui_action', 'update_computer', 'write_file',
+      'activate_window', 'click', 'command_output', 'delete_cookie', 'double_click', 'drag', 'find_element', 'get_clipboard', 'get_cookies',
+      'get_ui_tree', 'hotkey', 'launch_app', 'list_windows', 'move', 'press_key', 'read_file', 'run_command', 'screenshot', 'scroll',
+      'set_clipboard', 'set_cookie', 'type_text', 'ui_action', 'update_computer', 'write_file',
     ]);
   });
 

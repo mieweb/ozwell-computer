@@ -5,3 +5,6 @@ coverage
 *.log
 .pkg
 *.deb
+bin/*
+!bin/*.in
+!bin/Makefile

@@ -42,7 +42,7 @@ The "Later" items are not.
 | Instance tracing | `traceparent` is propagated and `trace_id` added to instance logs. Computers also record spans that continue it into a bounded buffer served at `GET /api/v1/traces` (OTLP JSON); the log puller forwards them to VictoriaTraces tagged `ozwell.instance_id` (workstream 4, #64). No relay: computers never push. |
 | Propagation | `traceparent` HTTP header plus `params._meta.traceparent`. |
 | Sampling | 100%, configurable. |
-| Tool argument capture | Full arguments. PHI handling and anonymization are a later layer. |
+| Tool argument capture | Full arguments, including secrets such as `set_cookie`'s value. PHI and secret handling (anonymization, redaction) are a later layer. |
 | Computer metadata | An info metric (`ozwell_orchestrator_computer_info`), not labels on scraped series, so metadata changes never split a computer's series. Dashboards aggregate per `instance_id`, which also merges series split before this change. |
 | User identity | Email (`X-Ozwell-User-Email`, or the computer's stored owner email); the user id only when there is no email. Access is still enforced by user id. |
 | `/internal/*` security | A separate port and listener (`ORCHESTRATOR_INTERNAL_PORT`), not exposed publicly. Off loopback it requires a bearer token (`ORCHESTRATOR_INTERNAL_TOKEN`), which vmagent sends. |
@@ -506,7 +506,7 @@ The instance gets no new runtime dependencies; it uses the existing `journalctl`
 - Restarting the orchestrator loses in-flight operation timings, and instance logs
   emitted while it was down are not backfilled.
 - Full arguments and user emails in logs and traces mean the observability stack holds
-  PHI. Access is limited to the Grafana admin on the same host, and to grafana-mcp's
+  PHI, and secrets agents pass as arguments (session cookies set with `set_cookie`). Access is limited to the Grafana admin on the same host, and to grafana-mcp's
   callers (and so their LLM provider), until the anonymization layer lands.
 - Admin CLI creates, deletes and updates are in the audit log and traces only, not on the
   operation dashboards (separate process, no metrics endpoint).

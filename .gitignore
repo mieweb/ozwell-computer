@@ -5,3 +5,7 @@ coverage/
 .env
 .pkg/
 *.deb
+# Generated from bin/*.in (bin/Makefile).
+/bin/*
+!/bin/*.in
+!/bin/Makefile

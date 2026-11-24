@@ -9,9 +9,13 @@ STAGE := $(if $(filter command line,$(origin DESTDIR)),$(DESTDIR),$(CURDIR)/.pkg
 DESTAPP  := $(DESTDIR)$(PREFIX)
 UNIT_DIR := $(DESTDIR)/usr/lib/systemd/system
 XFCONF   := $(DESTDIR)/etc/xdg/xfce4/xfconf/xfce-perchannel-xml
+# Firefox's system-wide extension directory (the id is Firefox's application id).
+FF_EXT   := $(DESTDIR)/usr/share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}/ozwell-computer@mieweb.com
 UNITS    := ozwell-computer.service ozwell-computer-desktop.service ozwell-computer-upgrade.service ozwell-computer-upgrade.path
 # Replaced by ozwell-computer-desktop.service.
 LEGACY_UNITS := ozwell-computer-session.service ozwell-computer-xvfb.service ozwell-computer-dbus.service
+
+include bin/Makefile
 
 INSTALL      := install
 INSTALL_DATA := $(INSTALL) -m 0644
@@ -26,7 +30,7 @@ help:
 	@echo "Targets:"
 	@echo "  deps     install dependencies (npm ci)"
 	@echo "  system-deps  apt-get install the runtime packages listed in .fpm (root)"
-	@echo "  build    compile the server and build the viewer (npm run build)"
+	@echo "  build    generate bin/ from bin/*.in, compile the server and build the viewer (npm run build)"
 	@echo "  test     run the full test suite (npm test; uses the compose dev container)"
 	@echo "  install  stage the application, units and config into DESTDIR (default /)"
 	@echo "  deb      build ozwell-computer_<version>_amd64.deb with fpm"
@@ -45,21 +49,21 @@ system-deps:
 	DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends \
 		$$(sed -n 's/^--depends "\{0,1\}\([^ "]*\).*/\1/p' .fpm | grep -vx nodejs)
 
-build:
+build: $(BIN)
 	npm run build
 
 test:
 	npm test
 
-install: build $(if $(filter /,$(DESTDIR)),system-deps)
+# $(BIN) directly too: upgrades from git skip build (`make -o build install`).
+install: build $(BIN) $(if $(filter /,$(DESTDIR)),system-deps)
 	$(INSTALL) -d $(DESTAPP) $(DESTAPP)/bin
 	cp -a dist package.json package-lock.json node_modules $(DESTAPP)/
 	chmod 0755 $(DESTAPP)/dist/cli.js
 	# Runtime dependencies only, and the release version (the installed app has no git checkout).
 	cd $(DESTAPP) && npm prune --omit=dev --no-audit --no-fund >/dev/null \
 		&& npm pkg set version="$$(cd "$(CURDIR)" && ./package-version node)"
-	sed 's|@PREFIX@|$(PREFIX)|g' contrib/upgrade.sh > $(DESTAPP)/bin/ozwell-computer-upgrade
-	chmod 0755 $(DESTAPP)/bin/ozwell-computer-upgrade
+	$(INSTALL) -m 0755 $(BIN) $(DESTAPP)/bin/
 	$(INSTALL) -d $(DESTDIR)/usr/bin
 	ln -sf $(PREFIX)/dist/cli.js $(DESTDIR)/usr/bin/ozwell-computer
 	$(INSTALL) -d $(UNIT_DIR)
@@ -82,7 +86,13 @@ install: build $(if $(filter /,$(DESTDIR)),system-deps)
 	# Older versions overrode xfce4-session and xsettings defaults here; Debian's now apply.
 	rm -rf $(DESTAPP)/xdg
 	$(INSTALL_DATA) contrib/xfce/applications/*.desktop $(DESTDIR)/usr/share/applications/
-	# Last: the source commit marks a complete install for in-app updates from git (contrib/upgrade.sh).
+	# Firefox: the extension behind the cookie API, its native messaging host manifest (the host
+	# itself is bin/ozwell-computer-browser-host), and the pref that loads it.
+	$(INSTALL) -d $(FF_EXT) $(DESTDIR)/usr/lib/mozilla/native-messaging-hosts $(DESTDIR)/etc/firefox-esr
+	$(INSTALL_DATA) contrib/firefox/extension/* $(FF_EXT)/
+	sed 's|@PREFIX@|$(PREFIX)|g' contrib/firefox/native-messaging-host.json > $(DESTDIR)/usr/lib/mozilla/native-messaging-hosts/ozwell_computer.json
+	$(INSTALL_DATA) contrib/firefox/prefs.js $(DESTDIR)/etc/firefox-esr/ozwell-computer.js
+	# Last: the source commit marks a complete install for in-app updates from git (bin/ozwell-computer-upgrade).
 	rev=$$(git rev-parse --verify -q HEAD 2>/dev/null); if [ -n "$$rev" ]; then echo "$$rev" > $(DESTAPP)/REVISION; else rm -f $(DESTAPP)/REVISION; fi
 
 deb:
@@ -93,4 +103,4 @@ deb:
 
 clean:
 	rm -rf dist .pkg
-	rm -f *.deb
+	rm -f *.deb $(BIN)

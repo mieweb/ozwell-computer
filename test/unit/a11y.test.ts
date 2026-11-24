@@ -90,7 +90,7 @@ describe('accessibility HTTP and MCP contracts', () => {
     const { a11y } = fixture();
     const config = { ...defaults(), strictResponses: true };
     const desktop = new Desktop(config.display, log);
-    app = await buildServer({ config, desktop, token: 'a11y-test-token', version: 'test', a11y, ptyAvailable: false, updater: null, log });
+    app = await buildServer({ config, desktop, token: 'a11y-test-token', version: 'test', a11y, ptyAvailable: false, updater: null, browser: null, log });
     await app.listen({ port: 0, host: '127.0.0.1' });
     client = new Client({ name: 'a11y-test', version: '1' });
     transport = new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${(app.server.address() as { port: number }).port}/mcp`), { requestInit: { headers: auth } });

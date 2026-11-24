@@ -1,0 +1,4 @@
+#!/bin/sh
+# Firefox's native messaging host for the ozwell-computer extension
+# (/usr/lib/mozilla/native-messaging-hosts/ozwell_computer.json points here).
+exec /usr/bin/node @PREFIX@/dist/browser/native-host.js "$@"

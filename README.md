@@ -3,7 +3,7 @@
 One HTTP port that serves an X11 desktop to people and to agents:
 
 - `/`: a noVNC viewer for humans, with presence cursors, local clipboard sharing and special keys
-- `/api/v1/*`: JSON API for screenshots, input, windows, clipboard, accessibility, processes and files (Swagger UI at `/api/docs`, OpenAPI at `/api/docs/json`)
+- `/api/v1/*`: JSON API for screenshots, input, windows, clipboard, accessibility, processes, files and Firefox's cookies (Swagger UI at `/api/docs`, OpenAPI at `/api/docs/json`)
 - `/mcp`: an MCP server (Streamable HTTP) with the same capabilities as tools
 
 The VNC server is written in TypeScript and runs in-process; it talks to X through
@@ -243,7 +243,9 @@ docker buildx build --target deb --output type=local,dest=out .   # .deb without
 ```
 
 Package metadata and dependencies are in `.fpm`. The maintainer scripts and units
-are in `contrib/`.
+are in `contrib/`. Files installed under `PREFIX` mirror the checkout: `dist/` is built
+by `npm run build`, and `bin/X` is generated from `bin/X.in` with `@PREFIX@` filled in
+(`bin/Makefile`, run by `make build`).
 - **Versions come from git tags** (`./package-version deb`): `v1.2.3` gives `1.2.3`,
   3 commits later `1.2.3+3.g<hash>`, `v1.3.0-rc1` gives `1.3.0~rc1`, and no tag gives
   `0.0.0`.
@@ -372,6 +374,8 @@ curl -H "$T" -H 'content-type: application/json' \
   -d '{"action":"type","text":"hello"}' $B/input/keyboard
 curl -H "$T" $B/windows
 curl -H "$T" -H 'content-type: application/json' -d '{"role":"button","name":"OK"}' $B/a11y/find
+curl -H "$T" -X PUT -H 'content-type: application/json' \
+  -d '{"name":"sid","value":"<session>","domain":".example.com","secure":true}' $B/browser/cookies   # Firefox must be running
 curl -N -H "$T" $B/events                                           # SSE: windows, clipboard, presence, jobs
 ```
 
@@ -402,8 +406,8 @@ viewer.
 The tools are: `screenshot`, `click`, `double_click`, `move`, `drag`, `scroll`,
 `type_text`, `press_key`, `hotkey`, `list_windows`, `activate_window`, `launch_app`,
 `get_ui_tree`, `find_element`, `ui_action`, `get_clipboard`, `set_clipboard` and
-`update_computer`. When exec is enabled, `run_command`, `read_file` and `write_file` are
-also available.
+`update_computer`. When exec is enabled, `run_command`, `command_output`, `read_file`,
+`write_file`, `set_cookie`, `get_cookies` and `delete_cookie` are also available.
 
 **Accessibility search:** `find_element` combines all supplied filters with AND.
 `name` and `description` match exactly (case-sensitive); `name_contains`,
@@ -421,6 +425,29 @@ to call `update_computer` before its next turn that uses the computer (it may fi
 current task first). The tool doesn't run a check itself. `update_computer` requests the
 upgrade (like `POST /api/v1/update/apply`) and returns at once; the server restarts once
 the update is installed, so tool calls fail briefly and should be retried.
+
+**Browser cookies:** `set_cookie`, `get_cookies` and `delete_cookie` (and `GET`/`PUT`/`DELETE
+/api/v1/browser/cookies`) read and change the cookies of the desktop's Firefox, so an agent
+can sign the browser in with a session cookie it got elsewhere, and later see whether the
+site renewed or dropped it. Domains use the cookie-jar form both ways: `.example.com` is a
+domain cookie (also sent to subdomains), `example.com` a host-only one, so a listed cookie
+can be set again as is. Firefox must be running (`launch_app` `firefox-esr`); a call waits
+up to 10 s for one that is starting, and otherwise fails with `target_unavailable`. Set
+cookies before opening the site, or reload pages already open. They are first-party
+(unpartitioned) cookies of the Firefox profile that is running. While Firefox runs with
+more than one profile, calls fail rather than pick one. Like file access, they need exec.
+
+The package adds a Firefox extension for this
+(`/usr/share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}/ozwell-computer@mieweb.com`,
+from `contrib/firefox/`), which Debian's Firefox ESR loads without signing. It reaches
+the server through a native messaging host
+(`/usr/lib/mozilla/native-messaging-hosts/ozwell_computer.json`) and a socket only the
+`desktop` user can open, `$XDG_RUNTIME_DIR/ozwell-computer/browser.sock`. Unlike WebDriver
+or remote debugging, this leaves Firefox as it is for the sites it visits
+(`navigator.webdriver` stays false). `/etc/firefox-esr/ozwell-computer.js` makes Firefox
+start the extension the first time it runs after an install or upgrade, and turns off
+the Troubleshoot Mode prompt (which disables extensions) after interrupted startups.
+`GET /api/v1/capabilities` reports `features.browser.available` while it is connected.
 
 **Long-running commands:** `run_command` waits up to `wait_ms` (default 25 s, max 50 s,
 under typical 60 s MCP client timeouts). If the command finishes, it returns the result.
@@ -479,7 +506,7 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
   push the version tag and `:latest`; nightly and on-demand runs push `:main`.
 - `OZ_URL=… OZ_TOKEN=… npm test` runs the suite against any other server.
 - Run `docker compose up -d --build` after changing anything packaged other than
-  `./dist`: `contrib/` (units, XFCE config, maintainer scripts), `.fpm`, `docker/`, the
+  `./dist`: `bin/*.in`, `contrib/` (units, XFCE config, maintainer scripts), `.fpm`, `docker/`, the
   `Dockerfile`, or dependencies. The image is rebuilt from a fresh `.deb`.
 - The compose container mounts `./dist` read-only, so don't `dpkg -i` or `apt` the
   package inside it. Use `docker compose up -d --build` instead.
