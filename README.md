@@ -434,7 +434,8 @@ domain cookie (also sent to subdomains), `example.com` a host-only one, so a lis
 can be set again as is. Firefox must be running (`launch_app` `firefox-esr`); a call waits
 up to 10 s for one that is starting, and otherwise fails with `target_unavailable`. Set
 cookies before opening the site, or reload pages already open. They are first-party
-(unpartitioned) cookies of the default profile, and like file access they need exec.
+(unpartitioned) cookies of the Firefox profile that is running. While Firefox runs with
+more than one profile, calls fail rather than pick one. Like file access, they need exec.
 
 The package adds a Firefox extension for this
 (`/usr/share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}/ozwell-computer@mieweb.com`,

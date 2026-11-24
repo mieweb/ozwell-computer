@@ -105,6 +105,8 @@ class FakeFirefox {
   readonly calls: { method: string; params: any }[] = [];
   readonly jar = new Map<string, WebExtCookie>();
   fail: string | null = null;
+
+  constructor(readonly profile = 'profile-a') {}
   silent = false;
   private socket: Socket | null = null;
 
@@ -131,7 +133,7 @@ class FakeFirefox {
       s.write(Buffer.concat([Buffer.from([3, 0, 0, 0]), Buffer.from('{{{')]));
     }
     if (this.stale && method !== 'browser.info') s.write(frame({ id: id.replace(/^[^.]*/, 'old-server'), result: [{ name: 'stale' }] }));
-    if (method === 'browser.info') return s.write(frame({ id, result: { name: 'Firefox', version: '153.0' } }));
+    if (method === 'browser.info') return s.write(frame({ id, result: { name: 'Firefox', version: '153.0', profile: this.profile } }));
     if (this.silent) return;
     if (this.fail) return s.write(frame({ id, error: this.fail }));
     s.write(frame({ id, result: this.handle(method, params) }));
@@ -194,7 +196,7 @@ describe('browser cookie API', () => {
     ff = new FakeFirefox();
     await ff.connect(bridge.path);
     for (let i = 0; i < 50 && !bridge.info(); i++) await new Promise((r) => setTimeout(r, 10));
-    expect(bridge.info()).toEqual({ name: 'Firefox', version: '153.0' });
+    expect(bridge.info()).toEqual({ name: 'Firefox', version: '153.0', profile: 'profile-a' });
   };
 
   it('the socket is private to the server\'s user', () => {
@@ -246,6 +248,33 @@ describe('browser cookie API', () => {
     ff.stale = true;
     const r = await req('GET', '/api/v1/browser/cookies?domain=nothing.example');
     expect(r.json()).toEqual({ cookies: [] });
+  });
+
+  it('refuses to pick between Firefox profiles, but not between connections of one', async () => {
+    await connected();
+    const other = new FakeFirefox('profile-b');
+    await other.connect(bridge.path);
+    const both = async () => { for (let i = 0; i < 50 && !bridge.ambiguous(); i++) await new Promise((r) => setTimeout(r, 10)); };
+    try {
+      await both();
+      const r = await req('GET', '/api/v1/browser/cookies');
+      expect(r.statusCode).toBe(404);
+      expect(r.json().error.message).toMatch(/more than one profile/);
+      expect((await req('GET', '/api/v1/capabilities')).json().features.browser).toEqual({ available: false, limitation: 'Firefox is running with more than one profile' });
+      expect(other.calls.map((c) => c.method)).toEqual(['browser.info']);
+      expect(ff.calls.map((c) => c.method)).toEqual(['browser.info']);
+    } finally {
+      other.disconnect();
+    }
+    for (let i = 0; i < 50 && bridge.ambiguous(); i++) await new Promise((r) => setTimeout(r, 10));
+    expect((await req('GET', '/api/v1/browser/cookies')).statusCode).toBe(200);
+    // A second connection from the same profile (its host reconnecting) is just the newer one.
+    const again = new FakeFirefox('profile-a');
+    await again.connect(bridge.path);
+    for (let i = 0; i < 50 && bridge['ready'].length < 2; i++) await new Promise((r) => setTimeout(r, 10));
+    expect((await req('GET', '/api/v1/browser/cookies')).statusCode).toBe(200);
+    expect(again.calls.at(-1)?.method).toBe('cookies.getAll');
+    again.disconnect();
   });
 
   it('survives replies that are not one (null, other JSON, not JSON)', async () => {

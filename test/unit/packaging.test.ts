@@ -304,7 +304,7 @@ describe('desktop session', () => {
     const id = manifest.browser_specific_settings.gecko.id;
     // Debian's Firefox loads (unsigned) extensions from the system scope, by id.
     expect(mk).toContain(`/usr/share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}/${id}`);
-    expect(manifest.permissions).toEqual(expect.arrayContaining(['cookies', 'nativeMessaging', '<all_urls>']));
+    expect(manifest.permissions).toEqual(expect.arrayContaining(['cookies', 'nativeMessaging', 'storage', '<all_urls>']));
     expect(host.allowed_extensions).toEqual([id]);
     expect(read('contrib/firefox/extension/background.js')).toContain(`connectNative('${host.name}')`);
     expect(host.path).toBe('@PREFIX@/bin/ozwell-computer-browser-host');

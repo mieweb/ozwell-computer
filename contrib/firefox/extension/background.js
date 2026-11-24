@@ -3,8 +3,17 @@
 // through the native messaging host Firefox starts for us (src/browser/native-host.ts).
 // Requests are {id, method, params}; replies are {id, result} or {id, error}.
 
+/** A random id kept in this profile's storage: tells the server which profile answers. */
+async function profileId() {
+  const { profileId: id } = await browser.storage.local.get('profileId');
+  if (id) return id;
+  const fresh = crypto.randomUUID();
+  await browser.storage.local.set({ profileId: fresh });
+  return fresh;
+}
+
 const METHODS = {
-  'browser.info': () => browser.runtime.getBrowserInfo(),
+  'browser.info': async () => ({ ...(await browser.runtime.getBrowserInfo()), profile: await profileId() }),
   'cookies.getAll': (p) => browser.cookies.getAll(p),
   'cookies.set': (p) => browser.cookies.set(p),
   'cookies.remove': (p) => browser.cookies.remove(p),

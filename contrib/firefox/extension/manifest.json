@@ -4,6 +4,6 @@
   "description": "Lets the ozwell-computer server (and the agents using it) read and set this browser's cookies.",
   "version": "1.0",
   "browser_specific_settings": { "gecko": { "id": "ozwell-computer@mieweb.com", "strict_min_version": "115.0" } },
-  "permissions": ["cookies", "nativeMessaging", "<all_urls>"],
+  "permissions": ["cookies", "nativeMessaging", "storage", "<all_urls>"],
   "background": { "scripts": ["background.js"], "persistent": true }
 }

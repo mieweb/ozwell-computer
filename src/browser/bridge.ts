@@ -6,7 +6,12 @@ import type { Logger } from 'pino';
 import { ApiError } from '../errors.js';
 import { FrameReader, frame } from './protocol.js';
 
-export interface BrowserInfo { name: string; version: string }
+export interface BrowserInfo {
+  name: string;
+  version: string;
+  /** Random id the extension keeps in the profile's storage: one per Firefox profile. */
+  profile: string;
+}
 
 interface Conn { socket: Socket; info: BrowserInfo | null }
 interface Pending { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: NodeJS.Timeout; conn: Conn }
@@ -22,6 +27,9 @@ export interface BridgeOptions {
 
 export const NOT_CONNECTED = 'Firefox is not running, or its ozwell-computer extension is not connected. ' +
   'Start Firefox (launch_app "firefox-esr", or POST /api/v1/apps/launch) and try again.';
+
+export const SEVERAL_PROFILES = 'Firefox is running with more than one profile, so it is unclear whose cookies to use. ' +
+  'Close the other Firefox instances and try again.';
 
 /** The bridge, or feature_unsupported when the server runs without one. */
 export function needBridge(b: BrowserBridge | null): BrowserBridge {
@@ -80,7 +88,8 @@ async function acquireLock(path: string): Promise<Server> {
 /**
  * The server end of the link to Firefox's ozwell-computer extension: a Unix socket that
  * its native messaging host connects to (see protocol.ts). The latest connection whose
- * extension answered `browser.info` is the one calls go to.
+ * extension answered `browser.info` is the one calls go to, unless connections from
+ * different Firefox profiles are open: then calls fail rather than pick one.
  */
 export class BrowserBridge {
   private server: Server | null = null;
@@ -146,9 +155,14 @@ export class BrowserBridge {
     if (l) await closeServer(l);
   }
 
-  /** The connected browser, or null. */
+  /** The connected browser, or null (also while several profiles are connected). */
   info(): BrowserInfo | null {
-    return this.current()?.info ?? null;
+    try { return this.current()?.info ?? null; } catch { return null; }
+  }
+
+  /** Whether calls fail because browsers with different profiles are connected. */
+  ambiguous(): boolean {
+    try { this.current(); return false; } catch { return true; }
   }
 
   /** Call a method of the extension (e.g. cookies.getAll) and return its result. */
@@ -157,19 +171,28 @@ export class BrowserBridge {
     if (!conn && this.opts.connectWaitMs > 0) {
       const running = await this.opts.browserRunning();
       // The extension may have connected while the process check ran.
-      conn = this.current() ?? (running ? await this.waitForConnection(this.opts.connectWaitMs) : null);
+      conn = this.current();
+      if (!conn && running) {
+        await this.waitForConnection(this.opts.connectWaitMs);
+        conn = this.current();
+      }
     }
     if (!conn) throw new ApiError('target_unavailable', NOT_CONNECTED);
     return this.send<T>(conn, method, params);
   }
 
+  /** The connection calls go to, or null; throws while different profiles are connected. */
   private current(): Conn | null {
-    return this.ready.at(-1) ?? null;
+    const last = this.ready.at(-1);
+    // One profile may briefly have two (its host reconnecting): the newest is the one.
+    if (last && this.ready.some((c) => c.info!.profile !== last.info!.profile)) throw new ApiError('target_unavailable', SEVERAL_PROFILES);
+    return last ?? null;
   }
 
-  private waitForConnection(ms: number): Promise<Conn | null> {
+  /** Resolves when an extension connects, or after `ms`. */
+  private waitForConnection(ms: number): Promise<void> {
     return new Promise((resolve) => {
-      const done = () => { clearTimeout(timer); this.waiters.delete(done); resolve(this.current()); };
+      const done = () => { clearTimeout(timer); this.waiters.delete(done); resolve(); };
       const timer = setTimeout(done, ms);
       this.waiters.add(done);
     });
@@ -221,7 +244,7 @@ export class BrowserBridge {
     // The extension proves itself by answering; a host whose browser went away never does.
     this.send<BrowserInfo>(conn, 'browser.info', {}).then((info) => {
       if (!this.conns.has(conn)) return;
-      conn.info = { name: String(info?.name ?? 'unknown'), version: String(info?.version ?? '') };
+      conn.info = { name: String(info?.name ?? 'unknown'), version: String(info?.version ?? ''), profile: String(info?.profile ?? '') };
       this.ready.push(conn);
       this.log.info({ browser: conn.info }, 'browser extension connected');
       for (const w of [...this.waiters]) w();

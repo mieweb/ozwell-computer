@@ -116,7 +116,8 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
         exec: feat(config.exec, 'disabled by OZWELL_COMPUTER_EXEC=false'),
         pty: feat(config.exec && ctx.ptyAvailable, config.exec ? 'node-pty not installed' : 'disabled by OZWELL_COMPUTER_EXEC=false'),
         browser: !config.exec ? feat(false, 'disabled by OZWELL_COMPUTER_EXEC=false')
-          : feat(!!ctx.browser?.info(), ctx.browser ? 'Firefox is not running, or its ozwell-computer extension is not connected' : 'the browser bridge is not running'),
+          : feat(!!ctx.browser?.info(), !ctx.browser ? 'the browser bridge is not running'
+            : ctx.browser.ambiguous() ? 'Firefox is running with more than one profile' : 'Firefox is not running, or its ozwell-computer extension is not connected'),
         vnc: { available: true, backend: config.vncBackend, view_only: config.viewOnly },
         mcp: { available: true },
         update: ctx.updater ? await ctx.updater.status().then((u) => (u.supported ? { available: true } : { available: false, limitation: u.limitation })) : feat(false, 'update checks are not running'),
