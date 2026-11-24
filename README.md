@@ -245,7 +245,7 @@ docker buildx build --target deb --output type=local,dest=out .   # .deb without
 Package metadata and dependencies are in `.fpm`. The maintainer scripts and units
 are in `contrib/`. Files installed under `PREFIX` mirror the checkout: `dist/` is built
 by `npm run build`, and `bin/X` is generated from `bin/X.in` with `@PREFIX@` filled in
-(`make build`, or `make generated`).
+(`bin/Makefile`, run by `make build`).
 - **Versions come from git tags** (`./package-version deb`): `v1.2.3` gives `1.2.3`,
   3 commits later `1.2.3+3.g<hash>`, `v1.3.0-rc1` gives `1.3.0~rc1`, and no tag gives
   `0.0.0`.

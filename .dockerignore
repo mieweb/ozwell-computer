@@ -7,3 +7,4 @@ coverage
 *.deb
 bin/*
 !bin/*.in
+!bin/Makefile

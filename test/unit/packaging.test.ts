@@ -205,15 +205,15 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
   });
 
   // bin/X.in becomes bin/X in the checkout (mirroring $(PREFIX)), then is installed as is.
-  it('make generates bin/ from bin/*.in with PREFIX, also when upgrades skip build, and installs it', () => {
+  it('make generates bin/ from bin/*.in, also when upgrades skip build, and installs it', () => {
     const dry = (...args: string[]) => spawnSync('make', ['-n', ...args], { cwd: new URL('../..', import.meta.url), encoding: 'utf8' }).stdout;
-    const gen = "sed 's|@PREFIX@|/x|g' $f.in > $f";
-    expect(dry('generated', 'PREFIX=/x')).toContain(gen);
-    // As bin/ozwell-computer-upgrade runs it: build is skipped, generation isn't.
-    const upgrade = dry('-o', 'build', '-o', 'system-deps', 'install', 'PREFIX=/x', 'DESTDIR=/tmp/oz-stage');
+    const gen = "sed 's|@PREFIX@|/x|g' bin/ozwell-computer-upgrade.in > bin/ozwell-computer-upgrade.tmp";
+    // As bin/ozwell-computer-upgrade runs it: build is skipped, a changed template is still regenerated.
+    const upgrade = dry('-W', 'bin/ozwell-computer-upgrade.in', '-o', 'build', '-o', 'system-deps', 'install', 'PREFIX=/x', 'DESTDIR=/tmp/oz-stage');
     expect(upgrade).toContain(gen);
     expect(upgrade).toContain('install -m 0755 bin/ozwell-computer-browser-host bin/ozwell-computer-upgrade /tmp/oz-stage/x/bin/');
-    expect(read('.gitignore')).toMatch(/^\/bin\/\*\n!\/bin\/\*\.in$/m);
+    expect(dry('-W', 'bin/ozwell-computer-upgrade.in', 'build')).toContain("sed 's|@PREFIX@|/opt/ozwell-computer|g' bin/ozwell-computer-upgrade.in");
+    expect(read('.gitignore')).toMatch(/^\/bin\/\*\n!\/bin\/\*\.in\n!\/bin\/Makefile$/m);
   });
 });
 

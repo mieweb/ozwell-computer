@@ -15,16 +15,14 @@ UNITS    := ozwell-computer.service ozwell-computer-desktop.service ozwell-compu
 # Replaced by ozwell-computer-desktop.service.
 LEGACY_UNITS := ozwell-computer-session.service ozwell-computer-xvfb.service ozwell-computer-dbus.service
 
-# Files installed under $(PREFIX) that need it filled in: generated from <path>.in next to
-# the template, so the checkout's layout mirrors the installed one ($(DESTAPP)).
-GENERATED := $(patsubst %.in,%,$(wildcard bin/*.in))
+include bin/Makefile
 
 INSTALL      := install
 INSTALL_DATA := $(INSTALL) -m 0644
 # Config files (dpkg conffiles): keep an existing copy, like apt's --force-confold.
 conffile = [ -e $(2) ] || $(INSTALL_DATA) $(1) $(2)
 
-.PHONY: help deps system-deps generated build test install deb clean
+.PHONY: help deps system-deps build test install deb clean
 
 help:
 	@echo "ozwell-computer"
@@ -51,25 +49,21 @@ system-deps:
 	DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends \
 		$$(sed -n 's/^--depends "\{0,1\}\([^ "]*\).*/\1/p' .fpm | grep -vx nodejs)
 
-# Always regenerated: PREFIX may differ from the last run. A dependency of install too,
-# so it runs even when build is skipped (`make -o build install`, as upgrades do).
-generated:
-	for f in $(GENERATED); do sed 's|@PREFIX@|$(PREFIX)|g' $$f.in > $$f && chmod 0755 $$f || exit 1; done
-
-build: generated
+build: $(BIN)
 	npm run build
 
 test:
 	npm test
 
-install: build generated $(if $(filter /,$(DESTDIR)),system-deps)
+# $(BIN) directly too: upgrades from git skip build (`make -o build install`).
+install: build $(BIN) $(if $(filter /,$(DESTDIR)),system-deps)
 	$(INSTALL) -d $(DESTAPP) $(DESTAPP)/bin
 	cp -a dist package.json package-lock.json node_modules $(DESTAPP)/
 	chmod 0755 $(DESTAPP)/dist/cli.js
 	# Runtime dependencies only, and the release version (the installed app has no git checkout).
 	cd $(DESTAPP) && npm prune --omit=dev --no-audit --no-fund >/dev/null \
 		&& npm pkg set version="$$(cd "$(CURDIR)" && ./package-version node)"
-	$(INSTALL) -m 0755 $(GENERATED) $(DESTAPP)/bin/
+	$(INSTALL) -m 0755 $(BIN) $(DESTAPP)/bin/
 	$(INSTALL) -d $(DESTDIR)/usr/bin
 	ln -sf $(PREFIX)/dist/cli.js $(DESTDIR)/usr/bin/ozwell-computer
 	$(INSTALL) -d $(UNIT_DIR)
@@ -109,4 +103,4 @@ deb:
 
 clean:
 	rm -rf dist .pkg
-	rm -f *.deb $(GENERATED)
+	rm -f *.deb $(BIN)
