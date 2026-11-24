@@ -38,13 +38,16 @@ export default async function a11yRoutes(app: FastifyInstance, ctx: AppContext) 
   app.post('/api/v1/a11y/find', {
     schema: {
       tags: ['a11y'], summary: 'Find accessible elements',
-      description: 'All given criteria must match.',
+      description: 'All given criteria must match. Empty string filters are ignored; use name_empty: true to find unnamed controls.',
       body: {
         type: 'object', additionalProperties: false,
         properties: {
           role: prop('string', 'Normalized or AT-SPI role, e.g. button, text_field, menuitem'),
-          name: prop('string', 'Exact accessible name'),
+          name: prop('string', 'Exact, case-sensitive accessible name; empty string is ignored'),
           name_contains: prop('string', 'Case-insensitive substring of the name'),
+          name_empty: prop('boolean', 'When true, only match controls with an empty accessible name; false adds no constraint'),
+          description: prop('string', 'Exact, case-sensitive accessible description; empty string is ignored'),
+          description_contains: prop('string', 'Case-insensitive substring of the description'),
           value_contains: prop('string', 'Case-insensitive substring of the value'),
           states: prop('array', 'States that must all be present, e.g. focused, checked', { items: { type: 'string' } }),
           max_results: prop('integer', 'Maximum matches returned (default 50)', { minimum: 1, maximum: 1000 }),

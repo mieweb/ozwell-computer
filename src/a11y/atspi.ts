@@ -73,7 +73,18 @@ export interface A11yNode {
 interface Snapshot { id: string; refs: Map<string, Ref>; created: number }
 
 export interface TreeOptions { window?: string; max_depth?: number; max_nodes?: number; hidden?: boolean }
-export interface FindOptions { role?: string; name?: string; name_contains?: string; value_contains?: string; states?: string[]; max_results?: number; window?: string }
+export interface FindOptions {
+  role?: string;
+  name?: string;
+  name_contains?: string;
+  name_empty?: boolean;
+  description?: string;
+  description_contains?: string;
+  value_contains?: string;
+  states?: string[];
+  max_results?: number;
+  window?: string;
+}
 
 export class A11y {
   private bus: any | null = null;
@@ -334,12 +345,16 @@ export class A11y {
   private async findUntraced(o: FindOptions) {
     const max = o.max_results ?? 50;
     const nc = o.name_contains?.toLowerCase();
+    const dc = o.description_contains?.toLowerCase();
     const vc = o.value_contains?.toLowerCase();
     // Filter on the cheap facts during the walk; only matches get bounds/actions/value.
     const { snapshot_id, nodes, truncated } = await this.walk({ window: o.window, maxNodes: 20000, maxDepth: 64 }, (l) =>
       (!o.role || mapRole(l.native_role) === o.role || l.native_role === o.role) &&
-      (o.name === undefined || l.name === o.name) &&
+      (!o.name || l.name === o.name) &&
+      (!o.name_empty || l.name === '') &&
       (!nc || l.name.toLowerCase().includes(nc)) &&
+      (!o.description || l.description === o.description) &&
+      (!dc || l.description.toLowerCase().includes(dc)) &&
       (!o.states || o.states.every((st) => l.states.includes(st))),
     );
     const matches = vc ? nodes.filter((n) => (n.value ?? '').toLowerCase().includes(vc)) : nodes;

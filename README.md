@@ -405,6 +405,16 @@ The tools are: `screenshot`, `click`, `double_click`, `move`, `drag`, `scroll`,
 `update_computer`. When exec is enabled, `run_command`, `read_file` and `write_file` are
 also available.
 
+**Accessibility search:** `find_element` combines all supplied filters with AND.
+`name` and `description` match exactly (case-sensitive); `name_contains`,
+`description_contains` and `value_contains` match case-insensitive substrings.
+Empty string filters are ignored: `{"name":"","name_contains":"Edit"}` searches
+for names containing “Edit”. Use `name_empty: true` to explicitly find unnamed
+controls (`false` adds no constraint). For icon controls whose name is a glyph,
+try `description_contains`. `get_ui_tree` includes nonempty descriptions and omits
+empty ones to keep the response compact. These search options also apply to
+`POST /api/v1/a11y/find`.
+
 **Updates:** while the last update check found a newer version that isn't being
 installed yet, every tool result ends with a text item saying so and asking the agent
 to call `update_computer` before its next turn that uses the computer (it may finish the
