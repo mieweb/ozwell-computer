@@ -243,7 +243,9 @@ docker buildx build --target deb --output type=local,dest=out .   # .deb without
 ```
 
 Package metadata and dependencies are in `.fpm`. The maintainer scripts and units
-are in `contrib/`.
+are in `contrib/`. Files installed under `PREFIX` mirror the checkout: `dist/` is built
+by `npm run build`, and `bin/X` is generated from `bin/X.in` with `@PREFIX@` filled in
+(`make build`, or `make generated`).
 - **Versions come from git tags** (`./package-version deb`): `v1.2.3` gives `1.2.3`,
   3 commits later `1.2.3+3.g<hash>`, `v1.3.0-rc1` gives `1.3.0~rc1`, and no tag gives
   `0.0.0`.
@@ -503,7 +505,7 @@ npm test                # full regression: unit + integration (API, VNC, MCP, a1
   push the version tag and `:latest`; nightly and on-demand runs push `:main`.
 - `OZ_URL=… OZ_TOKEN=… npm test` runs the suite against any other server.
 - Run `docker compose up -d --build` after changing anything packaged other than
-  `./dist`: `contrib/` (units, XFCE config, maintainer scripts), `.fpm`, `docker/`, the
+  `./dist`: `bin/*.in`, `contrib/` (units, XFCE config, maintainer scripts), `.fpm`, `docker/`, the
   `Dockerfile`, or dependencies. The image is rebuilt from a fresh `.deb`.
 - The compose container mounts `./dist` read-only, so don't `dpkg -i` or `apt` the
   package inside it. Use `docker compose up -d --build` instead.

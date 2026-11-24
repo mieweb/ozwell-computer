@@ -15,12 +15,16 @@ UNITS    := ozwell-computer.service ozwell-computer-desktop.service ozwell-compu
 # Replaced by ozwell-computer-desktop.service.
 LEGACY_UNITS := ozwell-computer-session.service ozwell-computer-xvfb.service ozwell-computer-dbus.service
 
+# Files installed under $(PREFIX) that need it filled in: generated from <path>.in next to
+# the template, so the checkout's layout mirrors the installed one ($(DESTAPP)).
+GENERATED := $(patsubst %.in,%,$(wildcard bin/*.in))
+
 INSTALL      := install
 INSTALL_DATA := $(INSTALL) -m 0644
 # Config files (dpkg conffiles): keep an existing copy, like apt's --force-confold.
 conffile = [ -e $(2) ] || $(INSTALL_DATA) $(1) $(2)
 
-.PHONY: help deps system-deps build test install deb clean
+.PHONY: help deps system-deps generated build test install deb clean
 
 help:
 	@echo "ozwell-computer"
@@ -28,7 +32,7 @@ help:
 	@echo "Targets:"
 	@echo "  deps     install dependencies (npm ci)"
 	@echo "  system-deps  apt-get install the runtime packages listed in .fpm (root)"
-	@echo "  build    compile the server and build the viewer (npm run build)"
+	@echo "  build    generate bin/ from bin/*.in, compile the server and build the viewer (npm run build)"
 	@echo "  test     run the full test suite (npm test; uses the compose dev container)"
 	@echo "  install  stage the application, units and config into DESTDIR (default /)"
 	@echo "  deb      build ozwell-computer_<version>_amd64.deb with fpm"
@@ -47,21 +51,25 @@ system-deps:
 	DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=600 install -y --no-install-recommends \
 		$$(sed -n 's/^--depends "\{0,1\}\([^ "]*\).*/\1/p' .fpm | grep -vx nodejs)
 
-build:
+# Always regenerated: PREFIX may differ from the last run. A dependency of install too,
+# so it runs even when build is skipped (`make -o build install`, as upgrades do).
+generated:
+	for f in $(GENERATED); do sed 's|@PREFIX@|$(PREFIX)|g' $$f.in > $$f && chmod 0755 $$f || exit 1; done
+
+build: generated
 	npm run build
 
 test:
 	npm test
 
-install: build $(if $(filter /,$(DESTDIR)),system-deps)
+install: build generated $(if $(filter /,$(DESTDIR)),system-deps)
 	$(INSTALL) -d $(DESTAPP) $(DESTAPP)/bin
 	cp -a dist package.json package-lock.json node_modules $(DESTAPP)/
 	chmod 0755 $(DESTAPP)/dist/cli.js
 	# Runtime dependencies only, and the release version (the installed app has no git checkout).
 	cd $(DESTAPP) && npm prune --omit=dev --no-audit --no-fund >/dev/null \
 		&& npm pkg set version="$$(cd "$(CURDIR)" && ./package-version node)"
-	sed 's|@PREFIX@|$(PREFIX)|g' contrib/upgrade.sh > $(DESTAPP)/bin/ozwell-computer-upgrade
-	chmod 0755 $(DESTAPP)/bin/ozwell-computer-upgrade
+	$(INSTALL) -m 0755 $(GENERATED) $(DESTAPP)/bin/
 	$(INSTALL) -d $(DESTDIR)/usr/bin
 	ln -sf $(PREFIX)/dist/cli.js $(DESTDIR)/usr/bin/ozwell-computer
 	$(INSTALL) -d $(UNIT_DIR)
@@ -84,14 +92,13 @@ install: build $(if $(filter /,$(DESTDIR)),system-deps)
 	# Older versions overrode xfce4-session and xsettings defaults here; Debian's now apply.
 	rm -rf $(DESTAPP)/xdg
 	$(INSTALL_DATA) contrib/xfce/applications/*.desktop $(DESTDIR)/usr/share/applications/
-	# Firefox: the extension behind the cookie API, its native messaging host, and the pref that loads it.
+	# Firefox: the extension behind the cookie API, its native messaging host manifest (the host
+	# itself is bin/ozwell-computer-browser-host), and the pref that loads it.
 	$(INSTALL) -d $(FF_EXT) $(DESTDIR)/usr/lib/mozilla/native-messaging-hosts $(DESTDIR)/etc/firefox-esr
 	$(INSTALL_DATA) contrib/firefox/extension/* $(FF_EXT)/
 	sed 's|@PREFIX@|$(PREFIX)|g' contrib/firefox/native-messaging-host.json > $(DESTDIR)/usr/lib/mozilla/native-messaging-hosts/ozwell_computer.json
-	sed 's|@PREFIX@|$(PREFIX)|g' contrib/firefox/browser-host > $(DESTAPP)/bin/ozwell-computer-browser-host
-	chmod 0755 $(DESTAPP)/bin/ozwell-computer-browser-host
 	$(INSTALL_DATA) contrib/firefox/prefs.js $(DESTDIR)/etc/firefox-esr/ozwell-computer.js
-	# Last: the source commit marks a complete install for in-app updates from git (contrib/upgrade.sh).
+	# Last: the source commit marks a complete install for in-app updates from git (bin/ozwell-computer-upgrade).
 	rev=$$(git rev-parse --verify -q HEAD 2>/dev/null); if [ -n "$$rev" ]; then echo "$$rev" > $(DESTAPP)/REVISION; else rm -f $(DESTAPP)/REVISION; fi
 
 deb:
@@ -102,4 +109,4 @@ deb:
 
 clean:
 	rm -rf dist .pkg
-	rm -f *.deb
+	rm -f *.deb $(GENERATED)

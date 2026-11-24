@@ -83,14 +83,14 @@ describe('maintainer scripts', () => {
 
   it('the upgrade service cannot time out mid-transaction, and the script recovers and waits for locks', () => {
     expect(read('contrib/systemd/ozwell-computer-upgrade.service')).toMatch(/^TimeoutStartSec=infinity$/m);
-    const sh = read('contrib/upgrade.sh');
+    const sh = read('bin/ozwell-computer-upgrade.in');
     expect(sh).toContain('dpkg --configure -a');
     expect(sh).toContain('DPkg::Lock::Timeout');
   });
 });
 
 describe('git update channel', () => {
-  const sh = read('contrib/upgrade.sh');
+  const sh = read('bin/ozwell-computer-upgrade.in');
   const git = /^from_git\(\) \{\n([\s\S]*?)\n\}$/m.exec(sh)?.[1] ?? '';
 
   it('upgrade.sh builds, then stops only the server while installing and starts it again', () => {
@@ -202,7 +202,18 @@ case "${c} $*" in "git -C ${dir}/src rev-parse"*) echo new ;; "make -C ${dir}/sr
     // From the source checkout: the installed tree (e.g. /opt) has no git history.
     expect(mk).toContain('npm pkg set version="$$(cd "$(CURDIR)" && ./package-version node)"');
     expect(mk).toContain('$(call conffile,contrib/default/ozwell-computer,');
-    expect(mk).toMatch(/sed 's\|@PREFIX@\|\$\(PREFIX\)\|g' contrib\/upgrade\.sh/);
+  });
+
+  // bin/X.in becomes bin/X in the checkout (mirroring $(PREFIX)), then is installed as is.
+  it('make generates bin/ from bin/*.in with PREFIX, also when upgrades skip build, and installs it', () => {
+    const dry = (...args: string[]) => spawnSync('make', ['-n', ...args], { cwd: new URL('../..', import.meta.url), encoding: 'utf8' }).stdout;
+    const gen = "sed 's|@PREFIX@|/x|g' $f.in > $f";
+    expect(dry('generated', 'PREFIX=/x')).toContain(gen);
+    // As bin/ozwell-computer-upgrade runs it: build is skipped, generation isn't.
+    const upgrade = dry('-o', 'build', '-o', 'system-deps', 'install', 'PREFIX=/x', 'DESTDIR=/tmp/oz-stage');
+    expect(upgrade).toContain(gen);
+    expect(upgrade).toContain('install -m 0755 bin/ozwell-computer-browser-host bin/ozwell-computer-upgrade /tmp/oz-stage/x/bin/');
+    expect(read('.gitignore')).toMatch(/^\/bin\/\*\n!\/bin\/\*\.in$/m);
   });
 });
 
@@ -298,8 +309,7 @@ describe('desktop session', () => {
     expect(read('contrib/firefox/extension/background.js')).toContain(`connectNative('${host.name}')`);
     expect(host.path).toBe('@PREFIX@/bin/ozwell-computer-browser-host');
     expect(mk).toContain(`> $(DESTDIR)/usr/lib/mozilla/native-messaging-hosts/${host.name}.json`);
-    expect(mk).toContain('> $(DESTAPP)/bin/ozwell-computer-browser-host');
-    expect(read('contrib/firefox/browser-host')).toContain('@PREFIX@/dist/browser/native-host.js');
+    expect(read('bin/ozwell-computer-browser-host.in')).toContain('@PREFIX@/dist/browser/native-host.js');
     // Without it, an extension installed after the profile was created starts one Firefox restart late.
     expect(read('contrib/firefox/prefs.js')).toMatch(/^pref\("extensions\.startupScanScopes", 8\);$/m);
     expect(mk).toContain('contrib/firefox/prefs.js $(DESTDIR)/etc/firefox-esr/ozwell-computer.js');
