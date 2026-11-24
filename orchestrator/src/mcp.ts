@@ -150,18 +150,6 @@ const stoppedError = (c: Computer) => settling(c)
   ? fail('target_unavailable', `computer ${c.id} is still starting; call get_computer with instance_id "${c.id}" (it waits until it's ready), then retry`)
   : fail('computer_stopped', `computer ${c.id} is stopped (status: ${c.status}); call start_computer with instance_id "${c.id}", then retry`);
 
-/**
- * Arguments that are credentials (set_cookie's value: a session cookie signs the browser
- * in), replaced in logs and spans. Everything else is logged in full by decision.
- */
-export const SECRET_ARGS: Readonly<Record<string, readonly string[]>> = { set_cookie: ['value'] };
-
-/** The arguments as logged and traced: SECRET_ARGS replaced with "REDACTED". */
-export function observedArgs(name: string, args: Record<string, unknown>): Record<string, unknown> {
-  const secret = SECRET_ARGS[name]?.filter((k) => k in args);
-  return secret?.length ? { ...args, ...Object.fromEntries(secret.map((k) => [k, 'REDACTED'])) } : args;
-}
-
 /** Span attribute size cap: larger arguments (e.g. pasted files) are truncated with their size. */
 const MAX_ATTR = 8192;
 const argsAttr = (args: Record<string, unknown>) => {
@@ -276,7 +264,7 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
     return tracer.startActiveSpan(`mcp.tools/call ${name}`, {
       attributes: {
         'mcp.method.name': 'tools/call', 'gen_ai.tool.name': name, 'enduser.id': observedUser(user),
-        'ozwell.provider': provider.scheme, 'ozwell.tool.arguments': argsAttr(observedArgs(name, args)),
+        'ozwell.provider': provider.scheme, 'ozwell.tool.arguments': argsAttr(args),
         ...(typeof args.instance_id === 'string' ? { 'ozwell.instance_id': args.instance_id } : {}),
         ...(extra?.sessionId ? { 'mcp.session.id': extra.sessionId } : {}),
       },
@@ -295,8 +283,9 @@ export function buildMcpServer(deps: OrchestratorDeps, user: Requester): Server 
   });
 
   const callTool = async (name: string, args: Record<string, unknown>): Promise<any> => {
-    // Full arguments by decision (docs/observability-plan.md), except credentials (SECRET_ARGS).
-    deps.log?.info({ tool: name, user: observedUser(user), instance: args.instance_id, args: observedArgs(name, args) }, 'tool call');
+    // Full arguments by decision (docs/observability-plan.md), set_cookie's value included:
+    // secrets are left to the anonymization layer, like PHI.
+    deps.log?.info({ tool: name, user: observedUser(user), instance: args.instance_id, args }, 'tool call');
     try {
       switch (name) {
         case 'list_computers':
