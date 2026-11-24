@@ -33,6 +33,9 @@ describe('OZWELL_COMPUTER_EXEC=false', () => {
     ['GET', '/api/v1/exec/jobs/j-000000000000/stream', undefined],
     ['DELETE', '/api/v1/exec/jobs/j-000000000000', undefined],
     ['PUT', '/api/v1/events/s/job', { job_id: 'j-000000000000' }],
+    ['GET', '/api/v1/browser/cookies', undefined],
+    ['PUT', '/api/v1/browser/cookies', { name: 'a', value: 'b', domain: 'example.com' }],
+    ['DELETE', '/api/v1/browser/cookies?name=a&domain=example.com', undefined],
   ])('%s %s → 403 permission_denied', async (method, url, payload) => {
     const r = await app.inject({
       method: method as any, url, headers: { ...auth, ...(typeof payload === 'string' ? { 'content-type': 'application/octet-stream' } : {}) },
@@ -45,14 +48,15 @@ describe('OZWELL_COMPUTER_EXEC=false', () => {
   it('capabilities report exec as unavailable', async () => {
     const c = (await app.inject({ url: '/api/v1/capabilities', headers: auth })).json();
     expect(c.features.exec).toMatchObject({ available: false });
+    expect(c.features.browser).toMatchObject({ available: false, limitation: expect.stringContaining('OZWELL_COMPUTER_EXEC') });
   });
 
-  it('MCP does not offer run_command, read_file or write_file, and launch_app is refused', async () => {
+  it('MCP does not offer run_command, read_file, write_file or the cookie tools, and launch_app is refused', async () => {
     const client = new Client({ name: 'restricted', version: '1' });
     const transport = new StreamableHTTPClientTransport(new URL(base + '/mcp'), { requestInit: { headers: auth } });
     await client.connect(transport);
     const names = (await client.listTools()).tools.map((t) => t.name);
-    for (const n of ['run_command', 'read_file', 'write_file']) expect(names).not.toContain(n);
+    for (const n of ['run_command', 'read_file', 'write_file', 'set_cookie', 'get_cookies', 'delete_cookie']) expect(names).not.toContain(n);
     expect(names).toContain('screenshot');
     const r: any = await client.callTool({ name: 'launch_app', arguments: { command: 'xterm' } });
     expect(r.isError).toBe(true);

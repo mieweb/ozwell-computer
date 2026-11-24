@@ -230,6 +230,8 @@ describe('desktop session', () => {
     expect(server).toMatch(/^Requires=ozwell-computer-desktop\.service$/m);
     expect(server).toMatch(/^After=ozwell-computer-desktop\.service /m);
     expect(server).toMatch(/^KillMode=process$/m);
+    // Apps it launches (Firefox: hundreds of threads) share its task limit.
+    expect(server).toMatch(/^TasksMax=infinity$/m);
     expect(desktop).not.toMatch(/^(After|Wants|Requires|BindsTo|PartOf|Upholds)=.*ozwell-computer\.service/m);
     // After= waits for the PAM session (and so the user's bus), not just the fork.
     expect(desktop).toMatch(/^Type=exec$/m);
@@ -281,5 +283,25 @@ describe('desktop session', () => {
 
   it('Firefox restores the previous session', () => {
     expect(JSON.parse(read('docker/firefox/policies.json')).policies.Homepage.StartPage).toBe('previous-session');
+  });
+
+  // The package, not the image: in-app upgrades (apt or git) must bring the cookie API along.
+  it('the package installs the cookie extension, its native messaging host, and the pref that starts it', () => {
+    const mk = read('Makefile');
+    const manifest = JSON.parse(read('contrib/firefox/extension/manifest.json'));
+    const host = JSON.parse(read('contrib/firefox/native-messaging-host.json'));
+    const id = manifest.browser_specific_settings.gecko.id;
+    // Debian's Firefox loads (unsigned) extensions from the system scope, by id.
+    expect(mk).toContain(`/usr/share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}/${id}`);
+    expect(manifest.permissions).toEqual(expect.arrayContaining(['cookies', 'nativeMessaging', '<all_urls>']));
+    expect(host.allowed_extensions).toEqual([id]);
+    expect(read('contrib/firefox/extension/background.js')).toContain(`connectNative('${host.name}')`);
+    expect(host.path).toBe('@PREFIX@/bin/ozwell-computer-browser-host');
+    expect(mk).toContain(`> $(DESTDIR)/usr/lib/mozilla/native-messaging-hosts/${host.name}.json`);
+    expect(mk).toContain('> $(DESTAPP)/bin/ozwell-computer-browser-host');
+    expect(read('contrib/firefox/browser-host')).toContain('@PREFIX@/dist/browser/native-host.js');
+    // Without it, an extension installed after the profile was created starts one Firefox restart late.
+    expect(read('contrib/firefox/prefs.js')).toMatch(/^pref\("extensions\.startupScanScopes", 8\);$/m);
+    expect(mk).toContain('contrib/firefox/prefs.js $(DESTDIR)/etc/firefox-esr/ozwell-computer.js');
   });
 });

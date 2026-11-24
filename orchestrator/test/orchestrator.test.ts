@@ -396,6 +396,10 @@ describe('logging', () => {
       expect(line).toMatchObject({ component: 'mcp', tool: 'list_computers', user: 'erin', args: { extra: 1 } }); // no email: the id
       await tool('erin', 'list_computers', {}, { 'x-ozwell-user-email': 'erin@example.com' });
       expect(lines.filter((x) => x.msg === 'tool call').at(-1)).toMatchObject({ user: 'erin@example.com' });
+      // Credentials are the exception.
+      await tool('erin', 'set_cookie', { instance_id: 'nope', name: 'sid', value: 'secret-cookie', domain: 'example.com' });
+      expect(lines.filter((x) => x.msg === 'tool call').at(-1).args).toEqual({ instance_id: 'nope', name: 'sid', value: 'REDACTED', domain: 'example.com' });
+      expect(JSON.stringify(lines)).not.toContain('secret-cookie');
     } finally {
       base = prev;
       await l.close();

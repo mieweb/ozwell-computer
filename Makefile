@@ -9,6 +9,8 @@ STAGE := $(if $(filter command line,$(origin DESTDIR)),$(DESTDIR),$(CURDIR)/.pkg
 DESTAPP  := $(DESTDIR)$(PREFIX)
 UNIT_DIR := $(DESTDIR)/usr/lib/systemd/system
 XFCONF   := $(DESTDIR)/etc/xdg/xfce4/xfconf/xfce-perchannel-xml
+# Firefox's system-wide extension directory (the id is Firefox's application id).
+FF_EXT   := $(DESTDIR)/usr/share/mozilla/extensions/{ec8030f7-c20a-464f-9b0e-13a3a9e97384}/ozwell-computer@mieweb.com
 UNITS    := ozwell-computer.service ozwell-computer-desktop.service ozwell-computer-upgrade.service ozwell-computer-upgrade.path
 # Replaced by ozwell-computer-desktop.service.
 LEGACY_UNITS := ozwell-computer-session.service ozwell-computer-xvfb.service ozwell-computer-dbus.service
@@ -82,6 +84,13 @@ install: build $(if $(filter /,$(DESTDIR)),system-deps)
 	# Older versions overrode xfce4-session and xsettings defaults here; Debian's now apply.
 	rm -rf $(DESTAPP)/xdg
 	$(INSTALL_DATA) contrib/xfce/applications/*.desktop $(DESTDIR)/usr/share/applications/
+	# Firefox: the extension behind the cookie API, its native messaging host, and the pref that loads it.
+	$(INSTALL) -d $(FF_EXT) $(DESTDIR)/usr/lib/mozilla/native-messaging-hosts $(DESTDIR)/etc/firefox-esr
+	$(INSTALL_DATA) contrib/firefox/extension/* $(FF_EXT)/
+	sed 's|@PREFIX@|$(PREFIX)|g' contrib/firefox/native-messaging-host.json > $(DESTDIR)/usr/lib/mozilla/native-messaging-hosts/ozwell_computer.json
+	sed 's|@PREFIX@|$(PREFIX)|g' contrib/firefox/browser-host > $(DESTAPP)/bin/ozwell-computer-browser-host
+	chmod 0755 $(DESTAPP)/bin/ozwell-computer-browser-host
+	$(INSTALL_DATA) contrib/firefox/prefs.js $(DESTDIR)/etc/firefox-esr/ozwell-computer.js
 	# Last: the source commit marks a complete install for in-app updates from git (contrib/upgrade.sh).
 	rev=$$(git rev-parse --verify -q HEAD 2>/dev/null); if [ -n "$$rev" ]; then echo "$$rev" > $(DESTAPP)/REVISION; else rm -f $(DESTAPP)/REVISION; fi
 

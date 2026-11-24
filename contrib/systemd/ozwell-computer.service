@@ -28,6 +28,10 @@ SupplementaryGroups=systemd-journal
 # Apps launched through the API run in this service's cgroup; restarting the
 # server (e.g. after an upgrade) must not close them.
 KillMode=process
+# ...and their threads count against its task limit: systemd's default (15% of the
+# kernel's, ~300 in a container) is less than one Firefox uses, after which neither
+# Firefox nor the server can start threads or commands (EAGAIN).
+TasksMax=infinity
 
 [Install]
 WantedBy=multi-user.target

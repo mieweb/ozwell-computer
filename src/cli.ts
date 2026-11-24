@@ -11,6 +11,8 @@ import { A11y } from './a11y/atspi.js';
 import { ptyAvailable } from './process/pty.js';
 import { Updater } from './update.js';
 import { ensureSettingsDaemon } from './theme.js';
+import { BrowserBridge } from './browser/bridge.js';
+import { browserSocketPath } from './browser/protocol.js';
 
 /**
  * Mirror of our output onto a terminal named by OZWELL_COMPUTER_CONSOLE. The container's
@@ -167,7 +169,9 @@ async function main() {
   const a11y = config.a11y === 'off' ? null : new A11y(config.a11y, log, desktop);
   const updater = offline ? null
     : new Updater(config.updateUrl === 'off' ? null : config.updateUrl, log, (s) => desktop.bus.publish('update.status', s));
-  const app = await buildServer({ config, desktop, token, version: VERSION, a11y, ptyAvailable: await ptyAvailable(), updater, log });
+  // Firefox's extension connects here for the cookie API (exec-gated, like file access).
+  const browser = offline || !config.exec ? null : new BrowserBridge(browserSocketPath(), log);
+  const app = await buildServer({ config, desktop, token, version: VERSION, a11y, ptyAvailable: await ptyAvailable(), updater, browser, log });
 
   if (args.printMcpTools) {
     // The catalog the orchestrator proxies (orchestrator/ reads docs/mcp-tools.json).
@@ -180,6 +184,7 @@ async function main() {
 
   await desktop.start();
   void updater?.start();
+  if (browser) await browser.listen().catch((e) => log.warn({ err: (e as Error).message, path: browser.path }, 'browser bridge unavailable: cannot listen'));
   await app.listen({ port: config.port, host: config.host });
 
   const addr = app.server.address();
@@ -212,6 +217,7 @@ async function main() {
     t.unref();
     await app.close().catch(() => undefined);
     updater?.stop();
+    await browser?.close();
     await desktop.stop();
     await a11y?.close();
     xvfb?.removeAllListeners('exit');

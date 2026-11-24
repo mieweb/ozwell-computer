@@ -1,0 +1,7 @@
+{
+  "name": "ozwell_computer",
+  "description": "Relays the ozwell-computer server's requests to its Firefox extension",
+  "path": "@PREFIX@/bin/ozwell-computer-browser-host",
+  "type": "stdio",
+  "allowed_extensions": ["ozwell-computer@mieweb.com"]
+}

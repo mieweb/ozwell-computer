@@ -42,7 +42,7 @@ The "Later" items are not.
 | Instance tracing | `traceparent` is propagated and `trace_id` added to instance logs. Computers also record spans that continue it into a bounded buffer served at `GET /api/v1/traces` (OTLP JSON); the log puller forwards them to VictoriaTraces tagged `ozwell.instance_id` (workstream 4, #64). No relay: computers never push. |
 | Propagation | `traceparent` HTTP header plus `params._meta.traceparent`. |
 | Sampling | 100%, configurable. |
-| Tool argument capture | Full arguments. PHI handling and anonymization are a later layer. |
+| Tool argument capture | Full arguments, except credentials (`set_cookie`'s value). PHI handling and anonymization are a later layer. |
 | Computer metadata | An info metric (`ozwell_orchestrator_computer_info`), not labels on scraped series, so metadata changes never split a computer's series. Dashboards aggregate per `instance_id`, which also merges series split before this change. |
 | User identity | Email (`X-Ozwell-User-Email`, or the computer's stored owner email); the user id only when there is no email. Access is still enforced by user id. |
 | `/internal/*` security | A separate port and listener (`ORCHESTRATOR_INTERNAL_PORT`), not exposed publicly. Off loopback it requires a bearer token (`ORCHESTRATOR_INTERNAL_TOKEN`), which vmagent sends. |
@@ -196,6 +196,8 @@ All scrape routes are served **only on the internal listener**.
     to keep log volume sane.
   - Tokens are still redacted: auth headers, the instance token, and the viewer
     `?token=` URLs.
+  - So are credentials passed as tool arguments: `set_cookie`'s `value` is logged and
+    traced as `REDACTED` (`SECRET_ARGS` in `orchestrator/src/mcp.ts`).
 - pino keeps writing to stdout. `@opentelemetry/instrumentation-pino` adds
   `trace_id`/`span_id` and sends records over OTLP to VictoriaLogs.
 - The admin CLI (`bin/admin`, see `orchestrator/README.md`) preloads the same
@@ -302,8 +304,8 @@ All scrape routes are served **only on the internal listener**.
    - `mcp.method.name`, `gen_ai.tool.name`, `mcp.session.id`
    - `ozwell.instance_id`, `ozwell.provider`, `enduser.id` (the user's email)
    - `ozwell.ready`, `error.type`
-   - the full tool arguments as `ozwell.tool.arguments`, with large binary result
-     payloads summarised by size
+   - the full tool arguments as `ozwell.tool.arguments` (credentials redacted, as in
+     the logs), with large binary result payloads summarised by size
 3. **Tool-call metrics:** `ozwell_orchestrator_tool_call_duration_seconds{tool,outcome}`
    (with exemplars) and `ozwell_orchestrator_tool_calls_total{tool,outcome,reason}`.
    `reason` is a fixed set so alerts can tell real failures from agent mistakes:

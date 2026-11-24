@@ -28,6 +28,7 @@ const capabilities = record('What this server can do right now', {
   features: record('Per-feature availability', {
     screenshot: feature, input: feature, damage: feature, clipboard: feature, clipboard_events: feature, windows: feature,
     a11y: feature, exec: feature, pty: feature,
+    browser: { ...feature, description: 'Firefox cookie API: available while Firefox runs with its ozwell-computer extension connected' },
     vnc: record('Built-in VNC (always available)', {
       available: prop('boolean', 'Always true'),
       backend: prop('string', 'builtin, or external:[host:]port when proxying another VNC server'),
@@ -114,6 +115,8 @@ export default async function coreRoutes(app: FastifyInstance, ctx: AppContext) 
         a11y: ctx.a11y ? await ctx.a11y.capability() : feat(false, 'accessibility disabled'),
         exec: feat(config.exec, 'disabled by OZWELL_COMPUTER_EXEC=false'),
         pty: feat(config.exec && ctx.ptyAvailable, config.exec ? 'node-pty not installed' : 'disabled by OZWELL_COMPUTER_EXEC=false'),
+        browser: !config.exec ? feat(false, 'disabled by OZWELL_COMPUTER_EXEC=false')
+          : feat(!!ctx.browser?.info(), ctx.browser ? 'Firefox is not running, or its ozwell-computer extension is not connected' : 'the browser bridge is not running'),
         vnc: { available: true, backend: config.vncBackend, view_only: config.viewOnly },
         mcp: { available: true },
         update: ctx.updater ? await ctx.updater.status().then((u) => (u.supported ? { available: true } : { available: false, limitation: u.limitation })) : feat(false, 'update checks are not running'),

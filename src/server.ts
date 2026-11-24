@@ -19,10 +19,12 @@ import coreRoutes from './routes/core.js';
 import windowRoutes from './routes/windows.js';
 import execRoutes from './routes/exec.js';
 import a11yRoutes from './routes/a11y.js';
+import browserRoutes from './routes/browser.js';
 import webRoutes, { webBuild } from './web/routes.js';
 import vncRoutes from './vnc/routes.js';
 import mcpRoutes from './mcp/server.js';
 import type { A11y } from './a11y/atspi.js';
+import type { BrowserBridge } from './browser/bridge.js';
 import type { Updater } from './update.js';
 import { m, render as renderMetrics, setCpus, setVersion } from './metrics.js';
 import { errors, media } from './routes/schemas.js';
@@ -38,6 +40,8 @@ export interface AppContext {
   a11y: A11y | null;
   ptyAvailable: boolean;
   updater: Updater | null;
+  /** The link to Firefox's ozwell-computer extension (cookies), or null when not running. */
+  browser: BrowserBridge | null;
   log: Logger;
 }
 
@@ -191,6 +195,7 @@ export async function buildServer(ctx: AppContext): Promise<FastifyInstance> {
   await app.register(async (s) => windowRoutes(s, ctx, () => webBuild(staticDir)));
   await app.register(async (s) => execRoutes(s, ctx));
   await app.register(async (s) => a11yRoutes(s, ctx));
+  await app.register(async (s) => browserRoutes(s, ctx));
   await app.register(async (s) => vncRoutes(s, ctx));
   await app.register(async (s) => mcpRoutes(s, ctx));
   await app.register(async (s) => webRoutes(s, ctx));

@@ -122,6 +122,10 @@ describe('tool-call tracing', () => {
     const [call] = byName('mcp.tools/call click');
     expect(call.attributes['ozwell.instance_id']).toBe(id);
     expect(JSON.parse(call.attributes['ozwell.tool.arguments'] as string)).toEqual({ instance_id: id, x: 3 });
+    // Except credentials: a cookie value never reaches a span.
+    await tool('set_cookie', { instance_id: id, name: 'sid', value: 'secret-cookie', domain: 'example.com' });
+    const [cookie] = byName('mcp.tools/call set_cookie');
+    expect(JSON.parse(cookie.attributes['ozwell.tool.arguments'] as string)).toEqual({ instance_id: id, name: 'sid', value: 'REDACTED', domain: 'example.com' });
     const [ic] = byName('instance.callTool');
     expect(parentOf(ic)).toBe(call.spanContext().spanId);
 

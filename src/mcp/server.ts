@@ -11,6 +11,8 @@ import type { Principal } from '../presence/index.js';
 import { DEFAULT_WAIT_MS, MAX_WAIT_MS, jobsFor, present } from '../process/jobs.js';
 import { safePath } from '../fs/index.js';
 import { launchDetached } from '../routes/windows.js';
+import { deleteCookies, getCookies, setCookie } from '../browser/cookies.js';
+import { needBridge } from '../browser/bridge.js';
 import { m } from '../metrics.js';
 import { upgrading, type UpdateStatus } from '../update.js';
 import { traceIdsOf } from '../trace-context.js';
@@ -253,6 +255,39 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
       await writeFile(p, a.content);
       return text({ ok: true, path: p, bytes: Buffer.byteLength(a.content) });
     }));
+
+    // Cookies in the desktop's Firefox (e.g. credentials to sign it in), through its extension.
+    const bridge = () => needBridge(ctx.browser);
+    const firefox = 'Firefox must be running (launch_app "firefox-esr"; a call waits up to 10 s for it to start). ';
+    const domain = z.string().min(1).describe('".example.com" for a domain cookie (also sent to subdomains), "example.com" for a host-only cookie');
+    mcp.registerTool('set_cookie', {
+      description: 'Set a cookie in the desktop\'s Firefox, e.g. a session credential so its pages are signed in. Creates or replaces the ' +
+        'cookie with this name, domain and path, and returns it as stored. ' + firefox +
+        'Set it before opening the site, or reload pages that are already open.',
+      inputSchema: {
+        name: z.string().min(1), value: z.string(), domain,
+        path: z.string().optional().describe('Default "/"'),
+        secure: z.boolean().optional().describe('Send only over https (default false)'),
+        http_only: z.boolean().optional().describe('Hide from page scripts (default false)'),
+        same_site: z.enum(['none', 'lax', 'strict', 'unspecified']).optional().describe('"none" needs secure: true; unspecified (the default) leaves the attribute out'),
+        expires: z.number().nullable().optional().describe('Expiry as Unix time in seconds; omit (or null) for a session cookie'),
+        host_only: z.boolean().optional().describe('Optional; must agree with domain (lets a get_cookies result be passed back as is)'),
+      },
+    }, async (a) => wrap(async () => text(await setCookie(bridge(), a))));
+    mcp.registerTool('get_cookies', {
+      description: 'List cookies in the desktop\'s Firefox with their values, e.g. to check a credential is still set or pick up one the ' +
+        'site renewed. Domains use the same form as set_cookie, so a result can be passed back to it. ' + firefox,
+      inputSchema: {
+        domain: z.string().optional().describe('Only cookies of this domain and its subdomains'),
+        name: z.string().optional().describe('Only cookies with this name'),
+        url: z.string().optional().describe('Only cookies Firefox would send to this http(s) URL'),
+      },
+    }, async (a) => wrap(async () => text({ cookies: await getCookies(bridge(), a) })));
+    mcp.registerTool('delete_cookie', {
+      description: 'Delete cookies from the desktop\'s Firefox by name and exact domain (on every path unless path is given); ' +
+        'returns the deleted cookies. ' + firefox,
+      inputSchema: { name: z.string().min(1), domain, path: z.string().optional() },
+    }, async (a) => wrap(async () => text({ deleted: await deleteCookies(bridge(), a) })));
   }
   return mcp;
 }
