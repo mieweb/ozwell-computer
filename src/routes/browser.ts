@@ -28,6 +28,11 @@ export default async function browserRoutes(app: FastifyInstance, ctx: AppContex
     if (!config.exec) throw new ApiError('permission_denied', 'browser cookies are disabled (OZWELL_COMPUTER_EXEC=false)');
   };
   const bridge = () => needBridge(ctx.browser);
+  // Replies carry credentials (cookie values): never let a browser or proxy keep them.
+  app.addHook('onSend', async (_req, reply, payload) => {
+    reply.header('cache-control', 'no-store');
+    return payload;
+  });
 
   app.get('/api/v1/browser/cookies', {
     preHandler: gate,

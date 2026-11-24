@@ -1,5 +1,5 @@
-import { createServer, type Server, type Socket } from 'node:net';
-import { chmod, mkdir, readdir, readFile, rm } from 'node:fs/promises';
+import { connect, createServer, type Server, type Socket } from 'node:net';
+import { chmod, lstat, mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { Logger } from 'pino';
 import { ApiError } from '../errors.js';
@@ -38,6 +38,17 @@ export async function firefoxRunning(): Promise<boolean> {
   return false;
 }
 
+/** Whether a server accepts connections on this Unix socket. */
+function listening(path: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const s = connect(path);
+    const done = (live: boolean) => { s.destroy(); resolve(live); };
+    s.once('connect', () => done(true));
+    s.once('error', () => done(false));
+    s.setTimeout(1000, () => done(false));
+  });
+}
+
 /**
  * The server end of the link to Firefox's ozwell-computer extension: a Unix socket that
  * its native messaging host connects to (see protocol.ts). The latest connection whose
@@ -50,21 +61,35 @@ export class BrowserBridge {
   private readonly pending = new Map<number, Pending>();
   private readonly waiters = new Set<() => void>();
   private nextId = 1;
+  /** Inode of the socket this bridge put at `path`, while listening. */
+  private inode: number | null = null;
   private readonly opts: Required<BridgeOptions>;
 
   constructor(readonly path: string, private readonly log: Logger, opts: BridgeOptions = {}) {
     this.opts = { browserRunning: firefoxRunning, connectWaitMs: 10_000, timeoutMs: 15_000, ...opts };
   }
 
+  /**
+   * Listen on the socket. Fails if another server is listening there (or the path is not a
+   * socket); replaces a stale socket left behind by one that died.
+   */
   async listen(): Promise<void> {
     await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    await rm(this.path, { force: true }); // left behind by a previous server
+    const existing = await lstat(this.path).catch(() => null);
+    if (existing && !existing.isSocket()) throw new Error(`${this.path} exists and is not a socket`);
+    if (existing && await listening(this.path)) throw new Error(`another server is listening on ${this.path}`);
+    // Bound under a temporary name, then renamed into place: closing a Unix socket server
+    // unlinks the path it was bound to, which must never be one another server now owns.
+    const tmp = `${this.path}.${process.pid}`;
+    await rm(tmp, { force: true });
     const server = createServer((s) => this.accept(s));
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
-      server.listen(this.path, () => { server.off('error', reject); resolve(); });
+      server.listen(tmp, () => { server.off('error', reject); resolve(); });
     });
-    await chmod(this.path, 0o600);
+    await chmod(tmp, 0o600);
+    await rename(tmp, this.path);
+    this.inode = (await stat(this.path)).ino;
     server.on('error', (e) => this.log.warn({ err: e.message }, 'browser bridge socket error'));
     this.server = server;
   }
@@ -74,7 +99,9 @@ export class BrowserBridge {
     const s = this.server;
     this.server = null;
     if (s) await new Promise<void>((r) => s.close(() => r()));
-    await rm(this.path, { force: true }).catch(() => undefined);
+    // Only our own socket: another server may have replaced it since.
+    if (this.inode !== null && (await stat(this.path).catch(() => null))?.ino === this.inode) await rm(this.path, { force: true }).catch(() => undefined);
+    this.inode = null;
   }
 
   /** The connected browser, or null. */
@@ -85,7 +112,11 @@ export class BrowserBridge {
   /** Call a method of the extension (e.g. cookies.getAll) and return its result. */
   async call<T = unknown>(method: string, params: unknown = {}): Promise<T> {
     let conn = this.current();
-    if (!conn && this.opts.connectWaitMs > 0 && await this.opts.browserRunning()) conn = await this.waitForConnection(this.opts.connectWaitMs);
+    if (!conn && this.opts.connectWaitMs > 0) {
+      const running = await this.opts.browserRunning();
+      // The extension may have connected while the process check ran.
+      conn = this.current() ?? (running ? await this.waitForConnection(this.opts.connectWaitMs) : null);
+    }
     if (!conn) throw new ApiError('target_unavailable', NOT_CONNECTED);
     return this.send<T>(conn, method, params);
   }

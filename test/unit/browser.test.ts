@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, statSync } from 'node:fs';
-import { connect, type Socket } from 'node:net';
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { connect, createServer, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import pino from 'pino';
@@ -30,6 +31,50 @@ describe('browser bridge protocol', () => {
   it('the socket lives in the session runtime directory, shared with Firefox', () => {
     expect(browserSocketPath({ XDG_RUNTIME_DIR: '/run/user/1000' }, 1000)).toBe('/run/user/1000/ozwell-computer/browser.sock');
     expect(browserSocketPath({}, 1001)).toBe('/run/user/1001/ozwell-computer/browser.sock');
+  });
+});
+
+describe('browser bridge socket', () => {
+  const dirs: string[] = [];
+  afterAll(() => { for (const d of dirs) rmSync(d, { recursive: true, force: true }); });
+  const sock = () => { const d = mkdtempSync(join(tmpdir(), 'oz-sock-')); dirs.push(d); return join(d, 'browser.sock'); };
+
+  it('refuses to take over a socket another server is listening on, and leaves it working', async () => {
+    const path = sock();
+    const first = new BrowserBridge(path, log);
+    await first.listen();
+    const second = new BrowserBridge(path, log);
+    await expect(second.listen()).rejects.toThrow(/another server is listening/);
+    await second.close();
+    const ino = statSync(path).ino;
+    expect(await new Promise((r) => { const c = connect(path, () => { c.destroy(); r(true); }); c.on('error', () => r(false)); })).toBe(true);
+    await first.close();
+    expect(existsSync(path)).toBe(false);
+    expect(ino).toBeGreaterThan(0);
+  });
+
+  it('replaces a stale socket, but not a file that is not a socket', async () => {
+    const path = sock();
+    // A server that died without closing leaves its socket behind.
+    spawnSync(process.execPath, ['-e', `require('net').createServer().listen(${JSON.stringify(path)}, () => process.exit(0))`]);
+    expect(statSync(path).isSocket()).toBe(true);
+    const b = new BrowserBridge(path, log);
+    await b.listen();
+    await b.close();
+    writeFileSync(path, 'not a socket');
+    await expect(new BrowserBridge(path, log).listen()).rejects.toThrow(/not a socket/);
+  });
+
+  it('on close removes only its own socket, not one that replaced it', async () => {
+    const path = sock();
+    const b = new BrowserBridge(path, log);
+    await b.listen();
+    rmSync(path);
+    const other = createServer();
+    await new Promise<void>((r) => other.listen(path, () => r()));
+    await b.close();
+    expect(statSync(path).isSocket()).toBe(true);
+    await new Promise<void>((r) => other.close(() => r()));
   });
 });
 
@@ -149,6 +194,34 @@ describe('browser cookie API', () => {
     expect(r.statusCode).toBe(200);
     expect(r.json()).toEqual({ cookies: [] });
     expect((await req('GET', '/api/v1/capabilities')).json().features.browser).toEqual({ available: true });
+  });
+
+  it('a connection made while the process check runs is used at once', async () => {
+    for (const found of [true, false]) {
+      running = found;
+      const slow = bridge['opts'].browserRunning;
+      bridge['opts'].browserRunning = async () => { await connected(); return found; };
+      try {
+        const t0 = Date.now();
+        const r = await req('GET', '/api/v1/browser/cookies');
+        expect(r.statusCode).toBe(200);
+        expect(Date.now() - t0).toBeLessThan(1000);
+      } finally {
+        bridge['opts'].browserRunning = slow;
+        ff.disconnect();
+        for (let i = 0; i < 50 && bridge.info(); i++) await new Promise((res) => setTimeout(res, 10));
+      }
+    }
+  });
+
+  it('replies are never cached: they carry credentials', async () => {
+    await connected();
+    await req('PUT', '/api/v1/browser/cookies', { name: 'sid', value: 'v', domain: 'example.net' });
+    for (const r of [
+      await req('GET', '/api/v1/browser/cookies'),
+      await req('PUT', '/api/v1/browser/cookies', { name: 'sid', value: 'v', domain: 'example.net' }),
+      await req('DELETE', '/api/v1/browser/cookies?name=sid&domain=example.net'),
+    ]) expect(r.headers['cache-control']).toBe('no-store');
   });
 
   it('sets domain and host-only cookies, and reads back the one it set', async () => {
