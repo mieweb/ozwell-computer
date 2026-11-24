@@ -54,8 +54,9 @@ function hostOf(domain: string): string {
   return host.toLowerCase();
 }
 
+/** A Path attribute (RFC 6265 4.1.1: any character but controls and ";"). */
 function checkPath(path: string): string {
-  if (!path.startsWith('/') || /[\s;]/.test(path)) throw new ApiError('invalid_request', 'path must start with "/" and contain no spaces or ";"');
+  if (!path.startsWith('/') || /[\x00-\x1f\x7f;]/.test(path)) throw new ApiError('invalid_request', 'path must start with "/" and contain no ";" or control characters');
   return path;
 }
 

@@ -53,6 +53,23 @@ describe('browser bridge socket', () => {
     expect(ino).toBeGreaterThan(0);
   });
 
+  it('of servers starting together, exactly one listens', async () => {
+    const path = sock();
+    const bridges = Array.from({ length: 5 }, () => new BrowserBridge(path, log));
+    const results = await Promise.allSettled(bridges.map((b) => b.listen()));
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    for (const r of results) if (r.status === 'rejected') expect(String(r.reason)).toMatch(/another server is listening/);
+    const winner = bridges[results.findIndex((r) => r.status === 'fulfilled')];
+    expect(statSync(path).isSocket()).toBe(true);
+    for (const b of bridges) await b.close();
+    expect(existsSync(path)).toBe(false);
+    // ...and once it is gone, the next one can.
+    const next = new BrowserBridge(path, log);
+    await next.listen();
+    await next.close();
+    expect(winner).toBeDefined();
+  });
+
   it('replaces a stale socket, but not a file that is not a socket', async () => {
     const path = sock();
     // A server that died without closing leaves its socket behind.
@@ -259,11 +276,17 @@ describe('browser cookie API', () => {
     expect(rest.deleted.map((c: any) => `${c.domain}${c.path}`)).toEqual(['example.org/']);
     expect((await req('GET', '/api/v1/browser/cookies?domain=example.org')).json().cookies.map((c: any) => c.domain)).toEqual(['.example.org']);
     expect((await req('DELETE', '/api/v1/browser/cookies?name=nope&domain=example.org')).json()).toEqual({ deleted: [] });
+    // Paths may contain spaces (RFC 6265), so such a cookie round-trips too.
+    const spaced = (await req('PUT', '/api/v1/browser/cookies', { name: 'sp', value: 'x', domain: 'example.org', path: '/account settings' })).json();
+    expect(spaced.path).toBe('/account settings');
+    const gone = (await req('DELETE', `/api/v1/browser/cookies?name=sp&domain=example.org&path=${encodeURIComponent('/account settings')}`)).json();
+    expect(gone.deleted.map((c: any) => c.path)).toEqual(['/account settings']);
   });
 
   it.each([
     [{ name: 'a', value: 'b', domain: 'https://example.com' }, /domain must be a host name/],
     [{ name: 'a', value: 'b', domain: 'example.com', path: 'x' }, /path must start/],
+    [{ name: 'a', value: 'b', domain: 'example.com', path: '/a\nb' }, /control characters/],
     [{ name: 'a b', value: 'b', domain: 'example.com' }, /name must be/],
     [{ name: 'a', value: 'b;c', domain: 'example.com' }, /value must not/],
     [{ name: 'a', value: 'b', domain: 'example.com', same_site: 'none' }, /requires secure/],

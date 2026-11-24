@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { connect, createServer, type Server, type Socket } from 'node:net';
 import { chmod, lstat, mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { dirname } from 'node:path';
@@ -49,6 +50,33 @@ function listening(path: string): Promise<boolean> {
   });
 }
 
+function listenOn(server: Server, path: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(path, () => { server.off('error', reject); resolve(); });
+  });
+}
+
+const closeServer = (server: Server) => new Promise<void>((r) => server.close(() => r()));
+
+/**
+ * Held while a bridge owns `path`, so two servers starting together can't both take it:
+ * an abstract Unix socket (Linux), which only one process can bind and which the kernel
+ * releases when its holder exits, so there is no stale lock to clean up. (Another local
+ * user could squat the name and keep the bridge from starting, but never impersonate it.)
+ */
+async function acquireLock(path: string): Promise<Server> {
+  const server = createServer((s) => s.destroy());
+  const name = `\0ozwell-computer-browser-bridge:${createHash('sha256').update(path).digest('hex').slice(0, 32)}`;
+  try {
+    await listenOn(server, name);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'EADDRINUSE') throw new Error(`another server is listening on ${path}`);
+    throw e;
+  }
+  return server;
+}
+
 /**
  * The server end of the link to Firefox's ozwell-computer extension: a Unix socket that
  * its native messaging host connects to (see protocol.ts). The latest connection whose
@@ -63,6 +91,8 @@ export class BrowserBridge {
   private nextId = 1;
   /** Inode of the socket this bridge put at `path`, while listening. */
   private inode: number | null = null;
+  /** The lock on `path` (see acquireLock()), while listening. */
+  private lock: Server | null = null;
   private readonly opts: Required<BridgeOptions>;
 
   constructor(readonly path: string, private readonly log: Logger, opts: BridgeOptions = {}) {
@@ -74,34 +104,43 @@ export class BrowserBridge {
    * socket); replaces a stale socket left behind by one that died.
    */
   async listen(): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
-    const existing = await lstat(this.path).catch(() => null);
-    if (existing && !existing.isSocket()) throw new Error(`${this.path} exists and is not a socket`);
-    if (existing && await listening(this.path)) throw new Error(`another server is listening on ${this.path}`);
-    // Bound under a temporary name, then renamed into place: closing a Unix socket server
-    // unlinks the path it was bound to, which must never be one another server now owns.
-    const tmp = `${this.path}.${process.pid}`;
-    await rm(tmp, { force: true });
-    const server = createServer((s) => this.accept(s));
-    await new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(tmp, () => { server.off('error', reject); resolve(); });
-    });
-    await chmod(tmp, 0o600);
-    await rename(tmp, this.path);
-    this.inode = (await stat(this.path)).ino;
-    server.on('error', (e) => this.log.warn({ err: e.message }, 'browser bridge socket error'));
-    this.server = server;
+    const held = await acquireLock(this.path);
+    try {
+      await mkdir(dirname(this.path), { recursive: true, mode: 0o700 });
+      const existing = await lstat(this.path).catch(() => null);
+      if (existing && !existing.isSocket()) throw new Error(`${this.path} exists and is not a socket`);
+      // A server that doesn't take the lock (none should) still keeps its socket.
+      if (existing && await listening(this.path)) throw new Error(`another server is listening on ${this.path}`);
+      // Bound under a temporary name, then renamed into place: closing a Unix socket server
+      // unlinks the path it was bound to, which must never be one another server now owns.
+      const tmp = `${this.path}.${process.pid}`;
+      await rm(tmp, { force: true });
+      const server = createServer((s) => this.accept(s));
+      await listenOn(server, tmp);
+      await chmod(tmp, 0o600);
+      await rename(tmp, this.path);
+      this.inode = (await stat(this.path)).ino;
+      server.on('error', (e) => this.log.warn({ err: e.message }, 'browser bridge socket error'));
+      this.server = server;
+      this.lock = held;
+    } catch (e) {
+      await closeServer(held);
+      throw e;
+    }
   }
 
   async close(): Promise<void> {
     for (const c of this.conns) c.socket.destroy();
     const s = this.server;
     this.server = null;
-    if (s) await new Promise<void>((r) => s.close(() => r()));
+    if (s) await closeServer(s);
     // Only our own socket: another server may have replaced it since.
     if (this.inode !== null && (await stat(this.path).catch(() => null))?.ino === this.inode) await rm(this.path, { force: true }).catch(() => undefined);
     this.inode = null;
+    // Last: the next server may take the path only once it is free.
+    const l = this.lock;
+    this.lock = null;
+    if (l) await closeServer(l);
   }
 
   /** The connected browser, or null. */
