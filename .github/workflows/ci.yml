@@ -35,8 +35,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
-      - run: npm run test:unit
+      # Native preview tests exercise the packaged static assets.
       - run: npm run build
+      - run: npm run test:unit
       - name: MCP tool catalog is up to date
         run: npm run mcp-tools && git diff --exit-code docs/mcp-tools.json
 

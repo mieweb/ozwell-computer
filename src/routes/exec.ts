@@ -72,6 +72,7 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
     if (!config.exec) throw new ApiError('permission_denied', 'process and filesystem APIs are disabled (OZWELL_COMPUTER_EXEC=false)');
   };
   const root = config.fsRoot;
+  const display = desktop.kind === 'x11' ? desktop.displayName : undefined;
   const jobs = jobsFor(config, desktop);
 
   // Raw uploads: accept any content type as a stream.
@@ -121,13 +122,13 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
       const v = await jobs.wait(id, body.wait_ms);
       return reply.code(v.state === 'running' ? 202 : 200).send(v);
     }
-    if (!stream) return runCommand(body, desktop.x.displayName);
+    if (!stream) return runCommand(body, display);
     reply.hijack();
     reply.raw.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
     const ac = new AbortController();
     req.raw.on('close', () => { if (!reply.raw.writableEnded) ac.abort(); });
     try {
-      await runCommand(body, desktop.x.displayName, (c) => reply.raw.write(JSON.stringify(c) + '\n'), ac.signal);
+      await runCommand(body, display, (c) => reply.raw.write(JSON.stringify(c) + '\n'), ac.signal);
     } catch (e) {
       const err = e instanceof ApiError ? e : new ApiError('internal', (e as Error).message);
       reply.raw.write(JSON.stringify(err.toBody()) + '\n');
@@ -273,7 +274,7 @@ export default async function execRoutes(app: FastifyInstance, ctx: AppContext) 
     const shell = q.shell || process.env.SHELL || '/bin/bash';
     const term = pty.spawn(shell, [], {
       name: 'xterm-256color', cols: Number(q.cols) || 80, rows: Number(q.rows) || 24,
-      cwd: q.cwd || process.env.HOME || '/', env: { ...process.env, DISPLAY: desktop.x.displayName, TERM: 'xterm-256color' },
+      cwd: q.cwd || process.env.HOME || '/', env: { ...process.env, ...(display ? { DISPLAY: display } : {}), TERM: 'xterm-256color' },
     });
     term.onData((d: string) => { if (socket.readyState === 1) socket.send(d); });
     term.onExit(({ exitCode }: { exitCode: number }) => {

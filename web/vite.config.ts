@@ -12,7 +12,9 @@ const build = randomBytes(12).toString('base64url');
 export default defineConfig({
   root: here('.'),
   base: '/static/',
-  publicDir: false,
+  // The opt-in native Mac preview is a small standalone shell. Copy its scripts
+  // and styles with the React viewer on every build, after clearing outDir.
+  publicDir: here('../src/web/static'),
   define: { __VIEWER_BUILD__: JSON.stringify(build) },
   plugins: [react(), tailwindcss(), {
     name: 'build-id',

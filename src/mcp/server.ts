@@ -10,7 +10,6 @@ import { ApiError, toApiError } from '../errors.js';
 import type { Principal } from '../presence/index.js';
 import { DEFAULT_WAIT_MS, MAX_WAIT_MS, jobsFor, present } from '../process/jobs.js';
 import { safePath } from '../fs/index.js';
-import { launchDetached } from '../routes/windows.js';
 import { deleteCookies, getCookies, setCookie } from '../browser/cookies.js';
 import { needBridge } from '../browser/bridge.js';
 import { m } from '../metrics.js';
@@ -63,7 +62,7 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
   const { desktop, config } = ctx;
   const mcp = new McpServer({ name: 'ozwell-computer', version: ctx.version }, {
     instructions:
-      'Controls a Linux X11 desktop. Typical loop: screenshot → act using coordinates from that screenshot (pass its screenshot_id) → screenshot to verify. ' +
+      `Controls a ${desktop.kind === 'macos' ? 'native macOS' : 'Linux X11'} desktop. Typical loop: screenshot → act using coordinates from that screenshot (pass its screenshot_id) → screenshot to verify. ` +
       'Prefer find_element/ui_action for apps that expose accessibility. Errors carry a "reason"; on stale_geometry take a new screenshot. ' +
       'When a tool result says an update is available, call update_computer at the next break in your work.',
   });
@@ -100,7 +99,7 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
       ocr: z.boolean().optional().describe('Also return text extracted from the screenshot (OCR via tesseract)'),
     },
   }, async (a) => wrap(async () => {
-    const r = await desktop.screenshot({ window: a.window, max_dimension: a.max_dimension ?? 1280, format: a.format ?? 'png', cursor: a.cursor ?? true, quality: 75, ocr: a.ocr });
+    const r = await desktop.screenshot({ window: a.window, max_dimension: a.max_dimension ?? 1280, format: a.format ?? 'png', cursor: a.cursor ?? (desktop.kind === 'x11'), quality: 75, ocr: a.ocr });
     const e = r.entry;
     const content: Content[] = [
       { type: 'image', data: r.data.toString('base64'), mimeType: r.contentType },
@@ -158,7 +157,7 @@ function buildMcp(ctx: AppContext, principal: () => Principal): McpServer {
     inputSchema: { command: z.string(), args: z.array(z.string()).optional() },
   }, async (a) => wrap(async () => {
     if (!config.exec) throw new ApiError('permission_denied', 'launching apps is disabled');
-    const r = await launchDetached(desktop.x.displayName, a.command, a.args);
+    const r = await desktop.launchApp(a.command, a.args);
     await new Promise((res) => setTimeout(res, 500));
     return text(r);
   }));

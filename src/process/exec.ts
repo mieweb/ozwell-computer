@@ -27,7 +27,7 @@ const MAX_OUTPUT = 8 * 1024 * 1024;
 export type ExecChunk = { stream: 'stdout' | 'stderr'; data: string } | { exit: ExecResult };
 
 /** Run a command; onChunk receives streamed output when provided. */
-export function runCommand(req: ExecRequest, display: string, onChunk?: (c: ExecChunk) => void, signal?: AbortSignal): Promise<ExecResult> {
+export function runCommand(req: ExecRequest, display: string | undefined, onChunk?: (c: ExecChunk) => void, signal?: AbortSignal): Promise<ExecResult> {
   // The command line itself is not recorded: it may carry secrets.
   return withSpan('exec', { 'exec.streamed': Boolean(onChunk), 'exec.shell': req.shell }, async (span) => {
     let r: ExecResult;
@@ -38,12 +38,12 @@ export function runCommand(req: ExecRequest, display: string, onChunk?: (c: Exec
   });
 }
 
-function run(req: ExecRequest, display: string, onChunk?: (c: ExecChunk) => void, signal?: AbortSignal): Promise<ExecResult> {
+function run(req: ExecRequest, display: string | undefined, onChunk?: (c: ExecChunk) => void, signal?: AbortSignal): Promise<ExecResult> {
   const started = Date.now();
   return new Promise((resolve, reject) => {
     const useShell = req.shell ?? ((!req.args || req.args.length === 0) && /[\s|&;<>$`*?]/.test(req.cmd));
     // Own process group so a timeout kills the whole tree, not just the shell.
-    const opts = { cwd: req.cwd, env: { ...process.env, DISPLAY: display, ...req.env }, detached: true };
+    const opts = { cwd: req.cwd, env: { ...process.env, ...(display ? { DISPLAY: display } : {}), ...req.env }, detached: true };
     const child = useShell ? spawn('/bin/sh', ['-c', req.cmd], opts) : spawn(req.cmd, req.args ?? [], opts);
     let out = '', err = '', size = 0, truncated = false, timedOut = false;
     const killTree = () => {

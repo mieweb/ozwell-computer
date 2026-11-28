@@ -35,6 +35,7 @@ const origins = z
   .pipe(z.array(z.string().regex(ORIGIN, 'must be an origin such as https://app.example.com')));
 
 export const ConfigSchema = z.object({
+  backend: z.enum(['x11', 'macos']),
   port: z.coerce.number().int().min(0).max(65535),
   host: z.string(),
   token: z.string().min(1).optional(),
@@ -70,6 +71,7 @@ export function defaults(): Config {
   const container = inContainer();
   return {
     port: 8080,
+    backend: 'x11',
     host: container ? '0.0.0.0' : '127.0.0.1',
     token: undefined,
     tokenFile: container ? '/var/lib/ozwell-computer/token' : join(homedir(), '.config', 'ozwell-computer', 'token'),
@@ -93,6 +95,7 @@ export function defaults(): Config {
 }
 
 const ENV_MAP: Record<string, keyof Config> = {
+  OZWELL_COMPUTER_BACKEND: 'backend',
   OZWELL_COMPUTER_PORT: 'port',
   OZWELL_COMPUTER_HOST: 'host',
   OZWELL_COMPUTER_TOKEN: 'token',
@@ -116,6 +119,7 @@ const ENV_MAP: Record<string, keyof Config> = {
 };
 
 const FLAG_MAP: Record<string, keyof Config> = {
+  backend: 'backend',
   port: 'port',
   host: 'host',
   token: 'token',
@@ -184,14 +188,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, argv: string[] 
     if (v !== undefined && v !== '') merged[key] = v;
   }
   Object.assign(merged, args.overrides);
+  if (merged.backend === 'macos') {
+    // Native mode controls the user's Mac. Enabling host shell/files is a separate opt-in.
+    if (!env.OZWELL_COMPUTER_EXEC && args.overrides.exec === undefined) merged.exec = false;
+    if (!env.OZWELL_COMPUTER_TOKEN_FILE && args.overrides.tokenFile === undefined)
+      merged.tokenFile = join(homedir(), '.config', 'ozwell-computer', 'macos', 'token');
+  }
   const config = ConfigSchema.parse(merged);
+  if (config.backend === 'macos') {
+    if (config.spawnXvfb) throw new Error('--spawn-xvfb is only supported with --backend x11');
+    if (config.vncBackend !== 'builtin') throw new Error('--vnc-backend is only supported with --backend x11');
+  }
   return { config, args };
 }
 
-export const HELP = `ozwell-computer — X11 desktop over HTTP (noVNC + API + MCP)
+export const HELP = `ozwell-computer — desktop over HTTP (API + MCP; noVNC on X11)
 
 Usage: ozwell-computer [flags]
 
+  --backend <x11|macos>   OZWELL_COMPUTER_BACKEND (x11; macos is the native Cua pilot)
   --port <n>              OZWELL_COMPUTER_PORT (8080)
   --host <addr>           OZWELL_COMPUTER_HOST (127.0.0.1 on host, 0.0.0.0 in container)
   --token <psk>           OZWELL_COMPUTER_TOKEN
@@ -203,6 +218,7 @@ Usage: ozwell-computer [flags]
   --view-only             OZWELL_COMPUTER_VIEW_ONLY=true
   --a11y <auto|on|off>    OZWELL_COMPUTER_A11Y
   --no-exec               OZWELL_COMPUTER_EXEC=false
+  --exec                  OZWELL_COMPUTER_EXEC=true (native macOS defaults to false)
   --vnc-backend <b>       OZWELL_COMPUTER_VNC_BACKEND (builtin | external:[host:]port)
   --log-level <lvl>       OZWELL_COMPUTER_LOG_LEVEL (info)
   --fs-root <dir>         OZWELL_COMPUTER_FS_ROOT (/)

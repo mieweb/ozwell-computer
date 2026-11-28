@@ -6,6 +6,7 @@ import { HELP, loadConfig, sessionEnv, type Config } from './config.js';
 import { resolveToken } from './auth/token.js';
 import { redactUrl } from './auth/plugin.js';
 import { Desktop } from './desktop.js';
+import type { DesktopBackend, AccessibilityBackend } from './backend.js';
 import { buildServer, VERSION } from './server.js';
 import { A11y } from './a11y/atspi.js';
 import { ptyAvailable } from './process/pty.js';
@@ -165,12 +166,23 @@ async function main() {
   const xvfb = offline ? null : await maybeSpawnXvfb(config, log);
   // A fresh Xvfb has no XSETTINGS provider: serve the saved (xfconf) theme on it.
   if (xvfb) await ensureSettingsDaemon(config.display).catch((e) => log.warn({ err: (e as Error).message }, 'cannot serve the desktop theme'));
-  const desktop = new Desktop(config.display, log);
-  const a11y = config.a11y === 'off' ? null : new A11y(config.a11y, log, desktop);
-  const updater = offline ? null
+  let desktop: DesktopBackend;
+  let a11y: AccessibilityBackend | null;
+  if (config.backend === 'macos') {
+    const { MacDesktop } = await import('./macos/desktop.js');
+    const { MacA11y } = await import('./macos/a11y.js');
+    const native = new MacDesktop(log);
+    desktop = native;
+    a11y = config.a11y === 'off' ? null : new MacA11y(config.a11y, log, native);
+  } else {
+    const x11 = new Desktop(config.display, log);
+    desktop = x11;
+    a11y = config.a11y === 'off' ? null : new A11y(config.a11y, log, x11);
+  }
+  const updater = offline || config.backend === 'macos' ? null
     : new Updater(config.updateUrl === 'off' ? null : config.updateUrl, log, (s) => desktop.bus.publish('update.status', s));
   // Firefox's extension connects here for the cookie API (exec-gated, like file access).
-  const browser = offline || !config.exec ? null : new BrowserBridge(browserSocketPath(), log);
+  const browser = offline || !config.exec || config.backend !== 'x11' ? null : new BrowserBridge(browserSocketPath(), log);
   const app = await buildServer({ config, desktop, token, version: VERSION, a11y, ptyAvailable: await ptyAvailable(), updater, browser, log });
 
   if (args.printMcpTools) {

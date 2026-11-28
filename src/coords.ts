@@ -8,7 +8,7 @@ export interface ScreenshotEntry {
   id: string;
   /** Top-left of the captured region in root coordinates. */
   origin: { x: number; y: number };
-  /** Native pixels per image pixel (>= 1 when downscaled). */
+  /** Screen coordinate units per image pixel; can be < 1 on a Retina display. */
   scale: number;
   imageSize: { width: number; height: number };
   nativeSize: { width: number; height: number };

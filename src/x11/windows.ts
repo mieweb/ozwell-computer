@@ -13,9 +13,9 @@ export interface WindowInfo {
   app_instance: string | null;
   pid: number | null;
   bounds: Bounds;
-  focused: boolean;
+  focused: boolean | null;
   minimized: boolean;
-  maximized: boolean;
+  maximized: boolean | null;
 }
 
 export const hexId = (wid: number) => '0x' + wid.toString(16);
